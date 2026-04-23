@@ -5,7 +5,7 @@ This guide covers production deployment for:
 - Admin CRM (`admin-frontend-react`) on Render Static Site
 - Backend BFF (`backend`) on Render Web Service
 - Java API (`backend-java`) on Render Web Service
-- PostgreSQL + Redis on Render
+- Neon PostgreSQL (external) + optional Redis
 
 ---
 
@@ -15,7 +15,7 @@ This guide covers production deployment for:
 - Render (Admin CRM): `https://<admin-domain>`
 - Render (BFF): `https://<bff-domain>`
 - Render (Java API): `https://<java-domain>`
-- Render PostgreSQL + Redis (private/internal)
+- Neon PostgreSQL (managed externally)
 
 ---
 
@@ -95,8 +95,8 @@ CLIENT_URL=https://<storefront-domain>
 ADMIN_URL=https://<admin-domain>
 JAVA_API_URL=https://<java-domain>
 
-DATABASE_URL=<render_postgres_connection_url>
-REDIS_URL=<render_redis_connection_url>
+DATABASE_URL=postgresql://neondb_owner:<NEON_PASSWORD>@ep-small-sunset-aom3ownz-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+REDIS_URL=<optional_redis_url>
 
 JWT_ACCESS_SECRET=<strong_secret>
 JWT_REFRESH_SECRET=<strong_secret>
@@ -104,7 +104,7 @@ JWT_ACCESS_EXPIRES=15m
 JWT_REFRESH_EXPIRES=7d
 
 OTP_EXPIRE_MINUTES=10
-OTP_TERMINAL_ONLY=false
+OTP_TERMINAL_ONLY=true
 
 UPLOAD_DIR=/tmp/uploads
 PUBLIC_BASE_URL=https://<bff-domain>
@@ -160,13 +160,11 @@ Project:
 
 ```env
 SERVER_PORT=10000
-DATABASE_URL=jdbc:postgresql://<render-pg-host>:5432/oceanbazar
-DB_USER=<render_pg_user>
-DB_PASSWORD=<render_pg_password>
+DATABASE_URL=jdbc:postgresql://ep-small-sunset-aom3ownz.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+DB_USER=neondb_owner
+DB_PASSWORD=<NEON_PASSWORD>
 
-REDIS_HOST=<render_redis_host>
-REDIS_PORT=<render_redis_port>
-REDIS_PASSWORD=<render_redis_password>
+CACHE_TYPE=simple
 
 JWT_SECRET_KEY=<strong_secret>
 
