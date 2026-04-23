@@ -1,0 +1,137 @@
+/* ═══════════════════════════════════════════════════════════
+   CATALOG EXPLORER — Modern Design System
+   ═══════════════════════════════════════════════════════════ */
+
+.catalog-explorer {
+  @apply flex flex-col h-full bg-crm-bg rounded-xl overflow-hidden shadow-2xl;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.explorer-body {
+  @apply flex flex-1 min-h-0 overflow-hidden;
+}
+
+/* --- Toolbar --- */
+.explorer-toolbar {
+  @apply flex items-center gap-4 px-6 py-3 bg-crm-bg-alt border-b border-crm-border;
+  height: 60px;
+}
+
+.toolbar-breadcrumb {
+  @apply flex items-center gap-1 flex-1 min-w-0;
+}
+
+.crumb {
+  @apply flex items-center gap-1.5 px-2 py-1 rounded-md text-sm font-medium text-crm-text-dim hover:bg-crm-bg-hover hover:text-crm-text-bright transition-all cursor-pointer;
+}
+
+.crumb-active {
+  @apply text-crm-primary font-bold pointer-events-none bg-crm-primary-dim;
+}
+
+.crumb-sep {
+  @apply text-crm-text-muted;
+}
+
+.toolbar-search {
+  @apply relative w-64;
+}
+
+.search-input {
+  @apply crm-input pl-9 h-9;
+}
+
+/* --- Sidebar (Tree) --- */
+.folder-tree-panel {
+  @apply bg-crm-bg-alt border-r border-crm-border overflow-y-auto;
+}
+
+.tree-node {
+  @apply flex items-center gap-2 py-2 px-3 cursor-pointer hover:bg-crm-bg-hover transition-colors rounded-lg mx-2 mb-1;
+}
+
+.tree-node.active {
+  @apply bg-crm-primary text-white shadow-lg;
+}
+
+.tree-node.active .tree-node-icon {
+  @apply text-white;
+}
+
+.tree-node-icon {
+  @apply text-crm-warning shrink-0;
+}
+
+/* --- Content Area --- */
+.content-panel {
+  @apply flex-1 flex flex-col bg-crm-bg overflow-y-auto p-6;
+}
+
+.content-grid {
+  @apply grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4;
+}
+
+.explorer-item {
+  @apply crm-card-interactive p-0 overflow-hidden flex flex-col;
+}
+
+.folder-card {
+  @apply p-4 flex flex-col items-center gap-3 text-center;
+}
+
+.folder-card .item-icon-wrap {
+  @apply w-12 h-10 flex items-center justify-center text-crm-warning;
+}
+
+.folder-card .item-name {
+  @apply text-sm font-bold text-crm-text-bright truncate w-full;
+}
+
+.product-card {
+  @apply flex flex-col;
+}
+
+.item-thumb {
+  @apply aspect-square bg-crm-bg relative overflow-hidden;
+}
+
+.item-thumb img {
+  @apply w-full h-full object-cover transition-transform duration-500 hover:scale-110;
+}
+
+.product-card .item-name {
+  @apply p-3 text-xs font-bold text-crm-text-bright truncate border-t border-crm-border/30;
+}
+
+/* --- Context Menu --- */
+.context-menu {
+  @apply bg-crm-bg-alt border border-crm-border rounded-xl shadow-2xl p-1.5 min-w-[200px] z-[9999];
+  animation: slideUp 0.15s ease-out;
+}
+
+.context-item {
+  @apply flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-crm-text-dim hover:bg-crm-bg-hover hover:text-crm-text-bright transition-colors;
+}
+
+.context-item.danger {
+  @apply text-crm-danger hover:bg-crm-danger-dim;
+}
+
+.context-section-label {
+  @apply text-[10px] font-bold text-crm-text-muted uppercase tracking-widest px-3 py-2;
+}
+
+.context-sep {
+  @apply h-px bg-crm-border my-1.5 mx-2;
+}
+
+/* --- Product Detail Panel (Explorer Version) --- */
+.product-detail-panel {
+  @apply w-[450px] border-l border-crm-border bg-crm-bg-alt flex flex-col;
+}
+
+/* Animations */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}

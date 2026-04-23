@@ -1,0 +1,55 @@
+:root {
+  /* Colors - Base Dark (GitHub-inspired) */
+  --crm-bg: #0d1117;
+  --crm-bg-alt: #161b22;
+  --crm-bg-card: #21262d;
+  --crm-bg-hover: #30363d;
+  
+  /* Borders */
+  --crm-border: #30363d;
+  --crm-border-subtle: #21262d;
+  --crm-border-strong: #484f58;
+
+  /* Typography */
+  --crm-text: #c9d1d9;
+  --crm-text-dim: #8b949e;
+  --crm-text-bright: #f0f6fc;
+  --crm-text-muted: #484f58;
+
+  /* Accents - Primary (Blue) */
+  --crm-primary: #1f6feb;
+  --crm-primary-hover: #388bfd;
+  --crm-primary-dim: #1f6feb22;
+
+  /* Accents - Success (Green) */
+  --crm-success: #238636;
+  --crm-success-hover: #2ea043;
+  --crm-success-dim: #23863622;
+
+  /* Accents - Warning (Yellow/Orange) */
+  --crm-warning: #d29922;
+  --crm-warning-hover: #e3b341;
+  --crm-warning-dim: #d2992222;
+
+  /* Accents - Danger (Red) */
+  --crm-danger: #da3633;
+  --crm-danger-hover: #f85149;
+  --crm-danger-dim: #da363322;
+
+  /* Layout */
+  --crm-sidebar-width: 260px;
+  --crm-sidebar-collapsed: 64px;
+  --crm-topbar-height: 64px;
+  --crm-radius-sm: 4px;
+  --crm-radius-md: 6px;
+  --crm-radius-lg: 8px;
+  --crm-radius-full: 999px;
+
+  /* Shadows */
+  --crm-shadow-sm: 0 1px 0 rgba(1, 4, 9, 0.04);
+  --crm-shadow-md: 0 4px 12px rgba(1, 4, 9, 0.2);
+  --crm-shadow-lg: 0 8px 24px rgba(1, 4, 9, 0.3);
+
+  /* Transitions */
+  --crm-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
