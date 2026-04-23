@@ -1,0 +1,16 @@
+PrismaClientUnknownRequestError: 
+Invalid `prisma.product.findMany()` invocation in
+C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\src\routes\products.ts:124:41
+
+  121 const tag = COLLECTION_TAGS[collection as Exclude<CollectionKey, 'latest' | 'top-trending'>];
+  122 
+  123 // Manual overrides
+→ 124 const manual = await prisma.product.findMany(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "42883", message: "operator does not exist: character varying = \"ProductStatus\"", severity: "ERROR", detail: None, column: None, hint: Some("No operator matches the given name and argument types. You might need to add explicit type casts.") }), transient: false })
+    at $n.handleRequestError (C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\node_modules\@prisma\client\runtime\library.js:121:7505)
+    at $n.handleAndLogRequestError (C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at l (C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at resolveCollectionIds (C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\src\routes\products.ts:124:20)
+    at C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\src\routes\products.ts:232:17

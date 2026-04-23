@@ -1,0 +1,67 @@
+id,name,slug,depth,parentId,path
+a6609ea4b316,Sub Categories (LEFT SIDE),sub-categories-left-side,2,d53201cde18b,"Agriculture, Food & Beverage/Sub Categories (LEFT SIDE)"
+ed0ee45791fb,Sub Categories names (RIGHT SIDE),sub-categories-names-right-side,3,a6609ea4b316,"Agriculture, Food & Beverage/Sub Categories (LEFT SIDE)/Sub Categories names (RIGHT SIDE)"
+faf58d113f45,Accessories,accessories,2,ed469afc00ca,Apparel & Accessories/Accessories
+2ce67f1a3b56,Ethnic Clothing & Accessories,ethnic-clothing-accessories,2,ed469afc00ca,Apparel & Accessories/Ethnic Clothing & Accessories
+3d4fd0cca234,Islamic Clothing,islamic-clothing,3,2ce67f1a3b56,Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing
+e694c1deebb2,Traditional muslim clothing accessories,traditional-muslim-clothing-accessories,4,3d4fd0cca234,Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories
+2f84c32a4893,Garment & Processing Accessories,garment-processing-accessories,2,ed469afc00ca,Apparel & Accessories/Garment & Processing Accessories
+c630daf40c61,Badges,badges,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Badges
+f7c8c9e8e89b,Boning,boning,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Boning
+3d8166f0631c,Braid,braid,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Braid
+c83630f2910b,Buckles,buckles,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Buckles
+4bf9fba4371b,Buttons,buttons,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Buttons
+54f5d25cb312,Cords,cords,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Cords
+a6767cb31999,Garment Beads,garment-beads,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Garment Beads
+6b6f72b09c36,Garment Clips,garment-clips,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Garment Clips
+be658a144f57,Garment Eyelets,garment-eyelets,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Garment Eyelets
+33a8d0a0c948,Garment Hooks,garment-hooks,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Garment Hooks
+26d8193521c3,Garment Labels,garment-labels,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Garment Labels
+7c9a57db2b17,Garment Tags,garment-tags,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Garment Tags
+16cae84b1dfe,Garmment Rivets,garmment-rivets,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Garmment Rivets
+e52145da7434,Hook & Loop Tapes,hook-loop-tapes,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Hook & Loop Tapes
+058e3bef4408,Innerlinings & Linings,innerlinings-linings,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Innerlinings & Linings
+5b6be9404739,Knitting Rib,knitting-rib,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Knitting Rib
+7e3709eecd4a,Lace,lace,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Lace
+6a6cd23bb55f,Mannequins,mannequins,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Mannequins
+fb8889006b99,Other Garment Accessories,other-garment-accessories,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Other Garment Accessories
+0cb3057eb2cb,Other Sewing Supplies,other-sewing-supplies,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Other Sewing Supplies
+6514f4707623,Patches,patches,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Patches
+a395f913f4f9,Rhinestones,rhinestones,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Rhinestones
+7ce5c39b1b38,Ribbons,ribbons,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Ribbons
+9de85b210029,Sequins,sequins,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Sequins
+668ca3427709,Sewing Needles,sewing-needles,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Sewing Needles
+72b2f1732fcb,Sewing Threads,sewing-threads,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Sewing Threads
+94ff15403829,Shoulder Pads,shoulder-pads,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Shoulder Pads
+4e435882837b,Stoppers,stoppers,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Stoppers
+10f56038bc74,Sub Categories names (RIGHT SIDE),sub-categories-names-right-side,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Sub Categories names (RIGHT SIDE)
+6da959a0e27d,Tag Guns,tag-guns,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Tag Guns
+f4bf421c469b,Tailor's Scissors,tailors-scissors,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Tailor's Scissors
+0cf7144ca1b6,Trimmings,trimmings,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Trimmings
+9213ab8c474c,Underwear Accessories,underwear-accessories,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Underwear Accessories
+e17bff6f2113,Webbing,webbing,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Webbing
+fcecc30672a7,Zipper Sliders,zipper-sliders,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Zipper Sliders
+68dcb57839f8,Zippers,zippers,3,2f84c32a4893,Apparel & Accessories/Garment & Processing Accessories/Zippers
+1d762ada35de,Hats & Caps,hats-caps,2,ed469afc00ca,Apparel & Accessories/Hats & Caps
+fd89e15a0e1a,Lisurewear,lisurewear,2,ed469afc00ca,Apparel & Accessories/Lisurewear
+c2e791a2374e,Men's Clothing,mens-clothing,2,ed469afc00ca,Apparel & Accessories/Men's Clothing
+44b079ee1e01,Other Apparel Accessories,other-apparel-accessories,2,ed469afc00ca,Apparel & Accessories/Other Apparel Accessories
+431f957d5c6f,Apparel Stock,apparel-stock,3,44b079ee1e01,Apparel & Accessories/Other Apparel Accessories/Apparel Stock
+8064cc3b4306,Other Apparel,other-apparel,3,44b079ee1e01,Apparel & Accessories/Other Apparel Accessories/Other Apparel
+ca008b1cba10,Other Fashion Accessories,other-fashion-accessories,3,44b079ee1e01,Apparel & Accessories/Other Apparel Accessories/Other Fashion Accessories
+ecdff9d5cd5e,Used Clothes,used-clothes,3,44b079ee1e01,Apparel & Accessories/Other Apparel Accessories/Used Clothes
+07cd80d7fc6c,Socks & Hoisery,socks-hoisery,2,ed469afc00ca,Apparel & Accessories/Socks & Hoisery
+57d0a300db07,Underwear & Sleepware,underwear-sleepware,2,ed469afc00ca,Apparel & Accessories/Underwear & Sleepware
+2bd480fd3233,Uniforms & Costumes,uniforms-costumes,2,ed469afc00ca,Apparel & Accessories/Uniforms & Costumes
+3fcfcc065109,Wedding Apparel & Accessories,wedding-apparel-accessories,2,ed469afc00ca,Apparel & Accessories/Wedding Apparel & Accessories
+369659fd72de,Womens Clothing,womens-clothing,2,ed469afc00ca,Apparel & Accessories/Womens Clothing
+60491e7e8220,Pet food,pet-food,2,2f5e6efc6bae,Pet Supplies/Pet food
+b4f2dd259af1,Dry Food,dry-food,3,60491e7e8220,Pet Supplies/Pet food/Dry Food
+fd2a3c11b001,Other Pet Food,other-pet-food,3,60491e7e8220,Pet Supplies/Pet food/Other Pet Food
+8969634ecd90,Pet Health Care & Supplements,pet-health-care-supplements,3,60491e7e8220,Pet Supplies/Pet food/Pet Health Care & Supplements
+e0a697f8ab86,Treats,treats,3,60491e7e8220,Pet Supplies/Pet food/Treats
+c273e7aa51d5,Wet Food,wet-food,3,60491e7e8220,Pet Supplies/Pet food/Wet Food
+e8f970be2d9d,Pet Products,pet-products,2,2f5e6efc6bae,Pet Supplies/Pet Products
+39b6feab0297,Pet Leashes,pet-leashes,3,e8f970be2d9d,Pet Supplies/Pet Products/Pet Leashes
+586b8293f373,Pet Tracker,pet-tracker,3,e8f970be2d9d,Pet Supplies/Pet Products/Pet Tracker
+aa76b6c2e2af,Playpens,playpens,3,e8f970be2d9d,Pet Supplies/Pet Products/Playpens

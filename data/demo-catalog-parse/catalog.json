@@ -1,0 +1,1458 @@
+{
+  "generatedAt": "2026-04-10T22:14:04.739Z",
+  "sourceRoot": "C:\\Users\\akand\\Desktop\\All Categories (Demo)",
+  "categories": [
+    {
+      "id": "d53201cde18b",
+      "name": "Agriculture, Food & Beverage",
+      "slug": "agriculture-food-beverage",
+      "depth": 1,
+      "parentId": null,
+      "path": "Agriculture, Food & Beverage"
+    },
+    {
+      "id": "ed469afc00ca",
+      "name": "Apparel & Accessories",
+      "slug": "apparel-accessories",
+      "depth": 1,
+      "parentId": null,
+      "path": "Apparel & Accessories"
+    },
+    {
+      "id": "ee50a4bd8b2e",
+      "name": "Automotive Suppliers & Tools",
+      "slug": "automotive-suppliers-tools",
+      "depth": 1,
+      "parentId": null,
+      "path": "Automotive Suppliers & Tools"
+    },
+    {
+      "id": "96f4160fd0f5",
+      "name": "Beauty",
+      "slug": "beauty",
+      "depth": 1,
+      "parentId": null,
+      "path": "Beauty"
+    },
+    {
+      "id": "831e5f061ff5",
+      "name": "Categoies For You",
+      "slug": "categoies-for-you",
+      "depth": 1,
+      "parentId": null,
+      "path": "Categoies For You"
+    },
+    {
+      "id": "a9cfefae1358",
+      "name": "Commercial Equipment & Machinery",
+      "slug": "commercial-equipment-machinery",
+      "depth": 1,
+      "parentId": null,
+      "path": "Commercial Equipment & Machinery"
+    },
+    {
+      "id": "7ed337c49525",
+      "name": "Construction & Building Machinery",
+      "slug": "construction-building-machinery",
+      "depth": 1,
+      "parentId": null,
+      "path": "Construction & Building Machinery"
+    },
+    {
+      "id": "ec78346e04e7",
+      "name": "Construction & Real Estate",
+      "slug": "construction-real-estate",
+      "depth": 1,
+      "parentId": null,
+      "path": "Construction & Real Estate"
+    },
+    {
+      "id": "974ea15606df",
+      "name": "Consumer Electronics",
+      "slug": "consumer-electronics",
+      "depth": 1,
+      "parentId": null,
+      "path": "Consumer Electronics"
+    },
+    {
+      "id": "0d2b86831121",
+      "name": "Electrical Components",
+      "slug": "electrical-components",
+      "depth": 1,
+      "parentId": null,
+      "path": "Electrical Components"
+    },
+    {
+      "id": "292ac495bda9",
+      "name": "Electrical Equipment & Supplies",
+      "slug": "electrical-equipment-supplies",
+      "depth": 1,
+      "parentId": null,
+      "path": "Electrical Equipment & Supplies"
+    },
+    {
+      "id": "2c47998ed0f7",
+      "name": "Fabrication Services",
+      "slug": "fabrication-services",
+      "depth": 1,
+      "parentId": null,
+      "path": "Fabrication Services"
+    },
+    {
+      "id": "735e03169be4",
+      "name": "Furniture",
+      "slug": "furniture",
+      "depth": 1,
+      "parentId": null,
+      "path": "Furniture"
+    },
+    {
+      "id": "d5872d31189d",
+      "name": "Gifts & Crafts",
+      "slug": "gifts-crafts",
+      "depth": 1,
+      "parentId": null,
+      "path": "Gifts & Crafts"
+    },
+    {
+      "id": "0b432522e586",
+      "name": "Health & medical",
+      "slug": "health-medical",
+      "depth": 1,
+      "parentId": null,
+      "path": "Health & medical"
+    },
+    {
+      "id": "e1d67ee5a998",
+      "name": "Home & Garden",
+      "slug": "home-garden",
+      "depth": 1,
+      "parentId": null,
+      "path": "Home & Garden"
+    },
+    {
+      "id": "20857efbb1cc",
+      "name": "Home Appliances",
+      "slug": "home-appliances",
+      "depth": 1,
+      "parentId": null,
+      "path": "Home Appliances"
+    },
+    {
+      "id": "73508ce3d9ed",
+      "name": "Industrial Machinery",
+      "slug": "industrial-machinery",
+      "depth": 1,
+      "parentId": null,
+      "path": "Industrial Machinery"
+    },
+    {
+      "id": "4a8482b14946",
+      "name": "Jewelry, Eyewear & Watches",
+      "slug": "jewelry-eyewear-watches",
+      "depth": 1,
+      "parentId": null,
+      "path": "Jewelry, Eyewear & Watches"
+    },
+    {
+      "id": "bd14f7e61709",
+      "name": "Lights & Lighting",
+      "slug": "lights-lighting",
+      "depth": 1,
+      "parentId": null,
+      "path": "Lights & Lighting"
+    },
+    {
+      "id": "46b55cf58f2a",
+      "name": "Luggage, Bags & Cases",
+      "slug": "luggage-bags-cases",
+      "depth": 1,
+      "parentId": null,
+      "path": "Luggage, Bags & Cases"
+    },
+    {
+      "id": "89515b6714d7",
+      "name": "Material Handling",
+      "slug": "material-handling",
+      "depth": 1,
+      "parentId": null,
+      "path": "Material Handling"
+    },
+    {
+      "id": "98a07c72f9fd",
+      "name": "Packaging & Printing",
+      "slug": "packaging-printing",
+      "depth": 1,
+      "parentId": null,
+      "path": "Packaging & Printing"
+    },
+    {
+      "id": "0128ea9e2687",
+      "name": "Parents,  Kids & Toys",
+      "slug": "parents-kids-toys",
+      "depth": 1,
+      "parentId": null,
+      "path": "Parents,  Kids & Toys"
+    },
+    {
+      "id": "85aa84cf7ca0",
+      "name": "Personal Care & Home Care",
+      "slug": "personal-care-home-care",
+      "depth": 1,
+      "parentId": null,
+      "path": "Personal Care & Home Care"
+    },
+    {
+      "id": "2f5e6efc6bae",
+      "name": "Pet Supplies",
+      "slug": "pet-supplies",
+      "depth": 1,
+      "parentId": null,
+      "path": "Pet Supplies"
+    },
+    {
+      "id": "4a24793e4d15",
+      "name": "Power Transmission",
+      "slug": "power-transmission",
+      "depth": 1,
+      "parentId": null,
+      "path": "Power Transmission"
+    },
+    {
+      "id": "decff8a7fac3",
+      "name": "Raw Materials",
+      "slug": "raw-materials",
+      "depth": 1,
+      "parentId": null,
+      "path": "Raw Materials"
+    },
+    {
+      "id": "2ad9e3016fa6",
+      "name": "Renewable Energy",
+      "slug": "renewable-energy",
+      "depth": 1,
+      "parentId": null,
+      "path": "Renewable Energy"
+    },
+    {
+      "id": "56482f1a6c8b",
+      "name": "Safety & Security",
+      "slug": "safety-security",
+      "depth": 1,
+      "parentId": null,
+      "path": "Safety & Security"
+    },
+    {
+      "id": "532521e12644",
+      "name": "School & Office Supplies",
+      "slug": "school-office-supplies",
+      "depth": 1,
+      "parentId": null,
+      "path": "School & Office Supplies"
+    },
+    {
+      "id": "68de0852f0e0",
+      "name": "Service",
+      "slug": "service",
+      "depth": 1,
+      "parentId": null,
+      "path": "Service"
+    },
+    {
+      "id": "9ab05cae0751",
+      "name": "Shoes & Accessories",
+      "slug": "shoes-accessories",
+      "depth": 1,
+      "parentId": null,
+      "path": "Shoes & Accessories"
+    },
+    {
+      "id": "9adae95a3707",
+      "name": "Sports & Entertainment",
+      "slug": "sports-entertainment",
+      "depth": 1,
+      "parentId": null,
+      "path": "Sports & Entertainment"
+    },
+    {
+      "id": "c2ac49c19a17",
+      "name": "Sportswear & Outdoor Apparel",
+      "slug": "sportswear-outdoor-apparel",
+      "depth": 1,
+      "parentId": null,
+      "path": "Sportswear & Outdoor Apparel"
+    },
+    {
+      "id": "aa6c07e9d276",
+      "name": "Testing Instrument & Supplies",
+      "slug": "testing-instrument-supplies",
+      "depth": 1,
+      "parentId": null,
+      "path": "Testing Instrument & Supplies"
+    },
+    {
+      "id": "d3491f39add9",
+      "name": "Tools & Hardware",
+      "slug": "tools-hardware",
+      "depth": 1,
+      "parentId": null,
+      "path": "Tools & Hardware"
+    },
+    {
+      "id": "87e10a2dbf85",
+      "name": "Vehicle Parts & Accessories",
+      "slug": "vehicle-parts-accessories",
+      "depth": 1,
+      "parentId": null,
+      "path": "Vehicle Parts & Accessories"
+    },
+    {
+      "id": "b1d6d94e5d50",
+      "name": "Vehicles & Transportation",
+      "slug": "vehicles-transportation",
+      "depth": 1,
+      "parentId": null,
+      "path": "Vehicles & Transportation"
+    }
+  ],
+  "subcategories": [
+    {
+      "id": "a6609ea4b316",
+      "name": "Sub Categories (LEFT SIDE)",
+      "slug": "sub-categories-left-side",
+      "depth": 2,
+      "parentId": "d53201cde18b",
+      "path": "Agriculture, Food & Beverage/Sub Categories (LEFT SIDE)"
+    },
+    {
+      "id": "ed0ee45791fb",
+      "name": "Sub Categories names (RIGHT SIDE)",
+      "slug": "sub-categories-names-right-side",
+      "depth": 3,
+      "parentId": "a6609ea4b316",
+      "path": "Agriculture, Food & Beverage/Sub Categories (LEFT SIDE)/Sub Categories names (RIGHT SIDE)"
+    },
+    {
+      "id": "faf58d113f45",
+      "name": "Accessories",
+      "slug": "accessories",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Accessories"
+    },
+    {
+      "id": "2ce67f1a3b56",
+      "name": "Ethnic Clothing & Accessories",
+      "slug": "ethnic-clothing-accessories",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Ethnic Clothing & Accessories"
+    },
+    {
+      "id": "3d4fd0cca234",
+      "name": "Islamic Clothing",
+      "slug": "islamic-clothing",
+      "depth": 3,
+      "parentId": "2ce67f1a3b56",
+      "path": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing"
+    },
+    {
+      "id": "e694c1deebb2",
+      "name": "Traditional muslim clothing accessories",
+      "slug": "traditional-muslim-clothing-accessories",
+      "depth": 4,
+      "parentId": "3d4fd0cca234",
+      "path": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories"
+    },
+    {
+      "id": "2f84c32a4893",
+      "name": "Garment & Processing Accessories",
+      "slug": "garment-processing-accessories",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Garment & Processing Accessories"
+    },
+    {
+      "id": "c630daf40c61",
+      "name": "Badges",
+      "slug": "badges",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Badges"
+    },
+    {
+      "id": "f7c8c9e8e89b",
+      "name": "Boning",
+      "slug": "boning",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Boning"
+    },
+    {
+      "id": "3d8166f0631c",
+      "name": "Braid",
+      "slug": "braid",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Braid"
+    },
+    {
+      "id": "c83630f2910b",
+      "name": "Buckles",
+      "slug": "buckles",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Buckles"
+    },
+    {
+      "id": "4bf9fba4371b",
+      "name": "Buttons",
+      "slug": "buttons",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Buttons"
+    },
+    {
+      "id": "54f5d25cb312",
+      "name": "Cords",
+      "slug": "cords",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Cords"
+    },
+    {
+      "id": "a6767cb31999",
+      "name": "Garment Beads",
+      "slug": "garment-beads",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Garment Beads"
+    },
+    {
+      "id": "6b6f72b09c36",
+      "name": "Garment Clips",
+      "slug": "garment-clips",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Garment Clips"
+    },
+    {
+      "id": "be658a144f57",
+      "name": "Garment Eyelets",
+      "slug": "garment-eyelets",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Garment Eyelets"
+    },
+    {
+      "id": "33a8d0a0c948",
+      "name": "Garment Hooks",
+      "slug": "garment-hooks",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Garment Hooks"
+    },
+    {
+      "id": "26d8193521c3",
+      "name": "Garment Labels",
+      "slug": "garment-labels",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Garment Labels"
+    },
+    {
+      "id": "7c9a57db2b17",
+      "name": "Garment Tags",
+      "slug": "garment-tags",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Garment Tags"
+    },
+    {
+      "id": "16cae84b1dfe",
+      "name": "Garmment Rivets",
+      "slug": "garmment-rivets",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Garmment Rivets"
+    },
+    {
+      "id": "e52145da7434",
+      "name": "Hook & Loop Tapes",
+      "slug": "hook-loop-tapes",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Hook & Loop Tapes"
+    },
+    {
+      "id": "058e3bef4408",
+      "name": "Innerlinings & Linings",
+      "slug": "innerlinings-linings",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Innerlinings & Linings"
+    },
+    {
+      "id": "5b6be9404739",
+      "name": "Knitting Rib",
+      "slug": "knitting-rib",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Knitting Rib"
+    },
+    {
+      "id": "7e3709eecd4a",
+      "name": "Lace",
+      "slug": "lace",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Lace"
+    },
+    {
+      "id": "6a6cd23bb55f",
+      "name": "Mannequins",
+      "slug": "mannequins",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Mannequins"
+    },
+    {
+      "id": "fb8889006b99",
+      "name": "Other Garment Accessories",
+      "slug": "other-garment-accessories",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Other Garment Accessories"
+    },
+    {
+      "id": "0cb3057eb2cb",
+      "name": "Other Sewing Supplies",
+      "slug": "other-sewing-supplies",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Other Sewing Supplies"
+    },
+    {
+      "id": "6514f4707623",
+      "name": "Patches",
+      "slug": "patches",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Patches"
+    },
+    {
+      "id": "a395f913f4f9",
+      "name": "Rhinestones",
+      "slug": "rhinestones",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Rhinestones"
+    },
+    {
+      "id": "7ce5c39b1b38",
+      "name": "Ribbons",
+      "slug": "ribbons",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Ribbons"
+    },
+    {
+      "id": "9de85b210029",
+      "name": "Sequins",
+      "slug": "sequins",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Sequins"
+    },
+    {
+      "id": "668ca3427709",
+      "name": "Sewing Needles",
+      "slug": "sewing-needles",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Sewing Needles"
+    },
+    {
+      "id": "72b2f1732fcb",
+      "name": "Sewing Threads",
+      "slug": "sewing-threads",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Sewing Threads"
+    },
+    {
+      "id": "94ff15403829",
+      "name": "Shoulder Pads",
+      "slug": "shoulder-pads",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Shoulder Pads"
+    },
+    {
+      "id": "4e435882837b",
+      "name": "Stoppers",
+      "slug": "stoppers",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Stoppers"
+    },
+    {
+      "id": "10f56038bc74",
+      "name": "Sub Categories names (RIGHT SIDE)",
+      "slug": "sub-categories-names-right-side",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Sub Categories names (RIGHT SIDE)"
+    },
+    {
+      "id": "6da959a0e27d",
+      "name": "Tag Guns",
+      "slug": "tag-guns",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Tag Guns"
+    },
+    {
+      "id": "f4bf421c469b",
+      "name": "Tailor's Scissors",
+      "slug": "tailors-scissors",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Tailor's Scissors"
+    },
+    {
+      "id": "0cf7144ca1b6",
+      "name": "Trimmings",
+      "slug": "trimmings",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Trimmings"
+    },
+    {
+      "id": "9213ab8c474c",
+      "name": "Underwear Accessories",
+      "slug": "underwear-accessories",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Underwear Accessories"
+    },
+    {
+      "id": "e17bff6f2113",
+      "name": "Webbing",
+      "slug": "webbing",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Webbing"
+    },
+    {
+      "id": "fcecc30672a7",
+      "name": "Zipper Sliders",
+      "slug": "zipper-sliders",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Zipper Sliders"
+    },
+    {
+      "id": "68dcb57839f8",
+      "name": "Zippers",
+      "slug": "zippers",
+      "depth": 3,
+      "parentId": "2f84c32a4893",
+      "path": "Apparel & Accessories/Garment & Processing Accessories/Zippers"
+    },
+    {
+      "id": "1d762ada35de",
+      "name": "Hats & Caps",
+      "slug": "hats-caps",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Hats & Caps"
+    },
+    {
+      "id": "fd89e15a0e1a",
+      "name": "Lisurewear",
+      "slug": "lisurewear",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Lisurewear"
+    },
+    {
+      "id": "c2e791a2374e",
+      "name": "Men's Clothing",
+      "slug": "mens-clothing",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Men's Clothing"
+    },
+    {
+      "id": "44b079ee1e01",
+      "name": "Other Apparel Accessories",
+      "slug": "other-apparel-accessories",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Other Apparel Accessories"
+    },
+    {
+      "id": "431f957d5c6f",
+      "name": "Apparel Stock",
+      "slug": "apparel-stock",
+      "depth": 3,
+      "parentId": "44b079ee1e01",
+      "path": "Apparel & Accessories/Other Apparel Accessories/Apparel Stock"
+    },
+    {
+      "id": "8064cc3b4306",
+      "name": "Other Apparel",
+      "slug": "other-apparel",
+      "depth": 3,
+      "parentId": "44b079ee1e01",
+      "path": "Apparel & Accessories/Other Apparel Accessories/Other Apparel"
+    },
+    {
+      "id": "ca008b1cba10",
+      "name": "Other Fashion Accessories",
+      "slug": "other-fashion-accessories",
+      "depth": 3,
+      "parentId": "44b079ee1e01",
+      "path": "Apparel & Accessories/Other Apparel Accessories/Other Fashion Accessories"
+    },
+    {
+      "id": "ecdff9d5cd5e",
+      "name": "Used Clothes",
+      "slug": "used-clothes",
+      "depth": 3,
+      "parentId": "44b079ee1e01",
+      "path": "Apparel & Accessories/Other Apparel Accessories/Used Clothes"
+    },
+    {
+      "id": "07cd80d7fc6c",
+      "name": "Socks & Hoisery",
+      "slug": "socks-hoisery",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Socks & Hoisery"
+    },
+    {
+      "id": "57d0a300db07",
+      "name": "Underwear & Sleepware",
+      "slug": "underwear-sleepware",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Underwear & Sleepware"
+    },
+    {
+      "id": "2bd480fd3233",
+      "name": "Uniforms & Costumes",
+      "slug": "uniforms-costumes",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Uniforms & Costumes"
+    },
+    {
+      "id": "3fcfcc065109",
+      "name": "Wedding Apparel & Accessories",
+      "slug": "wedding-apparel-accessories",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Wedding Apparel & Accessories"
+    },
+    {
+      "id": "369659fd72de",
+      "name": "Womens Clothing",
+      "slug": "womens-clothing",
+      "depth": 2,
+      "parentId": "ed469afc00ca",
+      "path": "Apparel & Accessories/Womens Clothing"
+    },
+    {
+      "id": "60491e7e8220",
+      "name": "Pet food",
+      "slug": "pet-food",
+      "depth": 2,
+      "parentId": "2f5e6efc6bae",
+      "path": "Pet Supplies/Pet food"
+    },
+    {
+      "id": "b4f2dd259af1",
+      "name": "Dry Food",
+      "slug": "dry-food",
+      "depth": 3,
+      "parentId": "60491e7e8220",
+      "path": "Pet Supplies/Pet food/Dry Food"
+    },
+    {
+      "id": "fd2a3c11b001",
+      "name": "Other Pet Food",
+      "slug": "other-pet-food",
+      "depth": 3,
+      "parentId": "60491e7e8220",
+      "path": "Pet Supplies/Pet food/Other Pet Food"
+    },
+    {
+      "id": "8969634ecd90",
+      "name": "Pet Health Care & Supplements",
+      "slug": "pet-health-care-supplements",
+      "depth": 3,
+      "parentId": "60491e7e8220",
+      "path": "Pet Supplies/Pet food/Pet Health Care & Supplements"
+    },
+    {
+      "id": "e0a697f8ab86",
+      "name": "Treats",
+      "slug": "treats",
+      "depth": 3,
+      "parentId": "60491e7e8220",
+      "path": "Pet Supplies/Pet food/Treats"
+    },
+    {
+      "id": "c273e7aa51d5",
+      "name": "Wet Food",
+      "slug": "wet-food",
+      "depth": 3,
+      "parentId": "60491e7e8220",
+      "path": "Pet Supplies/Pet food/Wet Food"
+    },
+    {
+      "id": "e8f970be2d9d",
+      "name": "Pet Products",
+      "slug": "pet-products",
+      "depth": 2,
+      "parentId": "2f5e6efc6bae",
+      "path": "Pet Supplies/Pet Products"
+    },
+    {
+      "id": "39b6feab0297",
+      "name": "Pet Leashes",
+      "slug": "pet-leashes",
+      "depth": 3,
+      "parentId": "e8f970be2d9d",
+      "path": "Pet Supplies/Pet Products/Pet Leashes"
+    },
+    {
+      "id": "586b8293f373",
+      "name": "Pet Tracker",
+      "slug": "pet-tracker",
+      "depth": 3,
+      "parentId": "e8f970be2d9d",
+      "path": "Pet Supplies/Pet Products/Pet Tracker"
+    },
+    {
+      "id": "aa76b6c2e2af",
+      "name": "Playpens",
+      "slug": "playpens",
+      "depth": 3,
+      "parentId": "e8f970be2d9d",
+      "path": "Pet Supplies/Pet Products/Playpens"
+    }
+  ],
+  "products": [
+    {
+      "id": "62db52decdd0",
+      "name": "Middle East Two Piece Femmes Muslim Dubai Casual Dress",
+      "categoryPath": "Apparel & Accessories > Ethnic Clothing & Accessories > Islamic Clothing > Traditional muslim clothing accessories",
+      "folderRelative": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress",
+      "imageCount": 6,
+      "primaryImage": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress/A7d6b35cc9f3847bc9bfdff4440d1d301C.png"
+    },
+    {
+      "id": "70511cc94432",
+      "name": "Zaynab Elegant Women's Abaya Muslim Dress",
+      "categoryPath": "Apparel & Accessories > Ethnic Clothing & Accessories > Islamic Clothing > Traditional muslim clothing accessories",
+      "folderRelative": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress",
+      "imageCount": 6,
+      "primaryImage": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress/H3f0b6844f3e14f32acd523f96cf58556o (1).jpg"
+    },
+    {
+      "id": "b3ad3a216d8f",
+      "name": "Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts",
+      "categoryPath": "Pet Supplies > Pet food > Dry Food",
+      "folderRelative": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts",
+      "imageCount": 6,
+      "primaryImage": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts/H2404be85b47d42149e64d41ced4de0669.jpg"
+    }
+  ],
+  "media": [
+    {
+      "id": "ffcf2e4e6e76",
+      "productId": "62db52decdd0",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress/A7d6b35cc9f3847bc9bfdff4440d1d301C.png",
+      "fileName": "A7d6b35cc9f3847bc9bfdff4440d1d301C.png",
+      "role": "primary"
+    },
+    {
+      "id": "9b9c4d9324ef",
+      "productId": "62db52decdd0",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress/H434b40d8c1d04cd9a926b707e26c9f9aj.jpg",
+      "fileName": "H434b40d8c1d04cd9a926b707e26c9f9aj.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "11b2419d067c",
+      "productId": "62db52decdd0",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress/H8d82ad76fd184bf5b05b2187c7a84dbeZ.jpg",
+      "fileName": "H8d82ad76fd184bf5b05b2187c7a84dbeZ.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "a38e3ba5f2dc",
+      "productId": "62db52decdd0",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress/Hbd0fa18eb4634ac9b9e4f99b68a53092F.jpg",
+      "fileName": "Hbd0fa18eb4634ac9b9e4f99b68a53092F.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "07139b165f14",
+      "productId": "62db52decdd0",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress/Hd669e399669e4478856c6e38b09ee0bbI.png",
+      "fileName": "Hd669e399669e4478856c6e38b09ee0bbI.png",
+      "role": "gallery"
+    },
+    {
+      "id": "3fc0c0a89a16",
+      "productId": "62db52decdd0",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Middle East Two Piece Femmes Muslim Dubai Casual Dress/Hddf08ddd367b4ce2a8f1aa0643be5520J.jpg",
+      "fileName": "Hddf08ddd367b4ce2a8f1aa0643be5520J.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "f008c3860c4d",
+      "productId": "70511cc94432",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress/H3f0b6844f3e14f32acd523f96cf58556o (1).jpg",
+      "fileName": "H3f0b6844f3e14f32acd523f96cf58556o (1).jpg",
+      "role": "primary"
+    },
+    {
+      "id": "2224ee54bfd9",
+      "productId": "70511cc94432",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress/H3f0b6844f3e14f32acd523f96cf58556o.jpg",
+      "fileName": "H3f0b6844f3e14f32acd523f96cf58556o.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "c6ad503a0b3c",
+      "productId": "70511cc94432",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress/H444eb82e2b29425bbdfefd5921a5f093R.jpg",
+      "fileName": "H444eb82e2b29425bbdfefd5921a5f093R.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "f0d32d6f28a0",
+      "productId": "70511cc94432",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress/H755e16ea12e846eeba03c58f7bfd4888j.jpg",
+      "fileName": "H755e16ea12e846eeba03c58f7bfd4888j.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "1e0db9959bc1",
+      "productId": "70511cc94432",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress/H9198999a4dfa497db43dcbfbbdd8b46bs.jpg",
+      "fileName": "H9198999a4dfa497db43dcbfbbdd8b46bs.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "1b4902b1637b",
+      "productId": "70511cc94432",
+      "relativePath": "Apparel & Accessories/Ethnic Clothing & Accessories/Islamic Clothing/Traditional muslim clothing accessories/Zaynab Elegant Women's Abaya Muslim Dress/H94d363fc44614255b3a44542856aedc3Z.jpg",
+      "fileName": "H94d363fc44614255b3a44542856aedc3Z.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "452641ef07fc",
+      "productId": "b3ad3a216d8f",
+      "relativePath": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts/H2404be85b47d42149e64d41ced4de0669.jpg",
+      "fileName": "H2404be85b47d42149e64d41ced4de0669.jpg",
+      "role": "primary"
+    },
+    {
+      "id": "a4c5aec620a1",
+      "productId": "b3ad3a216d8f",
+      "relativePath": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts/H441a6422567243b9ba73243fd5e1b9afX.jpg",
+      "fileName": "H441a6422567243b9ba73243fd5e1b9afX.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "dbbebeeeb5ed",
+      "productId": "b3ad3a216d8f",
+      "relativePath": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts/H5f244d5a1a444b58948051df85c98bc8Z.jpg",
+      "fileName": "H5f244d5a1a444b58948051df85c98bc8Z.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "f02ed57b47b7",
+      "productId": "b3ad3a216d8f",
+      "relativePath": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts/H6557b153726e4720a2227006345e5030W.jpg",
+      "fileName": "H6557b153726e4720a2227006345e5030W.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "185fdc771dcb",
+      "productId": "b3ad3a216d8f",
+      "relativePath": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts/Haef3af847c6c44b791436e4bfd78f66a3.jpg",
+      "fileName": "Haef3af847c6c44b791436e4bfd78f66a3.jpg",
+      "role": "gallery"
+    },
+    {
+      "id": "262fafcb0142",
+      "productId": "b3ad3a216d8f",
+      "relativePath": "Pet Supplies/Pet food/Dry Food/Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts/He6a9b1ca3ec544598618dfaf5b364702I.jpg",
+      "fileName": "He6a9b1ca3ec544598618dfaf5b364702I.jpg",
+      "role": "gallery"
+    }
+  ],
+  "tags": [
+    {
+      "slug": "sub-categories-left-side",
+      "label": "Sub Categories (LEFT SIDE)",
+      "source": "folder_name"
+    },
+    {
+      "slug": "sub-categories-names-right-side",
+      "label": "Sub Categories names (RIGHT SIDE)",
+      "source": "folder_name"
+    },
+    {
+      "slug": "accessories",
+      "label": "Accessories",
+      "source": "folder_name"
+    },
+    {
+      "slug": "ethnic-clothing",
+      "label": "Ethnic Clothing",
+      "source": "folder_name"
+    },
+    {
+      "slug": "islamic-clothing",
+      "label": "Islamic Clothing",
+      "source": "folder_name"
+    },
+    {
+      "slug": "traditional-muslim-clothing-accessories",
+      "label": "Traditional muslim clothing accessories",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garment",
+      "label": "Garment",
+      "source": "folder_name"
+    },
+    {
+      "slug": "processing-accessories",
+      "label": "Processing Accessories",
+      "source": "folder_name"
+    },
+    {
+      "slug": "badges",
+      "label": "Badges",
+      "source": "folder_name"
+    },
+    {
+      "slug": "boning",
+      "label": "Boning",
+      "source": "folder_name"
+    },
+    {
+      "slug": "braid",
+      "label": "Braid",
+      "source": "folder_name"
+    },
+    {
+      "slug": "buckles",
+      "label": "Buckles",
+      "source": "folder_name"
+    },
+    {
+      "slug": "buttons",
+      "label": "Buttons",
+      "source": "folder_name"
+    },
+    {
+      "slug": "cords",
+      "label": "Cords",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garment-beads",
+      "label": "Garment Beads",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garment-clips",
+      "label": "Garment Clips",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garment-eyelets",
+      "label": "Garment Eyelets",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garment-hooks",
+      "label": "Garment Hooks",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garment-labels",
+      "label": "Garment Labels",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garment-tags",
+      "label": "Garment Tags",
+      "source": "folder_name"
+    },
+    {
+      "slug": "garmment-rivets",
+      "label": "Garmment Rivets",
+      "source": "folder_name"
+    },
+    {
+      "slug": "hook",
+      "label": "Hook",
+      "source": "folder_name"
+    },
+    {
+      "slug": "loop-tapes",
+      "label": "Loop Tapes",
+      "source": "folder_name"
+    },
+    {
+      "slug": "innerlinings",
+      "label": "Innerlinings",
+      "source": "folder_name"
+    },
+    {
+      "slug": "linings",
+      "label": "Linings",
+      "source": "folder_name"
+    },
+    {
+      "slug": "knitting-rib",
+      "label": "Knitting Rib",
+      "source": "folder_name"
+    },
+    {
+      "slug": "lace",
+      "label": "Lace",
+      "source": "folder_name"
+    },
+    {
+      "slug": "mannequins",
+      "label": "Mannequins",
+      "source": "folder_name"
+    },
+    {
+      "slug": "other-garment-accessories",
+      "label": "Other Garment Accessories",
+      "source": "folder_name"
+    },
+    {
+      "slug": "other-sewing-supplies",
+      "label": "Other Sewing Supplies",
+      "source": "folder_name"
+    },
+    {
+      "slug": "patches",
+      "label": "Patches",
+      "source": "folder_name"
+    },
+    {
+      "slug": "rhinestones",
+      "label": "Rhinestones",
+      "source": "folder_name"
+    },
+    {
+      "slug": "ribbons",
+      "label": "Ribbons",
+      "source": "folder_name"
+    },
+    {
+      "slug": "sequins",
+      "label": "Sequins",
+      "source": "folder_name"
+    },
+    {
+      "slug": "sewing-needles",
+      "label": "Sewing Needles",
+      "source": "folder_name"
+    },
+    {
+      "slug": "sewing-threads",
+      "label": "Sewing Threads",
+      "source": "folder_name"
+    },
+    {
+      "slug": "shoulder-pads",
+      "label": "Shoulder Pads",
+      "source": "folder_name"
+    },
+    {
+      "slug": "stoppers",
+      "label": "Stoppers",
+      "source": "folder_name"
+    },
+    {
+      "slug": "tag-guns",
+      "label": "Tag Guns",
+      "source": "folder_name"
+    },
+    {
+      "slug": "tailors-scissors",
+      "label": "Tailor's Scissors",
+      "source": "folder_name"
+    },
+    {
+      "slug": "trimmings",
+      "label": "Trimmings",
+      "source": "folder_name"
+    },
+    {
+      "slug": "underwear-accessories",
+      "label": "Underwear Accessories",
+      "source": "folder_name"
+    },
+    {
+      "slug": "webbing",
+      "label": "Webbing",
+      "source": "folder_name"
+    },
+    {
+      "slug": "zipper-sliders",
+      "label": "Zipper Sliders",
+      "source": "folder_name"
+    },
+    {
+      "slug": "zippers",
+      "label": "Zippers",
+      "source": "folder_name"
+    },
+    {
+      "slug": "hats",
+      "label": "Hats",
+      "source": "folder_name"
+    },
+    {
+      "slug": "caps",
+      "label": "Caps",
+      "source": "folder_name"
+    },
+    {
+      "slug": "lisurewear",
+      "label": "Lisurewear",
+      "source": "folder_name"
+    },
+    {
+      "slug": "mens-clothing",
+      "label": "Men's Clothing",
+      "source": "folder_name"
+    },
+    {
+      "slug": "other-apparel-accessories",
+      "label": "Other Apparel Accessories",
+      "source": "folder_name"
+    },
+    {
+      "slug": "apparel-stock",
+      "label": "Apparel Stock",
+      "source": "folder_name"
+    },
+    {
+      "slug": "other-apparel",
+      "label": "Other Apparel",
+      "source": "folder_name"
+    },
+    {
+      "slug": "other-fashion-accessories",
+      "label": "Other Fashion Accessories",
+      "source": "folder_name"
+    },
+    {
+      "slug": "used-clothes",
+      "label": "Used Clothes",
+      "source": "folder_name"
+    },
+    {
+      "slug": "socks",
+      "label": "Socks",
+      "source": "folder_name"
+    },
+    {
+      "slug": "hoisery",
+      "label": "Hoisery",
+      "source": "folder_name"
+    },
+    {
+      "slug": "underwear",
+      "label": "Underwear",
+      "source": "folder_name"
+    },
+    {
+      "slug": "sleepware",
+      "label": "Sleepware",
+      "source": "folder_name"
+    },
+    {
+      "slug": "uniforms",
+      "label": "Uniforms",
+      "source": "folder_name"
+    },
+    {
+      "slug": "costumes",
+      "label": "Costumes",
+      "source": "folder_name"
+    },
+    {
+      "slug": "wedding-apparel",
+      "label": "Wedding Apparel",
+      "source": "folder_name"
+    },
+    {
+      "slug": "womens-clothing",
+      "label": "Womens Clothing",
+      "source": "folder_name"
+    },
+    {
+      "slug": "pet-food",
+      "label": "Pet food",
+      "source": "folder_name"
+    },
+    {
+      "slug": "dry-food",
+      "label": "Dry Food",
+      "source": "folder_name"
+    },
+    {
+      "slug": "other-pet-food",
+      "label": "Other Pet Food",
+      "source": "folder_name"
+    },
+    {
+      "slug": "pet-health-care",
+      "label": "Pet Health Care",
+      "source": "folder_name"
+    },
+    {
+      "slug": "supplements",
+      "label": "Supplements",
+      "source": "folder_name"
+    },
+    {
+      "slug": "treats",
+      "label": "Treats",
+      "source": "folder_name"
+    },
+    {
+      "slug": "wet-food",
+      "label": "Wet Food",
+      "source": "folder_name"
+    },
+    {
+      "slug": "pet-products",
+      "label": "Pet Products",
+      "source": "folder_name"
+    },
+    {
+      "slug": "pet-leashes",
+      "label": "Pet Leashes",
+      "source": "folder_name"
+    },
+    {
+      "slug": "pet-tracker",
+      "label": "Pet Tracker",
+      "source": "folder_name"
+    },
+    {
+      "slug": "playpens",
+      "label": "Playpens",
+      "source": "folder_name"
+    },
+    {
+      "slug": "middle-east-two-piece-femmes-muslim-dubai-casual-dress",
+      "label": "Middle East Two Piece Femmes Muslim Dubai Casual Dress",
+      "source": "product_name"
+    },
+    {
+      "slug": "zaynab-elegant-womens-abaya-muslim-dress",
+      "label": "Zaynab Elegant Women's Abaya Muslim Dress",
+      "source": "product_name"
+    },
+    {
+      "slug": "pistachio-kernels-fresh-raw-pistachio-nuts-dry-processed-snacks-and-food-ingredients-selected-large-nuts",
+      "label": "Pistachio Kernels Fresh Raw Pistachio Nuts Dry Processed Snacks and Food Ingredients Selected Large Nuts",
+      "source": "product_name"
+    }
+  ],
+  "productTagEdges": [
+    {
+      "productId": "62db52decdd0",
+      "tagSlug": "apparel"
+    },
+    {
+      "productId": "62db52decdd0",
+      "tagSlug": "accessories"
+    },
+    {
+      "productId": "62db52decdd0",
+      "tagSlug": "ethnic-clothing"
+    },
+    {
+      "productId": "62db52decdd0",
+      "tagSlug": "islamic-clothing"
+    },
+    {
+      "productId": "62db52decdd0",
+      "tagSlug": "traditional-muslim-clothing-accessories"
+    },
+    {
+      "productId": "62db52decdd0",
+      "tagSlug": "middle-east-two-piece-femmes-muslim-dubai-casual-dress"
+    },
+    {
+      "productId": "70511cc94432",
+      "tagSlug": "apparel"
+    },
+    {
+      "productId": "70511cc94432",
+      "tagSlug": "accessories"
+    },
+    {
+      "productId": "70511cc94432",
+      "tagSlug": "ethnic-clothing"
+    },
+    {
+      "productId": "70511cc94432",
+      "tagSlug": "islamic-clothing"
+    },
+    {
+      "productId": "70511cc94432",
+      "tagSlug": "traditional-muslim-clothing-accessories"
+    },
+    {
+      "productId": "70511cc94432",
+      "tagSlug": "zaynab-elegant-womens-abaya-muslim-dress"
+    },
+    {
+      "productId": "b3ad3a216d8f",
+      "tagSlug": "pet-supplies"
+    },
+    {
+      "productId": "b3ad3a216d8f",
+      "tagSlug": "pet-food"
+    },
+    {
+      "productId": "b3ad3a216d8f",
+      "tagSlug": "dry-food"
+    },
+    {
+      "productId": "b3ad3a216d8f",
+      "tagSlug": "pistachio-kernels-fresh-raw-pistachio-nuts-dry-processed-snacks-and-food-ingredients-selected-large-nuts"
+    }
+  ],
+  "brands": [
+    {
+      "id": "a0dbcdccaa07",
+      "name": "(Inferred from listing — add brand per product in admin)",
+      "slug": "unassigned",
+      "note": "No brand folders in demo tree; map manually or extend parser."
+    }
+  ]
+}

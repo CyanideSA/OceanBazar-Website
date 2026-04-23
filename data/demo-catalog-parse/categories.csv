@@ -1,0 +1,40 @@
+id,name,slug,depth,parentId,path
+d53201cde18b,"Agriculture, Food & Beverage",agriculture-food-beverage,1,,"Agriculture, Food & Beverage"
+ed469afc00ca,Apparel & Accessories,apparel-accessories,1,,Apparel & Accessories
+ee50a4bd8b2e,Automotive Suppliers & Tools,automotive-suppliers-tools,1,,Automotive Suppliers & Tools
+96f4160fd0f5,Beauty,beauty,1,,Beauty
+831e5f061ff5,Categoies For You,categoies-for-you,1,,Categoies For You
+a9cfefae1358,Commercial Equipment & Machinery,commercial-equipment-machinery,1,,Commercial Equipment & Machinery
+7ed337c49525,Construction & Building Machinery,construction-building-machinery,1,,Construction & Building Machinery
+ec78346e04e7,Construction & Real Estate,construction-real-estate,1,,Construction & Real Estate
+974ea15606df,Consumer Electronics,consumer-electronics,1,,Consumer Electronics
+0d2b86831121,Electrical Components,electrical-components,1,,Electrical Components
+292ac495bda9,Electrical Equipment & Supplies,electrical-equipment-supplies,1,,Electrical Equipment & Supplies
+2c47998ed0f7,Fabrication Services,fabrication-services,1,,Fabrication Services
+735e03169be4,Furniture,furniture,1,,Furniture
+d5872d31189d,Gifts & Crafts,gifts-crafts,1,,Gifts & Crafts
+0b432522e586,Health & medical,health-medical,1,,Health & medical
+e1d67ee5a998,Home & Garden,home-garden,1,,Home & Garden
+20857efbb1cc,Home Appliances,home-appliances,1,,Home Appliances
+73508ce3d9ed,Industrial Machinery,industrial-machinery,1,,Industrial Machinery
+4a8482b14946,"Jewelry, Eyewear & Watches",jewelry-eyewear-watches,1,,"Jewelry, Eyewear & Watches"
+bd14f7e61709,Lights & Lighting,lights-lighting,1,,Lights & Lighting
+46b55cf58f2a,"Luggage, Bags & Cases",luggage-bags-cases,1,,"Luggage, Bags & Cases"
+89515b6714d7,Material Handling,material-handling,1,,Material Handling
+98a07c72f9fd,Packaging & Printing,packaging-printing,1,,Packaging & Printing
+0128ea9e2687,"Parents,  Kids & Toys",parents-kids-toys,1,,"Parents,  Kids & Toys"
+85aa84cf7ca0,Personal Care & Home Care,personal-care-home-care,1,,Personal Care & Home Care
+2f5e6efc6bae,Pet Supplies,pet-supplies,1,,Pet Supplies
+4a24793e4d15,Power Transmission,power-transmission,1,,Power Transmission
+decff8a7fac3,Raw Materials,raw-materials,1,,Raw Materials
+2ad9e3016fa6,Renewable Energy,renewable-energy,1,,Renewable Energy
+56482f1a6c8b,Safety & Security,safety-security,1,,Safety & Security
+532521e12644,School & Office Supplies,school-office-supplies,1,,School & Office Supplies
+68de0852f0e0,Service,service,1,,Service
+9ab05cae0751,Shoes & Accessories,shoes-accessories,1,,Shoes & Accessories
+9adae95a3707,Sports & Entertainment,sports-entertainment,1,,Sports & Entertainment
+c2ac49c19a17,Sportswear & Outdoor Apparel,sportswear-outdoor-apparel,1,,Sportswear & Outdoor Apparel
+aa6c07e9d276,Testing Instrument & Supplies,testing-instrument-supplies,1,,Testing Instrument & Supplies
+d3491f39add9,Tools & Hardware,tools-hardware,1,,Tools & Hardware
+87e10a2dbf85,Vehicle Parts & Accessories,vehicle-parts-accessories,1,,Vehicle Parts & Accessories
+b1d6d94e5d50,Vehicles & Transportation,vehicles-transportation,1,,Vehicles & Transportation

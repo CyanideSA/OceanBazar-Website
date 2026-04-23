@@ -1,0 +1,22 @@
+
+> oceanbazar-api@1.0.0 dev
+> ts-node-dev --respawn --transpile-only src/app.ts
+
+[INFO] 14:54:52 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+
+  Oceanbazar BFF running on http://localhost:4000
+   NODE_ENV: development
+   Core API: http://127.0.0.1:8000
+   DB: postgresql://<credentials>@localhost:5433/oceanbazar?schema=public
+
+[redis] Connected to redis://localhost:6379
+[ERROR] 14:55:31 PrismaClientUnknownRequestError: 
+Invalid `prisma.product.findMany()` invocation in
+C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend\src\routes\products.ts:124:41
+
+  121 const tag = COLLECTION_TAGS[collection as Exclude<CollectionKey, 'latest' | 'top-trending'>];
+  122 
+  123 // Manual overrides
+→ 124 const manual = await prisma.product.findMany(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "42883", message: "operator does not exist: character varying = \"ProductStatus\"", severity: "ERROR", detail: None, column: None, hint: Some("No operator matches the given name and argument types. You might need to add explicit type casts.") }), transient: false })

@@ -1,0 +1,24 @@
+﻿--- Admin endpoints via BFF (4000) ---
+OK  /api/admin/overview
+OK  /api/admin/orders
+OK  /api/admin/tickets
+OK  /api/admin/applications/wholesale
+OK  /api/admin/applications/business-inquiries
+OK  /api/admin/customers
+OK  /api/admin/payments
+OK  /api/admin/chat/conversations
+OK  /api/admin/coupons
+OK  /api/admin/returns
+OK  /api/admin/inventory
+OK  /api/admin/fulfillment/shipments
+OK  /api/admin/team/members
+OK  /api/admin/notifications
+OK  /api/admin/global-settings
+OK  /api/admin/analytics/sales
+
+--- BFF storefront endpoints ---
+OK  /api/products
+OK  /api/categories
+FAIL ERR /api/auth/me
+FAIL ERR /api/tickets
+FAIL ERR /api/orders
