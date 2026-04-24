@@ -501,13 +501,18 @@ router.get('/live/stream', async (req: Request, res: Response) => {
   // Authenticate via query token
   const token = req.query.token as string;
   if (!token) { res.status(401).end(); return; }
+  let tokenValid = false;
   try {
-    const jwt = await import('jsonwebtoken');
-    jwt.default.verify(token, process.env.JWT_ACCESS_SECRET || 'oceanbazar-jwt-secret');
-  } catch {
-    res.status(401).end();
-    return;
+    jwt.verify(token, process.env.JWT_ACCESS_SECRET || 'oceanbazar-jwt-secret');
+    tokenValid = true;
+  } catch { /* try java secret fallback */ }
+  if (!tokenValid) {
+    try {
+      jwt.verify(token, process.env.JWT_SECRET_KEY || 'oceanbazar-secret-key-change-in-production');
+      tokenValid = true;
+    } catch { /* invalid */ }
   }
+  if (!tokenValid) { res.status(401).end(); return; }
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
