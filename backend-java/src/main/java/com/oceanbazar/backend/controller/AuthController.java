@@ -4,12 +4,15 @@ import com.oceanbazar.backend.dto.AuthDtos;
 import com.oceanbazar.backend.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
@@ -18,6 +21,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthController {
     private final AuthService authService;
+    @Value("${app.dev-mode:false}")
+    private boolean devMode;
 
     /** POST /api/auth/signup — original endpoint (kept for backward compat) */
     @PostMapping("/signup")
@@ -100,11 +105,13 @@ public class AuthController {
      */
     @PostMapping("/dev-reset-password")
     public Map<String, Object> devResetPassword(@RequestBody Map<String, String> request) {
+        if (!devMode) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
         String email = request.get("email");
         String newPassword = request.get("newPassword");
         if (email == null || newPassword == null) {
-            throw new org.springframework.web.server.ResponseStatusException(
-                org.springframework.http.HttpStatus.BAD_REQUEST, "email and newPassword required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email and newPassword required");
         }
         authService.devResetPassword(email, newPassword);
         return Map.of("success", true, "message", "Password reset for " + email);

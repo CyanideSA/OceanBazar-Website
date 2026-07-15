@@ -8,6 +8,7 @@ import com.oceanbazar.backend.repository.NotificationRepository;
 import com.oceanbazar.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -28,8 +29,8 @@ public class AdminNotificationService {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final CustomerNotificationService customerNotificationService;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final RedisTemplate<String, Long> redisTemplate;
+    private final ObjectProvider<SimpMessagingTemplate> messagingTemplate;
+    private final ObjectProvider<RedisTemplate<String, Long>> redisTemplate;
 
     private static final String UNREAD_KEY_PREFIX = "admin:unread:";
 
@@ -45,7 +46,10 @@ public class AdminNotificationService {
         }
         n.setReadStatus(true);
         notificationRepository.save(n);
-        redisTemplate.delete(UNREAD_KEY_PREFIX + n.getCreatedByAdminId());
+        RedisTemplate<String, Long> redis = redisTemplate.getIfAvailable();
+        if (redis != null) {
+            redis.delete(UNREAD_KEY_PREFIX + n.getCreatedByAdminId());
+        }
         return n;
     }
 
@@ -57,7 +61,10 @@ public class AdminNotificationService {
             notificationRepository.save(n);
             count++;
         }
-        redisTemplate.delete(redisTemplate.keys(UNREAD_KEY_PREFIX + "*"));
+        RedisTemplate<String, Long> redis = redisTemplate.getIfAvailable();
+        if (redis != null) {
+            redis.delete(redis.keys(UNREAD_KEY_PREFIX + "*"));
+        }
         return count;
     }
 
@@ -90,19 +97,27 @@ public class AdminNotificationService {
         n.setUserId(req.getUserId());
         n.setCreatedByAdminId(actorAdminId);
         notificationRepository.save(n);
-        messagingTemplate.convertAndSend("/topic/admin/notifications", n);
-        redisTemplate.delete(redisTemplate.keys(UNREAD_KEY_PREFIX + "*"));
+        messagingTemplate.ifAvailable(t -> t.convertAndSend("/topic/admin/notifications", n));
+        RedisTemplate<String, Long> redis = redisTemplate.getIfAvailable();
+        if (redis != null) {
+            redis.delete(redis.keys(UNREAD_KEY_PREFIX + "*"));
+        }
         return n;
     }
 
     public long getUnreadCountForAdmin(String adminId) {
+        RedisTemplate<String, Long> redis = redisTemplate.getIfAvailable();
         String key = UNREAD_KEY_PREFIX + adminId;
-        Long cachedCount = redisTemplate.opsForValue().get(key);
-        if (cachedCount != null) {
-            return cachedCount;
+        if (redis != null) {
+            Long cachedCount = redis.opsForValue().get(key);
+            if (cachedCount != null) {
+                return cachedCount;
+            }
         }
         long count = notificationRepository.countUnreadForAudience("admins");
-        redisTemplate.opsForValue().set(key, count, 60, TimeUnit.SECONDS);
+        if (redis != null) {
+            redis.opsForValue().set(key, count, 60, TimeUnit.SECONDS);
+        }
         return count;
     }
 

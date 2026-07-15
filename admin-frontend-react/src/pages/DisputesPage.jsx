@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { 
   FiSearch, FiFilter, FiAlertCircle, FiClock, FiCheckCircle, 
   FiXCircle, FiMoreVertical, FiDownload, FiPlus, FiArrowRight,
-  FiMessageSquare, FiActivity
+  FiMessageSquare, FiActivity, FiX, FiEdit3
 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { getAdminUser } from "../lib/auth";
@@ -33,6 +33,10 @@ export default function DisputesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [detailId, setDetailId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportForm, setReportForm] = useState({ title: '', description: '', priority: 'medium' });
 
   const fetchDisputes = useCallback(async () => {
     setLoading(true);
@@ -52,8 +56,59 @@ export default function DisputesPage() {
 
   const openDetail = async (id) => {
     setDetailId(id);
+    setResolutionNote('');
     const found = items.find(d => d.id === id);
     setDetail(found);
+  };
+
+  const updateDispute = async (status) => {
+    if (!detail) return;
+    setSubmitting(true);
+    try {
+      await adminApi.updateDispute(detail.id, {
+        status,
+        ...(resolutionNote.trim() && { resolution_note: resolutionNote.trim() }),
+      });
+      const label = status === 'resolved' ? 'Dispute resolved' : status === 'rejected' ? 'Dispute rejected' : 'Investigation updated';
+      toast.success(label);
+      fetchDisputes();
+      setDetailId(null);
+    } catch {
+      toast.error('Failed to update dispute');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const saveNote = async () => {
+    if (!detail || !resolutionNote.trim()) { toast.error('Add a note first'); return; }
+    setSubmitting(true);
+    try {
+      await adminApi.updateDispute(detail.id, { resolution_note: resolutionNote.trim() });
+      toast.success('Note saved');
+      setResolutionNote('');
+      fetchDisputes();
+    } catch {
+      toast.error('Failed to save note');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const createReport = async () => {
+    if (!reportForm.title.trim()) { toast.error('Title required'); return; }
+    setSubmitting(true);
+    try {
+      await adminApi.createDispute({ title: reportForm.title, description: reportForm.description, priority: reportForm.priority, status: 'investigating' });
+      toast.success('Internal report created');
+      setShowReport(false);
+      setReportForm({ title: '', description: '', priority: 'medium' });
+      fetchDisputes();
+    } catch {
+      toast.error('Failed to create report');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const filteredDisputes = useMemo(() => {
@@ -79,7 +134,7 @@ export default function DisputesPage() {
           <p className="text-crm-text-dim text-sm">Handle customer complaints and order disputes</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="crm-btn crm-btn-primary">
+          <button className="crm-btn crm-btn-primary" onClick={() => setShowReport(true)}>
             <FiPlus /> Internal Report
           </button>
         </div>
@@ -272,16 +327,36 @@ export default function DisputesPage() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">Internal / Resolution Note</label>
-                      <textarea 
-                        className="crm-input min-h-[120px] bg-crm-bg" 
+                      <textarea
+                        className="crm-input min-h-[120px] bg-crm-bg"
                         placeholder="Detail the steps taken to investigate or the terms of resolution..."
+                        value={resolutionNote}
+                        onChange={e => setResolutionNote(e.target.value)}
                       />
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button className="crm-btn crm-btn-primary flex-1 py-2">Update Investigation</button>
-                      <button className="crm-btn border-crm-success/30 text-crm-success hover:bg-crm-success-dim flex-1 py-2">Mark Resolved</button>
+                      <button
+                        className="crm-btn crm-btn-primary flex-1 py-2"
+                        disabled={submitting}
+                        onClick={() => resolutionNote.trim() ? saveNote() : updateDispute('investigating')}
+                      >
+                        <FiEdit3 size={14} /> Update Investigation
+                      </button>
+                      <button
+                        className="crm-btn border-crm-success/30 text-crm-success hover:bg-crm-success-dim flex-1 py-2"
+                        disabled={submitting}
+                        onClick={() => updateDispute('resolved')}
+                      >
+                        <FiCheckCircle size={14} /> Mark Resolved
+                      </button>
                     </div>
-                    <button className="crm-btn w-full border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim py-2">Reject Dispute</button>
+                    <button
+                      className="crm-btn w-full border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim py-2"
+                      disabled={submitting}
+                      onClick={() => updateDispute('rejected')}
+                    >
+                      <FiXCircle size={14} /> Reject Dispute
+                    </button>
                   </div>
                 </div>
 
@@ -299,6 +374,66 @@ export default function DisputesPage() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Internal Report Modal */}
+      {showReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReport(false)} />
+          <div className="relative w-full max-w-lg bg-crm-bg-card border border-crm-border rounded-2xl shadow-2xl z-10">
+            <div className="flex items-center justify-between p-6 border-b border-crm-border">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-crm-warning-dim text-crm-warning"><FiAlertCircle size={20} /></div>
+                <div>
+                  <h3 className="font-bold text-crm-text-bright">Create Internal Report</h3>
+                  <p className="text-xs text-crm-text-dim">Log an internal dispute or escalation issue</p>
+                </div>
+              </div>
+              <button onClick={() => setShowReport(false)} className="p-1.5 hover:bg-crm-bg-hover rounded-lg text-crm-text-dim"><FiX /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Title <span className="text-crm-danger">*</span></label>
+                <input
+                  className="crm-input w-full"
+                  placeholder="Brief subject of the internal report"
+                  value={reportForm.title}
+                  onChange={e => setReportForm(f => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Description</label>
+                <textarea
+                  className="crm-input w-full min-h-[100px] resize-none"
+                  placeholder="Provide context and details..."
+                  value={reportForm.description}
+                  onChange={e => setReportForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Priority</label>
+                <select
+                  className="crm-input w-full"
+                  value={reportForm.priority}
+                  onChange={e => setReportForm(f => ({ ...f, priority: e.target.value }))}
+                >
+                  {Object.entries(PRIORITY_MAP).map(([k]) => <option key={k} value={k}>{k.charAt(0).toUpperCase() + k.slice(1)}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button className="crm-btn flex-1" onClick={() => setShowReport(false)}>Cancel</button>
+              <button
+                className="crm-btn crm-btn-primary flex-1"
+                onClick={createReport}
+                disabled={submitting || !reportForm.title.trim()}
+              >
+                {submitting ? <span className="animate-spin h-4 w-4 border-b-2 border-white rounded-full inline-block" /> : <FiPlus />}
+                {submitting ? 'Creating...' : 'Create Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

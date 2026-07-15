@@ -1,14 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
-import { buildOrderLinesFromCart } from '../utils/lineItemPricing';
-import { validateCheckout, type CheckoutLineItem } from '../utils/checkoutValidation';
-import { toPricingRow, applyVariantOverride } from '../utils/lineItemPricing';
-import { type CouponData } from '../utils/couponRules';
+import {
+  validateCheckoutWithCore,
+  fulfillInventoryForOrder,
+  toNumber,
+} from '../clients/commerce-client';
 import { getTier } from '../utils/obPoints';
 import { generateEntityId, formatOrderNumber } from '../utils/hexId';
 import { earnPoints, redeemPoints, getBalance } from '../services/obPointsService';
 import { routeParam } from '../utils/params';
+import { emitAdminEvent } from '../lib/adminEvents';
+import { publishDomainEvent } from '../events/publisher';
+import { COD_FEE } from '../utils/codRules';
+import { appLog } from '../lib/appLog';
+
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -60,93 +66,56 @@ router.post('/place', async (req: Request, res: Response) => {
     return;
   }
 
-  // ── Resolve coupon ───────────────────────────────────────────────────────
-  let couponData: CouponData | null = null;
   let resolvedCouponId: number | null = null;
-
   if (couponCode || couponId) {
     const coupon = couponCode
       ? await prisma.coupon.findUnique({ where: { code: couponCode.trim().toUpperCase() } })
       : couponId
         ? await prisma.coupon.findUnique({ where: { id: couponId } })
         : null;
-
-    if (coupon) {
-      resolvedCouponId = coupon.id;
-      couponData = {
-        id: coupon.id,
-        code: coupon.code,
-        type: coupon.type as 'percent' | 'fixed' | 'free_shipping',
-        value: Number(coupon.value),
-        minOrder: Number(coupon.minOrder),
-        maxUses: coupon.maxUses,
-        usedCount: coupon.usedCount,
-        startsAt: coupon.startsAt,
-        expiresAt: coupon.expiresAt,
-        active: coupon.active,
-      };
-    }
+    if (coupon) resolvedCouponId = coupon.id;
   }
 
-  // ── Load user + OB balance ──────────────────────────────────────────────
   const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.userId } });
   const obBalance = await getBalance(req.user!.userId);
-  const obTier = getTier(Number(user.lifetimeSpend));
-  const lifetimeSpend = Number(user.lifetimeSpend);
 
-  // ── Pending COD count ───────────────────────────────────────────────────
-  const pendingCodCount = await prisma.order.count({
-    where: {
-      userId: req.user!.userId,
-      paymentMethod: 'cod',
-      status: { in: ['pending', 'confirmed', 'processing'] },
-    },
-  });
-
-  // ── Build checkout line items ───────────────────────────────────────────
-  const checkoutItems: CheckoutLineItem[] = cart.items.map((item) => {
-    const retail = item.product.pricing.find((p) => p.customerType === 'retail');
-    const wholesale = item.product.pricing.find((p) => p.customerType === 'wholesale');
-    const ov = item.variant?.price_override;
-    const retailRow = applyVariantOverride(toPricingRow(retail), ov);
-    const wholesaleRow = applyVariantOverride(toPricingRow(wholesale), ov);
-
-    return {
-      productId: item.productId,
-      variantId: item.variantId ?? undefined,
-      productTitle: item.product.titleEn,
-      quantity: item.quantity,
-      stock: item.variant?.stock ?? item.product.stock,
-      moq: item.product.moq,
-      pricing: {
-        retail: retailRow ?? { price: 0 },
-        wholesale: wholesaleRow,
-      },
-    };
-  });
-
-  // ── Validate everything ─────────────────────────────────────────────────
-  const result = validateCheckout({
-    userType: req.user!.userType,
-    items: checkoutItems,
-    paymentMethod,
-    coupon: couponData,
-    obPointsToRedeem,
-    obBalance,
-    obTier,
-    lifetimeSpend,
-    codContext: {
-      orderTotal: 0, // overridden inside validateCheckout
-      pendingCodCount,
-      codAbuse: false, // future: read from user flags
-      district: address.district,
-    },
-  });
-
-  if (!result.valid) {
-    res.status(400).json({ errors: result.errors });
+  // ── Authoritative pricing / MOQ / stock / COD via Java core ─────────────
+  let coreValidation;
+  try {
+    coreValidation = await validateCheckoutWithCore(req, {
+      paymentMethod,
+      couponCode: couponCode?.trim().toUpperCase(),
+      obPointsToRedeem,
+      obBalance,
+      shippingAddressId,
+    });
+  } catch (err: unknown) {
+    const ax = err as { response?: { status?: number; data?: unknown } };
+    res.status(ax.response?.status || 502).json(ax.response?.data ?? { error: 'Checkout validation unavailable' });
     return;
   }
+
+  if (!coreValidation.valid) {
+    res.status(400).json({ errors: coreValidation.errors });
+    return;
+  }
+
+  const result = {
+    totals: {
+      subtotal: toNumber(coreValidation.totals?.subtotal ?? 0),
+      discount: toNumber(coreValidation.totals?.discount ?? 0),
+      gst: toNumber(coreValidation.totals?.gst ?? 0),
+      shippingFee: toNumber(coreValidation.totals?.shippingFee ?? 0),
+      serviceFee: toNumber(coreValidation.totals?.serviceFee ?? 0),
+      obDiscount: toNumber(coreValidation.totals?.obDiscount ?? coreValidation.obDiscount ?? 0),
+      total: toNumber(coreValidation.totals?.total ?? 0),
+    },
+    obPointsEarned: coreValidation.obPointsEarned ?? 0,
+    codAllowed: coreValidation.codAllowed ?? true,
+  };
+
+  const codFeeAmount = paymentMethod === 'cod' ? COD_FEE : 0;
+  const finalTotal = result.totals.total + codFeeAmount;
 
   // ── Persist OB redemption ───────────────────────────────────────────────
   let obDiscount = 0;
@@ -155,73 +124,119 @@ router.post('/place', async (req: Request, res: Response) => {
     obDiscount = rd.bdtValue;
   }
 
-  // ── Persist coupon usage ────────────────────────────────────────────────
-  if (resolvedCouponId) {
-    await prisma.coupon.update({
-      where: { id: resolvedCouponId },
-      data: { usedCount: { increment: 1 } },
+  const orderItems = coreValidation.lines.map((line) => ({
+    productId: line.productId,
+    variantId: line.variantId ?? undefined,
+    productTitle: line.productTitle,
+    unitPrice: toNumber(line.unitPrice),
+    quantity: line.quantity,
+    lineTotal: toNumber(line.lineTotal),
+    discountPct: toNumber(line.discountPct ?? 0),
+  }));
+
+  const orderId = generateEntityId();
+  // ── Persist order/coupon/stock/cart atomically ──────────────────────────
+  const order = await prisma.$transaction(async (tx) => {
+    if (resolvedCouponId) {
+      await tx.coupon.update({
+        where: { id: resolvedCouponId },
+        data: { usedCount: { increment: 1 } },
+      });
+    }
+
+    const createdOrder = await tx.order.create({
+      data: {
+        id: orderId,
+        orderNumber: formatOrderNumber(orderId),
+        userId: req.user!.userId,
+        customerType: req.user!.userType,
+        subtotal: result.totals.subtotal,
+        discount: result.totals.discount,
+        gst: result.totals.gst,
+        shippingFee: result.totals.shippingFee,
+        serviceFee: result.totals.serviceFee,
+        obPointsUsed: obPointsToRedeem,
+        obDiscount: result.totals.obDiscount,
+        couponId: resolvedCouponId,
+        total: finalTotal,
+        paymentMethod: paymentMethod as
+          | 'cod' | 'bkash' | 'nagad' | 'rocket' | 'upay' | 'sslcommerz' | 'installment',
+        shippingAddressId,
+        notes,
+        ...(codFeeAmount > 0 ? { codFee: codFeeAmount } : {}),
+        items: { create: orderItems },
+        timeline: {
+          create: {
+            status: 'pending',
+            note: 'Order placed',
+            actorType: 'customer',
+            actorId: req.user!.userId,
+          },
+        },
+      },
+      include: { items: true, timeline: true },
+    });
+
+    await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+    return createdOrder;
+  });
+
+  try {
+    await fulfillInventoryForOrder(
+      req,
+      order.id,
+      order.items.map((i) => ({
+        productId: i.productId,
+        variantId: i.variantId ?? undefined,
+        quantity: i.quantity,
+      }))
+    );
+  } catch (invErr) {
+    appLog('error', 'inventory_fulfill_failed', {
+      orderId: order.id,
+      detail: invErr instanceof Error ? invErr.message : String(invErr),
     });
   }
 
-  // ── Build order lines ───────────────────────────────────────────────────
-  const orderItems = buildOrderLinesFromCart(cart.items, req.user!.userType);
-
-  // ── Create order ────────────────────────────────────────────────────────
-  const orderId = generateEntityId();
-  const order = await prisma.order.create({
-    data: {
-      id: orderId,
-      orderNumber: formatOrderNumber(orderId),
-      userId: req.user!.userId,
-      customerType: req.user!.userType,
-      subtotal: result.totals.subtotal,
-      discount: result.totals.discount,
-      gst: result.totals.gst,
-      shippingFee: result.totals.shippingFee,
-      serviceFee: result.totals.serviceFee,
-      obPointsUsed: obPointsToRedeem,
-      obDiscount: result.totals.obDiscount,
-      couponId: resolvedCouponId,
-      total: result.totals.total,
-      paymentMethod: paymentMethod as
-        | 'cod' | 'bkash' | 'nagad' | 'rocket' | 'upay' | 'sslcommerz' | 'installment',
-      shippingAddressId,
-      notes,
-      items: { create: orderItems },
-      timeline: {
-        create: {
-          status: 'pending',
-          note: 'Order placed',
-          actorType: 'customer',
-          actorId: req.user!.userId,
-        },
-      },
-    },
-    include: { items: true, timeline: true },
-  });
-
-  // ── Clear cart ──────────────────────────────────────────────────────────
-  await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-
-  // ── Send confirmation email + SMS ─────────────────────────────────
+  // ── Send confirmation email + SMS + WhatsApp ──────────────────────────────
   try {
     const { sendOrderConfirmation } = await import('../services/emailService');
-    const { sendOrderConfirmationSms } = await import('../services/smsService');
+    const { sendOrderConfirmationSms, sendOrderConfirmationWhatsApp } = await import('../services/smsService');
     if (user.email) sendOrderConfirmation(user.email, { orderNumber: order.orderNumber, total: Number(order.total), items: order.items.map(i => ({ productTitle: i.productTitle, quantity: i.quantity, unitPrice: Number(i.unitPrice) })) }).catch(() => {});
-    if (user.phone) sendOrderConfirmationSms(user.phone, order.orderNumber).catch(() => {});
+    if (user.phone) {
+      sendOrderConfirmationSms(user.phone, order.orderNumber).catch(() => {});
+      sendOrderConfirmationWhatsApp(user.phone, order.orderNumber, Number(order.total), order.items.map(i => ({ productTitle: i.productTitle, quantity: i.quantity }))).catch(() => {});
+    }
   } catch { /* non-fatal */ }
+
 
   // ── OB points: earn + tier upgrade ──────────────────────────────────────
   const onlineMethods = ['bkash', 'nagad', 'rocket', 'upay', 'sslcommerz'];
   const needsOnlinePayment = onlineMethods.includes(paymentMethod);
 
   let pointsEarned = 0;
-  let tierUpgrade = result.tierUpgrade;
+  let tierUpgrade: string | null = null;
   if (paymentMethod === 'cod') {
     const ep = await earnPoints(req.user!.userId, orderId, result.totals.total);
     pointsEarned = ep.pointsEarned;
-    tierUpgrade = ep.tierUpgrade;
+    tierUpgrade = ep.tierUpgrade.upgrades ? ep.tierUpgrade.to : null;
+  } else {
+    pointsEarned = result.obPointsEarned;
   }
+
+  // Notify admin CRM of new order
+  try { emitAdminEvent('admin:order:new', { orderId: order.id, orderNumber: order.orderNumber, total: Number(order.total), userId: req.user!.userId }); } catch { /* non-fatal */ }
+  try {
+    const { alertNewOrder } = await import('../services/teamsService');
+    alertNewOrder(order.orderNumber, Number(order.total), user.name).catch(() => {});
+  } catch { /* non-fatal */ }
+
+  void publishDomainEvent('OrderPlaced', {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    total: Number(order.total),
+    paymentMethod,
+  }, { aggregateId: order.id, userId: req.user!.userId });
 
   res.status(201).json({
     order,
@@ -229,6 +244,30 @@ router.post('/place', async (req: Request, res: Response) => {
     pointsEarned,
     tierUpgrade,
     codAllowed: result.codAllowed,
+  });
+});
+
+// POST /api/orders/track-public — no auth required
+router.post('/track-public', async (req: Request, res: Response) => {
+  const { orderNumber, phone } = req.body as { orderNumber: string; phone: string };
+  if (!orderNumber || !phone) { res.status(400).json({ error: 'orderNumber and phone required' }); return; }
+  const order = await prisma.order.findFirst({
+    where: { orderNumber, user: { phone } },
+    include: {
+      timeline: { orderBy: { createdAt: 'asc' } },
+      shipments: { select: { carrier: true, trackingNumber: true, estimatedDelivery: true, status: true } },
+      items: { select: { productTitle: true, quantity: true, unitPrice: true } },
+    },
+  });
+  if (!order) { res.status(404).json({ error: 'Order not found. Check order number and phone.' }); return; }
+  res.json({
+    orderNumber: order.orderNumber,
+    status: order.status,
+    createdAt: order.createdAt,
+    total: Number(order.total),
+    items: order.items,
+    timeline: order.timeline,
+    shipments: order.shipments,
   });
 });
 
@@ -291,6 +330,7 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
   const id = routeParam(req.params.id);
   const order = await prisma.order.findFirst({
     where: { id, userId: req.user!.userId },
+    include: { items: true },
   });
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
   if (!['pending', 'confirmed'].includes(order.status)) {
@@ -300,7 +340,54 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
   await prisma.orderTimeline.create({
     data: { orderId: order.id, status: 'cancelled', note: 'Cancelled by customer', actorType: 'customer', actorId: req.user!.userId },
   });
+  // Restore stock
+  await Promise.all(
+    order.items.map(async (item) => {
+      try {
+        await prisma.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity } } });
+        if (item.variantId) {
+          await prisma.productVariant.updateMany({ where: { id: item.variantId }, data: { stock: { increment: item.quantity } } });
+        }
+      } catch { /* non-fatal */ }
+    })
+  );
   res.json({ message: 'Order cancelled' });
+});
+
+// POST /api/orders/:id/reorder — re-add all items from a past order to cart
+router.post('/:id/reorder', async (req: Request, res: Response) => {
+  const id = routeParam(req.params.id);
+  const userId = req.user!.userId;
+
+  const order = await prisma.order.findFirst({
+    where: { id, userId },
+    include: { items: { include: { product: { include: { pricing: true } } } } },
+  });
+  if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+
+  let cart = await prisma.cart.findUnique({ where: { userId } });
+  if (!cart) { cart = await prisma.cart.create({ data: { userId } }); }
+
+  const userType = req.user!.userType as string;
+  let addedCount = 0;
+
+  for (const item of order.items) {
+    if (item.product.stock <= 0) continue;
+    const pricing = item.product.pricing.find((p) => p.customerType === userType)
+      ?? item.product.pricing.find((p) => p.customerType === 'retail');
+    if (!pricing) continue;
+    const existing = await prisma.cartItem.findFirst({ where: { cartId: cart.id, productId: item.productId, variantId: item.variantId } });
+    if (existing) {
+      await prisma.cartItem.update({ where: { id: existing.id }, data: { quantity: { increment: item.quantity } } });
+    } else {
+      await prisma.cartItem.create({
+        data: { cartId: cart.id, productId: item.productId, variantId: item.variantId, quantity: item.quantity, unitPrice: pricing.price, customerType: userType as any },
+      });
+    }
+    addedCount++;
+  }
+
+  res.json({ message: `${addedCount} item(s) added to cart`, addedCount });
 });
 
 export default router;

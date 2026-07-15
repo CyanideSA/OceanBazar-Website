@@ -1,7 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { io } from '../../app';
+import { randomBytes } from 'crypto';
+import multer from 'multer';
+import { emitToRoom, emitToUser } from '../../lib/adminEvents';
 import { routeParam } from '../../utils/params';
+import { uploadImage } from '../../services/cloudinaryService';
+import { sendSupportReply } from '../../services/emailService';
+import { logCommunication } from '../../services/communicationLogService';
+
+const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -31,6 +38,50 @@ router.get('/', async (req: Request, res: Response) => {
   ]);
 
   res.json({ tickets, total, page: parseInt(page), limit });
+});
+
+// GET /api/admin/tickets/stats — must be before /:id
+router.get('/stats', async (_req: Request, res: Response) => {
+  const counts = await prisma.ticket.groupBy({ by: ['status'], _count: { status: true } });
+  const stats: Record<string, number> = {};
+  for (const c of counts) { stats[String(c.status)] = c._count.status; }
+  res.json(stats);
+});
+
+// POST /api/admin/tickets — admin creates a ticket on behalf of a user
+router.post('/', async (req: Request, res: Response) => {
+  const { userId, subject, category, priority, message } = req.body as {
+    userId: string; subject: string; category: string; priority?: string; message?: string;
+  };
+  if (!userId || !subject || !category) {
+    res.status(400).json({ error: 'userId, subject, and category are required' });
+    return;
+  }
+  const ticket = await prisma.ticket.create({
+    data: {
+      id: randomBytes(4).toString('hex'),
+      userId,
+      subject,
+      category: category as 'payment' | 'delivery' | 'product' | 'other',
+      priority: (priority || 'medium') as 'low' | 'medium' | 'high' | 'urgent',
+      status: 'open',
+    },
+  });
+  if (message?.trim()) {
+    await prisma.ticketMessage.create({
+      data: {
+        ticketId: ticket.id,
+        senderType: 'admin',
+        senderId: String(req.admin!.adminId),
+        message: message.trim(),
+        attachments: [],
+      },
+    });
+  }
+  await prisma.auditLog.create({
+    data: { adminId: req.admin!.adminId, action: 'CREATE_TICKET', targetType: 'ticket', targetId: ticket.id, details: { subject, category } },
+  });
+  res.status(201).json({ ticket });
 });
 
 // GET /api/admin/tickets/:id
@@ -97,8 +148,33 @@ router.post('/:id/reply', async (req: Request, res: Response) => {
     },
   });
 
-  io.to(`ticket:${ticket.id}`).emit('ticket:message', { ticketId: ticket.id, message: msg, fromAdmin: true });
-  io.to('admin:chat').emit('ticket:message', { ticketId: ticket.id, message: msg, fromAdmin: true });
+  emitToUser(ticket.userId, 'ticket:message', { ticketId: ticket.id, message: msg, fromAdmin: true });
+  emitToRoom('admin:chat', 'ticket:message', { ticketId: ticket.id, message: msg, fromAdmin: true });
+
+  // Notify the customer by email (Graph/SMTP) and record on the CRM timeline.
+  if (req.body.notifyEmail !== false) {
+    const user = await prisma.user.findUnique({
+      where: { id: ticket.userId },
+      select: { email: true },
+    });
+    if (user?.email) {
+      void sendSupportReply(user.email, ticket.subject, ticket.id, String(req.body.message || ''))
+        .catch(() => {});
+    }
+    void logCommunication({
+      customerId: ticket.userId,
+      channel: 'email',
+      direction: 'outbound',
+      subject: `Re: ${ticket.subject}`,
+      body: String(req.body.message || ''),
+      toAddress: user?.email ?? null,
+      status: 'sent',
+      provider: 'microsoft_graph',
+      refType: 'ticket_reply',
+      refId: ticket.id,
+      adminId: req.admin?.adminId ?? null,
+    });
+  }
 
   res.status(201).json({ message: msg });
 });
@@ -113,10 +189,17 @@ router.post('/:id/seen', async (req: Request, res: Response) => {
     data: { seenAt: new Date() },
   });
 
-  io.to(`ticket:${ticket.id}`).emit('ticket:seen', { ticketId: ticket.id, seenBy: 'admin' });
-  io.to('admin:chat').emit('ticket:seen', { ticketId: ticket.id, seenBy: 'admin' });
+  emitToUser(ticket.userId, 'ticket:seen', { ticketId: ticket.id, seenBy: 'admin' });
+  emitToRoom('admin:chat', 'ticket:seen', { ticketId: ticket.id, seenBy: 'admin' });
 
   res.json({ ok: true });
+});
+
+// POST /api/admin/tickets/upload — upload file attachment for a ticket
+router.post('/upload', memUpload.single('file'), async (req: Request, res: Response) => {
+  if (!req.file) { res.status(400).json({ error: 'No file' }); return; }
+  const result = await uploadImage(req.file.buffer, 'oceanbazar/tickets');
+  res.json(result);
 });
 
 export default router;

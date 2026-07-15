@@ -3,11 +3,14 @@
 # Architecture:
 #   Nginx (:80/:443) → reverse-proxies everything
 #   Next.js Storefront (:3000) → Node.js BFF (:4000) → Spring Boot Core API (:8000) → PostgreSQL + Redis
-#   Vite Admin CRM (:5173) → Node.js BFF (:4000) → Spring Boot Core API (:8000)
+#   Vite Admin CRM (:4000 public, :5173 alt) → Node.js BFF (:4000 internal) → Spring Boot Core API (:8000)
 #
 # Usage:
 #   Development:  docker compose up postgres redis java_api api
-#   Full stack:   docker compose --profile full up -d
+#   Full stack:   docker compose --profile full up -d   (baked storefront/admin — rebuild image after UI edits)
+#   Live UI:      npm run docker:live                       (bind-mount ./frontend + ./admin-frontend-react)
+#   AWS map:      docs/AWS_CLOUDFRONT_ECS_DEPLOYMENT.md
+#   Hetzner:      docs/HETZNER_DEPLOYMENT.md
 #   Production:   docker compose --profile full --profile production up -d
 #
 # Host port 5433 avoids conflict with a local PostgreSQL install on Windows/macOS.
@@ -36,10 +39,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: oceanbazar_redis
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     ports:
       - '${REDIS_HOST_PORT:-6399}:6379'
     volumes:
       - redis_data:/data
+      - ./data/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
@@ -53,9 +58,9 @@ services:
       context: ./backend-java
       dockerfile: Dockerfile
     container_name: oceanbazar_java_api
-    ports:
-      - '8000:8000'
+    # No host port — BFF reaches java_api:8000 on the compose network (avoids Windows port 8000/8001 reservation).
     environment:
+      PORT: 8000
       SERVER_PORT: 8000
       DATABASE_URL: jdbc:postgresql://postgres:5432/oceanbazar
       DB_USER: ${POSTGRES_USER:-oceanbazar}
@@ -68,12 +73,27 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-oceanbazar-secret-key-change-in-production}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:4000}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-oceanbazar_dev_access_secret_change_in_production_32chars}
+      SPRING_APPLICATION_JSON: '{"jwt":{"access-secret":"${JWT_ACCESS_SECRET:-oceanbazar_dev_access_secret_change_in_production_32chars}"}}'
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4000,http://127.0.0.1:4000,http://127.0.0.1:5123,http://localhost:5123}
+      WEBSOCKET_ALLOW_ALL_ORIGINS: "true"
+      WEBSOCKET_ALLOWED_ORIGIN_PATTERNS: "http://localhost:*,http://127.0.0.1:*,http://[::1]:*"
+      WEBSOCKET_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4000,http://127.0.0.1:4000,http://127.0.0.1:5123,http://localhost:5123"
       PUBLIC_BASE_URL: ${JAVA_PUBLIC_BASE_URL:-http://localhost:8000}
+      SERVER_FORWARD_HEADERS_STRATEGY: ${SERVER_FORWARD_HEADERS_STRATEGY:-framework}
       UPLOAD_DIR: /app/uploads
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-dmtafp1fi}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-487252925521551}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-_rHB9A85bxjgZqzcNZb0ja9vBk8}
+      # No OTLP collector in this stack; tracing can slow or confuse startup in containers.
+      MANAGEMENT_TRACING_ENABLED: "false"
+      # Prisma owns DDL; Hibernate validate fails on char(8) vs varchar (e.g. analytics_events.user_id).
+      SPRING_JPA_HIBERNATE_DDL_AUTO: "none"
+      # Local Neon data sync: do not re-run Flyway against imported schema.
+      SPRING_FLYWAY_ENABLED: "false"
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE:-false}
+      MAINTENANCE_BYPASS_TOKEN: ${MAINTENANCE_BYPASS_TOKEN:-}
+      MAINTENANCE_RETRY_AFTER: ${MAINTENANCE_RETRY_AFTER:-3600}
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,12 +102,15 @@ services:
     volumes:
       - java_uploads_data:/app/uploads
     restart: unless-stopped
+    # Use /api/health (simple controller). /actuator/health aggregates DB/Redis and can stay 503
+    # (curl -sf fails) while the JVM is still starting or a probe flaps, blocking Compose --wait.
     healthcheck:
-      test: ['CMD-SHELL', 'curl -sf http://localhost:8000/actuator/health || exit 1']
-      interval: 30s
+      # Use 127.0.0.1 — "localhost" often resolves to ::1 first; Tomcat may not listen on IPv6.
+      test: ['CMD-SHELL', 'curl -sf http://127.0.0.1:8000/api/health || exit 1']
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 12
+      start_period: 240s
 
   # ─── Node.js BFF (search, cache, realtime, auth, proxy) ────────────────────
   api:
@@ -95,10 +118,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: oceanbazar_bff
+    # BFF is reached via admin CRM proxy on host :4000; use :4001 for direct BFF access.
     ports:
-      - '4000:4000'
+      - '4001:4000'
     environment:
+      DEBUG_LOG_PATH: /debug-logs/debug-9a9989.log
+      DEBUG_RUN_ID: post-fix
       NODE_ENV: ${NODE_ENV:-development}
+      # Local Docker: set true for password-only login. false = real Google Authenticator (default).
+      ADMIN_2FA_ONBOARDING_BYPASS: ${ADMIN_2FA_ONBOARDING_BYPASS:-false}
       PORT: 4000
       DATABASE_URL: postgresql://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar
       REDIS_URL: redis://redis:6379
@@ -110,7 +138,9 @@ services:
       JWT_REFRESH_EXPIRES: ${JWT_REFRESH_EXPIRES:-7d}
       OTP_TERMINAL_ONLY: ${OTP_TERMINAL_ONLY:-true}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
-      ADMIN_URL: ${ADMIN_URL:-http://localhost:5173}
+      ADMIN_URL: ${ADMIN_URL:-http://localhost:4000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
       UPLOAD_DIR: /app/uploads
       PUBLIC_BASE_URL: ${BFF_PUBLIC_BASE_URL:-http://localhost:4000}
       # Email
@@ -119,6 +149,46 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-"Oceanbazar <noreply@oceanbazar.com>"}
+      # Microsoft 365 (Graph API)
+      MS_TENANT_ID: ${MS_TENANT_ID:-}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
+      MS_SENDER_ADDRESSES: ${MS_SENDER_ADDRESSES:-}
+      MS_DEFAULT_SENDER: ${MS_DEFAULT_SENDER:-}
+      MS_SUPPORT_SENDER: ${MS_SUPPORT_SENDER:-}
+      MS_SSO_CLIENT_ID: ${MS_SSO_CLIENT_ID:-}
+      MS_SSO_CLIENT_SECRET: ${MS_SSO_CLIENT_SECRET:-}
+      MS_SSO_REDIRECT_URI: ${MS_SSO_REDIRECT_URI:-}
+      CONTENT_ID_APP_URL: ${CONTENT_ID_APP_URL:-}
+      MS_CONTENT_ID_REDIRECT_URI: ${MS_CONTENT_ID_REDIRECT_URI:-}
+      ADMIN_SSO_ALLOWED_DOMAINS: ${ADMIN_SSO_ALLOWED_DOMAINS:-oceanbazar.com.bd,oceanbazar.com}
+      ADMIN_GOOGLE_CLIENT_ID: ${ADMIN_GOOGLE_CLIENT_ID:-}
+      ADMIN_GOOGLE_CLIENT_SECRET: ${ADMIN_GOOGLE_CLIENT_SECRET:-}
+      ADMIN_GOOGLE_REDIRECT_URI: ${ADMIN_GOOGLE_REDIRECT_URI:-}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-oceanbazar_meta_verify}
+      META_PAGE_ACCESS_TOKEN: ${META_PAGE_ACCESS_TOKEN:-}
+      META_PAGE_ID: ${META_PAGE_ID:-}
+      META_IG_ID: ${META_IG_ID:-}
+      META_OAUTH_REDIRECT_URI: ${META_OAUTH_REDIRECT_URI:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_TEMPLATE_ORDER: ${WHATSAPP_TEMPLATE_ORDER:-}
+      WHATSAPP_TEMPLATE_SHIPPING: ${WHATSAPP_TEMPLATE_SHIPPING:-}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      GA4_PROPERTY_ID: ${GA4_PROPERTY_ID:-}
+      GSC_SITE_URL: ${GSC_SITE_URL:-}
+      GMC_MERCHANT_ID: ${GMC_MERCHANT_ID:-}
+      RECAPTCHA_PROJECT_ID: ${RECAPTCHA_PROJECT_ID:-}
+      RECAPTCHA_API_KEY: ${RECAPTCHA_API_KEY:-}
+      # AI / ML service
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml_service:8100}
+      ML_SERVICE_API_KEY: ${ML_SERVICE_API_KEY:-}
+      ML_SERVICE_TIMEOUT_MS: ${ML_SERVICE_TIMEOUT_MS:-20000}
+      ML_RECOMPUTE_CRON: ${ML_RECOMPUTE_CRON:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Firebase
       FIREBASE_API_KEY: ${FIREBASE_API_KEY:-}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
@@ -138,21 +208,61 @@ services:
       PAPERFLY_USERNAME: ${PAPERFLY_USERNAME:-}
       PAPERFLY_PASSWORD: ${PAPERFLY_PASSWORD:-}
       PAPERFLY_KEY: ${PAPERFLY_KEY:-}
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE:-false}
+      MAINTENANCE_BYPASS_TOKEN: ${MAINTENANCE_BYPASS_TOKEN:-}
+      MAINTENANCE_RETRY_AFTER: ${MAINTENANCE_RETRY_AFTER:-3600}
+      MAINTENANCE_ALLOW_HEALTH_PROBE: ${MAINTENANCE_ALLOW_HEALTH_PROBE:-true}
+      ANALYTICS_CRON: ${ANALYTICS_CRON:-true}
+      EVENT_DLQ_CRON: ${EVENT_DLQ_CRON:-true}
+      DLQ_WORKER: ${DLQ_WORKER:-true}
+      EVENT_DLQ_POLL_MS: ${EVENT_DLQ_POLL_MS:-300000}
+      EVENT_DLQ_BATCH: ${EVENT_DLQ_BATCH:-25}
+      ANALYTICS_NIGHTLY_HOUR: ${ANALYTICS_NIGHTLY_HOUR:-2}
+      WEBSOCKET_STOMP_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       java_api:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
+      - ./.debug-logs:/debug-logs
     restart: unless-stopped
     healthcheck:
-      test: ['CMD-SHELL', 'curl -sf http://localhost:4000/api/health || exit 1']
+      test: ['CMD-SHELL', 'curl -sf http://127.0.0.1:4000/api/health || exit 1']
       interval: 15s
-      timeout: 5s
-      retries: 3
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ─── Python ML Service (churn, demand, forecast, AI generation) ─────────────
+  ml_service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: oceanbazar_ml
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar
+      ML_SERVICE_API_KEY: ${ML_SERVICE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      MODEL_VERSION: ${MODEL_VERSION:-ob-os-1.0}
+      PORT: 8100
+    # Exposed for direct testing; the BFF reaches it as ml_service:8100 on the compose network.
+    ports:
+      - '8100:8100'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://127.0.0.1:8100/health || exit 1']
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
 
   # ─── Next.js Storefront ─────────────────────────────────────────────────────
   web:
@@ -161,18 +271,22 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
-        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-http://localhost:8000}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
         NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
         NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        NEXT_PUBLIC_ADMIN_CRM_URL: ${NEXT_PUBLIC_ADMIN_CRM_URL:-http://localhost:4000}
     container_name: oceanbazar_web
     ports:
       - '3000:3000'
     environment:
       HOSTNAME: 0.0.0.0
       PORT: 3000
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE:-false}
+      MAINTENANCE_BYPASS_TOKEN: ${MAINTENANCE_BYPASS_TOKEN:-}
+      MAINTENANCE_RETRY_AFTER: ${MAINTENANCE_RETRY_AFTER:-3600}
+      MAINTENANCE_COOKIE_DOMAIN: ${MAINTENANCE_COOKIE_DOMAIN:-}
     depends_on:
       - api
     profiles:
@@ -185,12 +299,18 @@ services:
       context: ./admin-frontend-react
       dockerfile: Dockerfile
       args:
-        VITE_ADMIN_API_URL: ${VITE_ADMIN_API_URL:-http://localhost:4000}
+        VITE_ADMIN_API_URL: ${VITE_ADMIN_API_URL:-}
+        VITE_ADMIN_API_SAME_ORIGIN: ${VITE_ADMIN_API_SAME_ORIGIN:-true}
+        VITE_MAINTENANCE_MODE: ${VITE_MAINTENANCE_MODE:-false}
+        VITE_MAINTENANCE_BYPASS_TOKEN: ${VITE_MAINTENANCE_BYPASS_TOKEN:-}
+        VITE_MAINTENANCE_COOKIE_DOMAIN: ${VITE_MAINTENANCE_COOKIE_DOMAIN:-}
+        VITE_MAINTENANCE_PAGE_URL: ${VITE_MAINTENANCE_PAGE_URL:-https://oceanbazar.com.bd/en/maintenance}
     container_name: oceanbazar_admin
     ports:
       - '5173:5173'
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     profiles:
       - full
     restart: unless-stopped

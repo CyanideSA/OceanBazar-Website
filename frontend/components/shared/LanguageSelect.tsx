@@ -1,7 +1,8 @@
 'use client';
 
 import { useLocale } from 'next-intl';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useShopRouter } from '@/lib/shopNavigation';
 import { Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +18,7 @@ const LANGS = [
 
 export default function LanguageSelect({ className, variant = 'default' }: Props) {
   const locale = useLocale();
-  const router = useRouter();
+  const router = useShopRouter();
   const pathname = usePathname();
 
   const onChange = (next: string) => {

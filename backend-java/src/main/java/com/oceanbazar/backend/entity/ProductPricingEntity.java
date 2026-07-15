@@ -2,6 +2,8 @@ package com.oceanbazar.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 
 @Entity @Table(name = "product_pricing", uniqueConstraints = @UniqueConstraint(columnNames = {"product_id", "customer_type"}))
@@ -42,4 +44,8 @@ public class ProductPricingEntity {
 
     @Column(name = "tier3_discount", precision = 5, scale = 2)
     private BigDecimal tier3Discount;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "tier_bands", columnDefinition = "jsonb")
+    private String tierBands;
 }

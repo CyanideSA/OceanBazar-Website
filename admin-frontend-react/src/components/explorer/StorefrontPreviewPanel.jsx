@@ -4,7 +4,7 @@ import {
   IconClose, IconRefresh, IconExternalLink, IconSpinner, IconPreview,
 } from "./ExplorerIcons";
 
-const STOREFRONT_BASE = import.meta.env.VITE_STOREFRONT_URL || "http://localhost:5173";
+const STOREFRONT_BASE = import.meta.env.VITE_STOREFRONT_URL || "http://localhost:3000";
 
 export default function StorefrontPreviewPanel({ onClose }) {
   const { currentCategoryId, breadcrumb, openProductId } = useCatalogStore();

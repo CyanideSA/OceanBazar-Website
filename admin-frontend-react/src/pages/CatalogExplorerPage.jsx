@@ -12,10 +12,10 @@ import {
   RenameCategoryModal,
   DeleteConfirmModal,
   MoveToModal,
-  CreateProductModal,
   BulkUploadModal,
   BannerManagerModal,
 } from "../components/explorer/ExplorerModals";
+import AddProductWizard from "../components/products/AddProductWizard";
 import "../components/explorer/explorer.css";
 
 const TREE_MIN_WIDTH = 160;
@@ -39,6 +39,8 @@ export default function CatalogExplorerPage() {
     closeModal,
     setExpanded,
     clearSearch,
+    selectedBrandId,
+    selectedBrandCategoryId,
   } = useCatalogStore();
 
   const [contextMenu, setContextMenu] = useState(null);
@@ -77,9 +79,9 @@ export default function CatalogExplorerPage() {
   const loadTree = useCallback(async () => {
     setLoadingTree(true);
     try {
-      const tree = await adminApi.categoryTree();
-      setTree(tree);
-    } catch { /* ignore */ }
+      const result = await adminApi.categoryTree();
+      const nodes = Array.isArray(result) ? result : (result?.tree ?? []);
+      setTree(nodes);    } catch (err) {    }
     finally { setLoadingTree(false); }
   }, [setLoadingTree, setTree]);
 
@@ -87,7 +89,16 @@ export default function CatalogExplorerPage() {
   const loadContents = useCallback(async () => {
     setLoadingContents(true);
     try {
-      if (currentCategoryId === null) {
+      if (selectedBrandId && selectedBrandCategoryId) {
+        // Brand filter: show only products of this brand in this category
+        const [data, crumbs] = await Promise.all([
+          adminApi.productsByBrandInCategory(selectedBrandCategoryId, selectedBrandId),
+          adminApi.categoryBreadcrumb(selectedBrandCategoryId),
+        ]);
+        setFolderContents({ subfolders: [], products: data.products ?? [], brands: [] });
+        setBreadcrumb(crumbs);
+        crumbs.forEach((c) => setExpanded(c.id, true));
+      } else if (currentCategoryId === null) {
         const contents = await adminApi.rootContents();
         setFolderContents(contents);
         setBreadcrumb([]);
@@ -96,13 +107,25 @@ export default function CatalogExplorerPage() {
           adminApi.folderContents(currentCategoryId),
           adminApi.categoryBreadcrumb(currentCategoryId),
         ]);
-        setFolderContents(contents);
+        const subfolders = contents?.subfolders ?? [];
+        const hasProducts = (contents?.products?.length ?? 0) > 0;
+        if (subfolders.length === 0 && hasProducts) {
+          // Enforce Category > Subcategory > Brand > Product for leaf categories.
+          const brands = await adminApi.brandsInCategory(currentCategoryId);
+          setFolderContents({
+            ...contents,
+            products: brands.length > 0 ? [] : (contents?.products ?? []),
+            brands,
+          });
+        } else {
+          setFolderContents(contents);
+        }
         setBreadcrumb(crumbs);
         crumbs.forEach((c) => setExpanded(c.id, true));
       }
     } catch { /* ignore */ }
     finally { setLoadingContents(false); }
-  }, [currentCategoryId, setFolderContents, setBreadcrumb, setLoadingContents, setExpanded]);
+  }, [currentCategoryId, selectedBrandId, selectedBrandCategoryId, setFolderContents, setBreadcrumb, setLoadingContents, setExpanded]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
   useEffect(() => { loadContents(); }, [loadContents]);
@@ -297,9 +320,12 @@ export default function CatalogExplorerPage() {
       {modal?.type === "createCategory" && (
         <CreateCategoryModal data={modal.data} onClose={closeModal} onSuccess={handleModalSuccess} />
       )}
-      {modal?.type === "createProduct" && (
-        <CreateProductModal data={modal.data} onClose={closeModal} onSuccess={handleModalSuccess} />
-      )}
+      <AddProductWizard
+        open={modal?.type === "createProduct"}
+        onClose={closeModal}
+        onSuccess={handleModalSuccess}
+        defaultCategoryId={modal?.data?.categoryId}
+      />
       {modal?.type === "rename" && (
         <RenameCategoryModal data={modal.data} onClose={closeModal} onSuccess={handleModalSuccess} />
       )}

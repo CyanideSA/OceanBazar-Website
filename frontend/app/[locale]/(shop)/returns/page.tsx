@@ -9,7 +9,7 @@ import {
   Clock, XCircle, AlertCircle, ChevronRight, ArrowRight,
   Truck, CreditCard,
 } from 'lucide-react';
-import { ticketsApi, ordersApi } from '@/lib/api';
+import { returnsApi, ordersApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 type OrderRow = {
@@ -120,23 +120,17 @@ export default function ReturnsPage() {
     queryFn: () => ordersApi.list().then((r) => r.data as { orders: OrderRow[] }),
   });
 
-  const { data: ticketsData, refetch } = useQuery({
-    queryKey: ['return-tickets'],
-    queryFn: () => ticketsApi.list().then((r) => r.data as { tickets: ReturnRequest[] }),
+  const { data: returnsData, refetch } = useQuery({
+    queryKey: ['my-returns'],
+    queryFn: () => returnsApi.list().then((r) => r.data as { returns: ReturnRequest[] }),
   });
 
   const returnMutation = useMutation({
-    mutationFn: () => ticketsApi.create({
-      subject: `Return Request: ${reason}`,
-      message: [
-        `Return Reason: ${reason}`,
-        '',
-        details.trim() ? `Additional details:\n${details.trim()}` : '',
-      ].filter(Boolean).join('\n'),
-      category: 'other',
-      priority: 'medium',
-      orderId: selectedOrderId || undefined,
-      productId: selectedProductId || undefined,
+    mutationFn: () => returnsApi.create({
+      orderId: selectedOrderId,
+      reason,
+      reasonCategory: reason,
+      description: details || undefined,
     }),
     onSuccess: async () => {
       setStep('submitted');
@@ -148,9 +142,14 @@ export default function ReturnsPage() {
   });
 
   const orders = ordersData?.orders ?? [];
-  const returnTickets = (ticketsData?.tickets ?? []).filter(
-    (t) => t.subject?.toLowerCase().includes('return') || (t as ReturnRequest).orderId
-  );
+  const returnTickets: ReturnRequest[] = (returnsData?.returns ?? []).map((r: any) => ({
+    id: r.id,
+    subject: r.reason || 'Return Request',
+    status: r.status,
+    updatedAt: r.updated_at,
+    orderId: r.order_id,
+    productId: null,
+  }));
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">

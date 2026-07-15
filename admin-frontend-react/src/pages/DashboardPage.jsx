@@ -7,7 +7,7 @@ import {
 import { 
   FiTrendingUp, FiTrendingDown, FiShoppingCart, FiUsers, 
   FiMessageSquare, FiDollarSign, FiClock, FiPlus, 
-  FiArrowRight, FiCheckCircle, FiAlertCircle 
+  FiArrowRight, FiCheckCircle, FiAlertCircle, FiCpu, FiZap, FiBox 
 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
@@ -35,17 +35,19 @@ export default function DashboardPage({
     recentOrders: [],
     salesHistory: [],
     statusDist: [],
-    activity: []
+    activity: [],
+    totalRevenue: 0,
+    totalOrders: 0,
   });
 
   const fetchDashboardData = useCallback(async () => {
     try {
-      const [ordersRes, salesRes] = await Promise.all([
+      const [ordersRes, salesRes, funnelRes] = await Promise.all([
         adminApi.orders({ limit: 10 }),
-        adminApi.salesAnalytics()
+        adminApi.salesAnalytics(),
+        adminApi.orderFunnel(),
       ]);
 
-      // Process sales data for chart
       const last7Days = eachDayOfInterval({
         start: subDays(new Date(), 6),
         end: new Date()
@@ -53,33 +55,36 @@ export default function DashboardPage({
 
       const chartData = last7Days.map(date => {
         const dateStr = format(date, "yyyy-MM-dd");
-        const found = (salesRes?.daily || []).find(d => d.date === dateStr);
+        const found = (salesRes?.sales || []).find(d => d.date === dateStr);
         return {
           name: format(date, "MMM dd"),
-          value: found ? Number(found.total) : 0,
-          orders: found ? Number(found.count) : 0
+          value: found ? Number(found.revenue) : 0,
+          orders: found ? Number(found.orders) : 0
         };
       });
 
-      // Mock status distribution
-      const statusDist = [
-        { name: "Pending", value: 45 },
-        { name: "Delivered", value: 120 },
-        { name: "Processing", value: 30 },
-        { name: "Cancelled", value: 12 },
-        { name: "Shipped", value: 25 },
-      ];
+      const funnel = funnelRes?.funnel || {};
+      const statusDist = Object.entries(funnel)
+        .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value: Number(value) }))
+        .filter(s => s.value > 0);
+
+      const recentOrders = ordersRes?.orders || [];
+      const activity = recentOrders.slice(0, 5).map((o, i) => ({
+        id: o.id || i,
+        type: "order",
+        text: `Order #${String(o.id || '').slice(-6).toUpperCase()} — ${o.user?.name || o.customer?.name || 'Customer'} — ৳${Number(o.total || 0).toLocaleString()}`,
+        time: o.createdAt ? format(new Date(o.createdAt), "MMM dd, HH:mm") : "—",
+        icon: FiShoppingCart,
+        color: o.status === 'delivered' ? 'text-crm-success' : o.status === 'cancelled' ? 'text-crm-danger' : 'text-crm-primary',
+      }));
 
       setData({
-        recentOrders: ordersRes?.orders || [],
+        recentOrders,
         salesHistory: chartData,
-        statusDist,
-        activity: [
-          { id: 1, type: "order", text: "New order #ORD-2024-001 by Akand", time: "2 min ago", icon: FiShoppingCart, color: "text-crm-primary" },
-          { id: 2, type: "payment", text: "Payment received for #ORD-2024-082", time: "15 min ago", icon: FiDollarSign, color: "text-crm-success" },
-          { id: 3, type: "customer", text: "New wholesale application from ABC Corp", time: "1 hour ago", icon: FiUsers, color: "text-crm-purple" },
-          { id: 4, type: "stock", text: "Low stock alert: Product 'Gaming Mouse'", time: "3 hours ago", icon: FiAlertCircle, color: "text-crm-warning" },
-        ]
+        statusDist: statusDist.length > 0 ? statusDist : [{ name: 'No orders', value: 1 }],
+        activity,
+        totalRevenue: salesRes?.totalRevenue || 0,
+        totalOrders: salesRes?.totalOrders || 0,
       });
     } catch (err) {
       console.error("Dashboard fetch error:", err);
@@ -153,7 +158,7 @@ export default function DashboardPage({
           <button className="crm-btn" onClick={() => fetchDashboardData()}>
             <FiClock /> Refresh
           </button>
-          <button className="crm-btn crm-btn-primary">
+          <button className="crm-btn crm-btn-primary" onClick={() => onOpenProduct?.()}>
             <FiPlus /> Create Product
           </button>
         </div>
@@ -163,37 +168,40 @@ export default function DashboardPage({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard 
           title="Revenue (30d)" 
-          value={`৳${(data.salesHistory.reduce((acc, curr) => acc + curr.value, 0)).toLocaleString()}`}
-          delta={12.5}
+          value={`৳${Number(liveSnapshot?.totalRevenue || data.totalRevenue || 0).toLocaleString()}`}
+          delta={0}
           icon={FiDollarSign}
           color="text-crm-success"
-          sparkData={mockSpark}
+          sparkData={data.salesHistory.map(s => ({ v: s.value }))}
         />
         <KPICard 
           title="Orders (30d)" 
-          value="1,482"
-          delta={-2.4}
+          value={Number(liveSnapshot?.totalOrders || data.totalOrders || 0).toLocaleString()}
+          delta={0}
           icon={FiShoppingCart}
           color="text-crm-primary"
-          sparkData={mockSpark.map(s => ({ v: s.v * 0.8 }))}
+          sparkData={data.salesHistory.map(s => ({ v: s.orders }))}
         />
         <KPICard 
           title="Customers" 
-          value="8,245"
-          delta={8.1}
+          value={Number(liveSnapshot?.totalUsers || 0).toLocaleString()}
+          delta={0}
           icon={FiUsers}
           color="text-crm-purple"
           sparkData={mockSpark.map(s => ({ v: s.v * 1.2 }))}
         />
         <KPICard 
-          title="Conversion" 
-          value="3.2%"
-          delta={1.2}
-          icon={FiTrendingUp}
-          color="text-crm-cyan"
+          title="Pending Orders" 
+          value={Number(liveSnapshot?.pendingOrders || 0).toLocaleString()}
+          delta={0}
+          icon={FiClock}
+          color="text-crm-warning"
           sparkData={mockSpark}
         />
       </div>
+
+      {/* AI Insights Panel */}
+      <AiInsightsPanel />
 
       {/* Main Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -346,5 +354,70 @@ export default function DashboardPage({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+function AiInsightsPanel() {
+  const [insights, setInsights] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    adminApi
+      .intelInsights()
+      .then((d) => { if (active) setInsights(d); })
+      .catch(() => { if (active) setInsights(null); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="crm-card flex items-center gap-3">
+        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-crm-primary" />
+        <span className="text-crm-text-dim text-sm">Loading AI insights…</span>
+      </div>
+    );
+  }
+  if (!insights) return null;
+
+  const atRisk = insights.atRiskCustomers || [];
+  const restock = insights.restockSuggestions || [];
+  const topSegment = (insights.segments || []).slice().sort((a, b) => b.customers - a.customers)[0];
+
+  return (
+    <div className="crm-card border-l-2 border-crm-primary">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h3 className="font-bold text-crm-text-bright flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-crm-primary-dim text-crm-primary"><FiCpu size={16} /></span>
+          AI Insights
+        </h3>
+        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-crm-bg-hover text-crm-text-dim">
+          {insights.mlConfigured ? "ML active" : "Heuristic mode"}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-lg bg-crm-bg-hover p-4">
+          <div className="flex items-center gap-2 text-crm-success mb-1"><FiZap size={14} /><span className="text-xs font-bold uppercase tracking-wide">Forecast (7d)</span></div>
+          <p className="text-xl font-bold text-crm-text-bright tabular-nums">৳{Number(insights.forecastNext7Days || 0).toLocaleString()}</p>
+          <p className="text-[11px] text-crm-text-dim">{insights.forecastMethod}</p>
+        </div>
+        <div className="rounded-lg bg-crm-bg-hover p-4">
+          <div className="flex items-center gap-2 text-crm-danger mb-1"><FiAlertCircle size={14} /><span className="text-xs font-bold uppercase tracking-wide">At-risk customers</span></div>
+          <p className="text-xl font-bold text-crm-text-bright tabular-nums">{atRisk.length}</p>
+          <p className="text-[11px] text-crm-text-dim truncate">{atRisk[0]?.name ? `Top: ${atRisk[0].name}` : "None flagged"}</p>
+        </div>
+        <div className="rounded-lg bg-crm-bg-hover p-4">
+          <div className="flex items-center gap-2 text-crm-warning mb-1"><FiBox size={14} /><span className="text-xs font-bold uppercase tracking-wide">Restock alerts</span></div>
+          <p className="text-xl font-bold text-crm-text-bright tabular-nums">{restock.length}</p>
+          <p className="text-[11px] text-crm-text-dim truncate">{restock[0]?.title ? restock[0].title : "Inventory healthy"}</p>
+        </div>
+        <div className="rounded-lg bg-crm-bg-hover p-4">
+          <div className="flex items-center gap-2 text-crm-primary mb-1"><FiUsers size={14} /><span className="text-xs font-bold uppercase tracking-wide">Top segment</span></div>
+          <p className="text-xl font-bold text-crm-text-bright capitalize">{topSegment?.segment || "—"}</p>
+          <p className="text-[11px] text-crm-text-dim">{topSegment ? `${topSegment.customers} customers` : "No segments"}</p>
+        </div>
+      </div>
+    </div>
   );
 }

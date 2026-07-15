@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { 
   FiFolder, FiSearch, FiFilePlus, FiActivity, FiCheckCircle, 
   FiAlertCircle, FiChevronRight, FiChevronDown, FiBox, FiVideo, FiImage,
-  FiTerminal, FiPlay, FiShield
+  FiTerminal, FiPlay, FiShield, FiRefreshCw, FiXCircle
 } from "react-icons/fi";
 import { adminApi, api } from '../lib/api';
 import { useToast } from "../components/ToastProvider";
 import { motion, AnimatePresence } from "framer-motion";
 
-const DEFAULT_PATH = 'C:\\Users\\akand\\Desktop\\All Categories (Demo)';
+const DEFAULT_PATH = "";
 
 export default function FileImportPage() {
   const toast = useToast();

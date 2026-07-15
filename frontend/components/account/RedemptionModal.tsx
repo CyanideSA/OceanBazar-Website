@@ -6,7 +6,7 @@ import { X, Star } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { useOBPointsStore } from '@/stores/obPointsStore';
 import { obPointsApi } from '@/lib/api';
-import { REDEMPTION_TABLE, REDEMPTION_AMOUNTS } from '@/lib/ob-points';
+import { getRedemptionOptions, calculateSlabRedemptionValue } from '@/lib/ob-points';
 import { useToast } from '@/hooks/useToast';
 
 export default function RedemptionModal() {
@@ -30,7 +30,7 @@ export default function RedemptionModal() {
 
   if (!isRedeemModalOpen || !info) return null;
 
-  const rates = REDEMPTION_TABLE[info.tier];
+  const options = getRedemptionOptions(info.balance);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -49,7 +49,7 @@ export default function RedemptionModal() {
             <div className="text-5xl mb-4">✅</div>
             <h3 className="text-xl font-bold text-foreground mb-2">{t('redeemSuccess')}</h3>
             <p className="text-muted-foreground">
-              {selected} OB = {tc('taka')}{rates[selected!]} discount applied
+              {selected?.toLocaleString()} OB = {tc('taka')}{calculateSlabRedemptionValue(selected ?? 0).toLocaleString()} discount applied
             </p>
           </div>
         ) : (
@@ -67,33 +67,29 @@ export default function RedemptionModal() {
             <p className="text-sm font-medium text-muted-foreground mb-3">{t('selectPackage')}</p>
 
             <div className="space-y-3 mb-6">
-              {REDEMPTION_AMOUNTS.map((pts) => {
-                const canRedeem = info.balance >= pts;
-                const bdtValue = rates[pts];
-                return (
-                  <button
-                    key={pts}
-                    disabled={!canRedeem}
-                    onClick={() => setSelected(selected === pts ? null : pts)}
-                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
-                      selected === pts
-                        ? 'border-primary bg-primary/5'
-                        : canRedeem
-                        ? 'border-border hover:border-primary/50 cursor-pointer'
-                        : 'border-border bg-muted opacity-50 cursor-not-allowed'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-yellow-500">⭐</span>
-                      <div className="text-left">
-                        <p className="font-semibold text-foreground">{pts.toLocaleString()} OB</p>
-                        <p className="text-xs text-muted-foreground">{info.tier} tier</p>
-                      </div>
+              {options.map((opt) => (
+                <button
+                  key={opt.points}
+                  disabled={!opt.canRedeem}
+                  onClick={() => setSelected(selected === opt.points ? null : opt.points)}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
+                    selected === opt.points
+                      ? 'border-primary bg-primary/5'
+                      : opt.canRedeem
+                      ? 'border-border hover:border-primary/50 cursor-pointer'
+                      : 'border-border bg-muted opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-yellow-500">⭐</span>
+                    <div className="text-left">
+                      <p className="font-semibold text-foreground">{opt.points.toLocaleString()} OB</p>
+                      <p className="text-xs text-muted-foreground">{info.tier} tier</p>
                     </div>
-                    <span className="text-lg font-bold text-green-600">{tc('taka')}{bdtValue}</span>
-                  </button>
-                );
-              })}
+                  </div>
+                  <span className="text-lg font-bold text-green-600">{tc('taka')}{opt.bdtValue.toLocaleString()}</span>
+                </button>
+              ))}
             </div>
 
             <button

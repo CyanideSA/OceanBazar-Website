@@ -1,15 +1,58 @@
-import React, { useCallback, memo } from "react";
+import React, { useCallback, useEffect, memo } from "react";
 import { useCatalogStore } from "../../stores/catalogStore";
+import { adminApi } from "../../lib/api";
 import {
   IconFolder, IconHome, IconChevronRight, IconChevronDown, IconSpinner, IconPackage,
 } from "./ExplorerIcons";
 
+const BrandRow = memo(function BrandRow({ brand, categoryId, level }) {
+  const { selectedBrandId, selectedBrandCategoryId, selectBrand } = useCatalogStore();
+  const isActive = selectedBrandId === brand.id && selectedBrandCategoryId === categoryId;
+  return (
+    <div
+      className={`tree-node${isActive ? " active" : ""}`}
+      style={{ paddingLeft: `${6 + (level + 1) * 14}px`, cursor: "pointer" }}
+      title={brand.nameEn}
+      onClick={(e) => { e.stopPropagation(); selectBrand(brand.id, categoryId); }}
+    >
+      <span className="tree-node-arrow-placeholder" />
+      <span className="tree-node-icon">
+        {brand.logoUrl
+          ? <img src={brand.logoUrl} alt="" style={{ width: 14, height: 14, borderRadius: 2, objectFit: "contain" }} />
+          : <span style={{ fontSize: 10, color: "#8b949e" }}>🏷</span>}
+      </span>
+      <span className="tree-node-label" style={{ color: isActive ? "#58a6ff" : "#8b949e", fontSize: 12 }}>
+        {brand.nameEn}
+      </span>
+      {brand.productCount > 0 && (
+        <span className="tree-node-badge">{brand.productCount}</span>
+      )}
+    </div>
+  );
+});
+
 // Memoized tree node to avoid re-rendering the whole tree on selection change
 const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level = 0 }) {
-  const { expandedIds, currentCategoryId, toggleExpanded } = useCatalogStore();
+  const {
+    expandedIds, currentCategoryId, toggleExpanded,
+    categoryBrands, loadingBrands, setCategoryBrands, setLoadingBrands,
+  } = useCatalogStore();
   const isExpanded = expandedIds.has(node.id);
   const isActive = currentCategoryId === node.id;
   const hasChildren = node.children && node.children.length > 0;
+
+  // Load brands when a leaf category is expanded
+  useEffect(() => {
+    if (isExpanded && node.isLeaf && !(node.id in categoryBrands) && !loadingBrands.has(node.id)) {
+      setLoadingBrands(node.id, true);
+      adminApi.brandsInCategory(node.id)
+        .then((brands) => setCategoryBrands(node.id, brands ?? []))
+        .catch(() => setCategoryBrands(node.id, []));
+    }
+  }, [isExpanded, node.isLeaf, node.id, categoryBrands, loadingBrands, setCategoryBrands, setLoadingBrands]);
+
+  const brands = (node.isLeaf && isExpanded) ? (categoryBrands[node.id] ?? null) : null;
+  const loadingNodeBrands = loadingBrands.has(node.id);
 
   const handleClick = useCallback((e) => {
     e.stopPropagation();
@@ -43,6 +86,7 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
   }, [node.id]);
 
   const folderColor = isActive ? "#58a6ff" : isExpanded ? "#f0a500" : "#e3b341";
+  const canExpand = hasChildren || node.isLeaf;
 
   return (
     <div className="tree-node-wrap">
@@ -61,7 +105,7 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
         onDrop={handleDrop}
         title={node.nameEn}
       >
-        {hasChildren ? (
+        {canExpand ? (
           <button
             className="tree-node-arrow-btn"
             onClick={handleArrow}
@@ -89,9 +133,10 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
         )}
       </div>
 
-      {isExpanded && hasChildren && (
+      {isExpanded && (
         <div className="tree-children">
-          {node.children.map((child) => (
+          {/* Sub-category children */}
+          {hasChildren && node.children.map((child) => (
             <TreeNode
               key={child.id}
               node={child}
@@ -100,6 +145,18 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
               level={level + 1}
             />
           ))}
+          {/* Brand nodes under leaf categories */}
+          {node.isLeaf && (
+            loadingNodeBrands
+              ? <div className="tree-node" style={{ paddingLeft: `${6 + (level + 1) * 14}px`, color: "#484f58", fontSize: 11 }}>
+                  <IconSpinner size={11} color="#484f58" /> Loading brands…
+                </div>
+              : brands && brands.length > 0
+                ? brands.map((b) => (
+                    <BrandRow key={b.id} brand={b} categoryId={node.id} level={level} />
+                  ))
+                : null
+          )}
         </div>
       )}
     </div>

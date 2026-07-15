@@ -3,11 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { mapPaperflyStatus } from '../services/paperflyService';
 import { mapSteadfastStatus } from '../services/steadfastService';
 import { sendShippingUpdate } from '../services/emailService';
-import { sendShippingUpdateSms } from '../services/smsService';
+import { sendShippingUpdateSms, sendShippingUpdateWhatsApp } from '../services/smsService';
 import crypto from 'crypto';
+import { emitToUser, emitToRoom } from '../lib/adminEvents';
 
 const router = Router();
 const prisma = new PrismaClient();
+type CourierProvider = 'paperfly' | 'steadfast' | 'pathao' | 'redx';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,25 @@ function mapToOrderStatus(internalStatus: string): string | null {
     cancelled: 'cancelled',
   };
   return map[internalStatus] || null;
+}
+
+function normalizeCourierProvider(raw: unknown): CourierProvider | null {
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (value === 'paperfly' || value === 'steadfast' || value === 'pathao' || value === 'redx') return value;
+  return null;
+}
+
+function detectCourierProvider(req: Request): CourierProvider | null {
+  const body = req.body as Record<string, any>;
+  const headerProvider = normalizeCourierProvider(req.headers['x-courier-provider'] ?? req.headers['x-webhook-provider']);
+  const bodyProvider = normalizeCourierProvider(body?.provider ?? body?.courier_provider ?? body?.carrier);
+  if (headerProvider) return headerProvider;
+  if (bodyProvider) return bodyProvider;
+  if (body?.order_status || body?.merchant_order_id) return 'pathao';
+  if (body?.status && (body?.consignment_id || body?.tracking_code || body?.invoice)) return 'steadfast';
+  if (body?.tracking_id && (body?.parcel_status || body?.status)) return 'redx';
+  if (body?.event_type || body?.reference_number || body?.order_id || body?.data?.event_type) return 'paperfly';
+  return null;
 }
 
 async function processWebhookEvent(
@@ -100,33 +121,25 @@ async function processWebhookEvent(
     if (order.user.phone) {
       sendShippingUpdateSms(order.user.phone, order.orderNumber, internalStatus, cs.tracking_code || undefined)
         .catch(e => console.error('[webhook] SMS notify error:', e.message));
+      sendShippingUpdateWhatsApp(order.user.phone, order.orderNumber, internalStatus, cs.tracking_code || undefined)
+        .catch(e => console.error('[webhook] WhatsApp notify error:', e.message));
     }
   }
 
-  // Emit Socket.io event (import io lazily to avoid circular deps)
-  try {
-    const { io } = await import('../app');
-    io.to(`user:${order?.userId}`).emit('delivery:update', {
-      orderId: cs.order_id,
-      orderNumber: order?.orderNumber,
-      status: internalStatus,
-      courier: courierProvider,
-      timestamp: new Date().toISOString(),
+  if (order?.userId) {
+    emitToUser(order.userId, 'delivery:update', {
+      orderId: cs.order_id, orderNumber: order?.orderNumber,
+      status: internalStatus, courier: courierProvider, timestamp: new Date().toISOString(),
     });
-    io.to('admin:chat').emit('delivery:update', {
-      orderId: cs.order_id,
-      orderNumber: order?.orderNumber,
-      status: internalStatus,
-      courier: courierProvider,
-    });
-  } catch { /* socket emit failure is non-fatal */ }
+  }
+  emitToRoom('admin:crm', 'delivery:update', {
+    orderId: cs.order_id, orderNumber: order?.orderNumber,
+    status: internalStatus, courier: courierProvider,
+  });
 }
 
-// ─── Paperfly Webhook ────────────────────────────────────────────────────────
-
-router.post('/paperfly', async (req: Request, res: Response) => {
+async function handlePaperflyWebhook(req: Request, res: Response) {
   try {
-    // Optional signature validation
     const webhookSecret = process.env.PAPERFLY_WEBHOOK_SECRET;
     if (webhookSecret) {
       const signature = req.headers['x-paperfly-signature'] as string;
@@ -140,15 +153,18 @@ router.post('/paperfly', async (req: Request, res: Response) => {
       }
     }
 
-    const { event_type, reference_number, order_id, data: eventData } = req.body as {
-      event_type?: string;
-      reference_number?: string;
-      order_id?: string;
-      data?: any;
-    };
-
-    const consignmentId = reference_number || order_id || eventData?.reference_number;
-    const eventType = event_type || eventData?.event_type || 'unknown';
+    // Paperfly sends: { event: "parcel.delivered", data: { merchant_order_reference: "...", order_number: "..." } }
+    const body = req.body as Record<string, any>;
+    const eventType = String(body?.event || body?.event_type || 'unknown');
+    const eventData = body?.data || {};
+    // Use merchant_order_reference (our order number) OR Paperfly's own order_number
+    const consignmentId = String(
+      eventData?.merchant_order_reference ||
+      eventData?.order_number ||
+      body?.reference_number ||
+      body?.order_id ||
+      ''
+    );
 
     if (consignmentId) {
       const internalStatus = mapPaperflyStatus(eventType);
@@ -158,19 +174,16 @@ router.post('/paperfly', async (req: Request, res: Response) => {
     res.status(200).json({ received: true });
   } catch (err: any) {
     console.error('[webhook/paperfly] Error:', err.message);
-    res.status(200).json({ received: true }); // Always 200 to prevent retries
+    res.status(200).json({ received: true });
   }
-});
+}
 
-// ─── Steadfast Webhook ───────────────────────────────────────────────────────
-
-router.post('/steadfast', async (req: Request, res: Response) => {
+async function handleSteadfastWebhook(req: Request, res: Response) {
   try {
     const {
       consignment_id,
       tracking_code,
       status,
-      invoice,
     } = req.body as {
       consignment_id?: string;
       tracking_code?: string;
@@ -182,7 +195,6 @@ router.post('/steadfast', async (req: Request, res: Response) => {
     if (identifier && status) {
       const internalStatus = mapSteadfastStatus(status);
 
-      // Try finding by consignment_id first, then tracking_code
       let cs = await prisma.courier_shipments.findFirst({
         where: { consignment_id: String(identifier), courier_provider: 'steadfast' },
       });
@@ -202,11 +214,9 @@ router.post('/steadfast', async (req: Request, res: Response) => {
     console.error('[webhook/steadfast] Error:', err.message);
     res.status(200).json({ received: true });
   }
-});
+}
 
-// ─── Pathao Webhook ─────────────────────────────────────────────────────────
-
-router.post('/pathao', async (req: Request, res: Response) => {
+async function handlePathaoWebhook(req: Request, res: Response) {
   try {
     const {
       consignment_id,
@@ -227,7 +237,6 @@ router.post('/pathao', async (req: Request, res: Response) => {
         where: { consignment_id: identifier, courier_provider: 'pathao' },
       });
       if (!cs && merchant_order_id) {
-        // Try matching via order number
         const order = await prisma.order.findFirst({ where: { orderNumber: merchant_order_id } });
         if (order) {
           cs = await prisma.courier_shipments.findFirst({
@@ -245,6 +254,82 @@ router.post('/pathao', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[webhook/pathao] Error:', err.message);
     res.status(200).json({ received: true });
+  }
+}
+
+async function handleRedxWebhook(req: Request, res: Response) {
+  try {
+    const body = req.body as Record<string, any>;
+    const trackingId = String(body?.tracking_id ?? body?.parcel?.tracking_id ?? '');
+    const status = String(body?.parcel_status ?? body?.status ?? body?.parcel?.status ?? '');
+
+    if (trackingId && status) {
+      const { mapRedxStatus } = await import('../services/redxService');
+      const internalStatus = mapRedxStatus(status);
+
+      let cs = await prisma.courier_shipments.findFirst({
+        where: { consignment_id: trackingId, courier_provider: 'redx' },
+      });
+      if (!cs) {
+        cs = await prisma.courier_shipments.findFirst({
+          where: { tracking_code: trackingId, courier_provider: 'redx' },
+        });
+      }
+
+      if (cs) {
+        await processWebhookEvent('redx', cs.consignment_id || trackingId, status, internalStatus, req.body);
+      } else {
+        console.warn(`[webhook/redx] No shipment found for tracking_id=${trackingId}`);
+      }
+    }
+
+    res.status(200).json({ received: true });
+  } catch (err: any) {
+    console.error('[webhook/redx] Error:', err.message);
+    res.status(200).json({ received: true });
+  }
+}
+
+// ─── Paperfly Webhook ────────────────────────────────────────────────────────
+
+router.post('/paperfly', handlePaperflyWebhook);
+
+// ─── Steadfast Webhook ───────────────────────────────────────────────────────
+
+router.post('/steadfast', handleSteadfastWebhook);
+
+// ─── Pathao Webhook ─────────────────────────────────────────────────────────
+
+router.post('/pathao', handlePathaoWebhook);
+
+// ─── RedX Webhook ──────────────────────────────────────────────────────────
+
+router.post('/redx', handleRedxWebhook);
+
+// ─── Unified courier webhook ────────────────────────────────────────────────
+
+router.post('/courier', async (req: Request, res: Response) => {
+  const provider = detectCourierProvider(req);
+  if (!provider) {
+    res.status(400).json({ error: 'Unable to detect courier provider' });
+    return;
+  }
+
+  switch (provider) {
+    case 'paperfly':
+      await handlePaperflyWebhook(req, res);
+      return;
+    case 'steadfast':
+      await handleSteadfastWebhook(req, res);
+      return;
+    case 'pathao':
+      await handlePathaoWebhook(req, res);
+      return;
+    case 'redx':
+      await handleRedxWebhook(req, res);
+      return;
+    default:
+      res.status(400).json({ error: 'Unsupported courier provider' });
   }
 });
 

@@ -6,6 +6,8 @@
  *   2. User's account is not flagged for COD abuse
  *   3. No more than MAX_PENDING_COD pending COD orders at a time
  *   4. Shipping address is not in a COD-restricted district
+ *
+ * COD_FEE (৳40) is added to all COD orders as a cash-collection surcharge.
  */
 
 import { COD_LIMIT, round2 } from './pricing';
@@ -22,11 +24,16 @@ export interface CodEligibilityInput {
 export interface CodEligibilityResult {
   allowed: boolean;
   reasons: string[];
+  /** COD surcharge (৳40) — 0 if not eligible */
+  codFee: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const MAX_PENDING_COD = 3;
+
+/** COD cash-collection surcharge in BDT */
+export const COD_FEE = 40;
 
 /** Districts where COD is not offered (remote / logistically hard). */
 export const COD_RESTRICTED_DISTRICTS: ReadonlySet<string> = new Set([
@@ -59,5 +66,6 @@ export function checkCodEligibility(input: CodEligibilityInput): CodEligibilityR
     reasons.push(`COD is not available in ${input.district}. Please choose an online payment method.`);
   }
 
-  return { allowed: reasons.length === 0, reasons };
+  const allowed = reasons.length === 0;
+  return { allowed, reasons, codFee: allowed ? COD_FEE : 0 };
 }

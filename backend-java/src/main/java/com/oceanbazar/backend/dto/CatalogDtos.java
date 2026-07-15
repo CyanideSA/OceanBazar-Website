@@ -77,6 +77,7 @@ public final class CatalogDtos {
         private int stock;
         private int moq;
         private boolean isFeatured;
+        private boolean isBestRated;
         private String primaryImage;
         private String categoryId;
         private String brandId;
@@ -107,6 +108,7 @@ public final class CatalogDtos {
         private String seoTitle;
         private String seoDescription;
         private boolean isFeatured;
+        private boolean isBestRated;
         private String specifications;
         private String attributesExtra;
         private BigDecimal ratingAvg;
@@ -167,6 +169,7 @@ public final class CatalogDtos {
         private BigDecimal tier2Discount;
         private Integer tier3MinQty;
         private BigDecimal tier3Discount;
+        private String tierBands;
     }
 
     @Data @NoArgsConstructor @AllArgsConstructor @Builder

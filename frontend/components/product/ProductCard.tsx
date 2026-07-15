@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, memo } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { ShoppingCart, Star } from 'lucide-react';
@@ -19,6 +20,7 @@ interface Props {
 }
 
 function ProductCard({ product }: Props) {
+  const router = useRouter();
   const locale = useLocale();
   const tc = useTranslations('common');
   const tp = useTranslations('product');
@@ -34,6 +36,11 @@ function ProductCard({ product }: Props) {
   const discountPct = hasDiscount
     ? Math.round((1 - product.pricing.retail!.price / Number(compareAt)) * 100)
     : 0;
+  const isNew = (product as any).createdAt
+    ? Date.now() - new Date((product as any).createdAt).getTime() < 14 * 86400_000
+    : false;
+
+  const isTopTrending = Array.isArray(product.tags) && product.tags.includes('ob_top_trending');
 
   const addMutation = useMutation({
     mutationFn: () => cartApi.add(product.id, 1).then((r) => r.data),
@@ -42,7 +49,12 @@ function ProductCard({ product }: Props) {
       setOpen(true);
       success(tp('addedToCart'));
     },
-    onError: () => toastError(tc('error')),
+    onError: (err: any) => {
+      const status = err?.response?.status;
+      if (status === 401) toastError('Please log in to add items to cart');
+      else if (status === 404) toastError('This product is currently unavailable');
+      else toastError(tc('error'));
+    },
   });
 
   return (
@@ -54,7 +66,12 @@ function ProductCard({ product }: Props) {
       )}
     >
       {/* Image */}
-      <Link href={`/${locale}/product/${product.id}`} className="relative aspect-square overflow-hidden bg-muted">
+      <Link
+        href={`/${locale}/product/${product.id}`}
+        prefetch
+        className="relative aspect-square overflow-hidden bg-muted"
+        onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
+      >
         {product.primaryImage && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -73,9 +90,34 @@ function ProductCard({ product }: Props) {
 
         {/* Badges */}
         <div className="absolute left-2 top-2 flex flex-col gap-1">
+          {product.flashDeal && (
+            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-2xs font-bold text-white shadow-sm">
+              ⚡ Flash
+            </span>
+          )}
           {hasDiscount && (
             <span className="rounded-md bg-destructive px-1.5 py-0.5 text-2xs font-bold text-destructive-foreground shadow-sm">
               -{discountPct}%
+            </span>
+          )}
+          {product.isFeatured && (
+            <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-2xs font-bold text-white shadow-sm">
+              ⭐ Featured
+            </span>
+          )}
+          {product.isBestRated && (
+            <span className="rounded-md bg-violet-600 px-1.5 py-0.5 text-2xs font-bold text-white shadow-sm">
+              ⭐ {tp('bestRated')}
+            </span>
+          )}
+          {isTopTrending && (
+            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-2xs font-bold text-white shadow-sm">
+              🔥 {tp('topTrending')}
+            </span>
+          )}
+          {isNew && !product.isFeatured && !product.isBestRated && !isTopTrending && (
+            <span className="rounded-md bg-emerald-500 px-1.5 py-0.5 text-2xs font-bold text-white shadow-sm">
+              New
             </span>
           )}
         </div>
@@ -115,7 +157,11 @@ function ProductCard({ product }: Props) {
         )}
 
         {/* Title */}
-        <Link href={`/${locale}/product/${product.id}`}>
+        <Link
+          href={`/${locale}/product/${product.id}`}
+          prefetch
+          onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
+        >
           <h3 className="mb-2 line-clamp-2 text-sm font-medium leading-snug text-foreground transition-colors hover:text-primary">
             {product.title}
           </h3>

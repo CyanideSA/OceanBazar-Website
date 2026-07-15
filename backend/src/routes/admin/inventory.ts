@@ -6,6 +6,23 @@ import { routeParam } from '../../utils/params';
 const router = Router();
 const prisma = new PrismaClient();
 
+async function maybeAlertLowStock(
+  item: { product_id: string; sku: string | null; quantity_available: number; status: string },
+  previousStatus: string,
+): Promise<void> {
+  if (item.status !== 'low_stock' || previousStatus === 'low_stock') return;
+  const { alertLowStock } = await import('../../services/teamsService');
+  let title = item.sku || item.product_id;
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id: item.product_id },
+      select: { titleEn: true },
+    });
+    if (product?.titleEn) title = product.titleEn;
+  } catch { /* non-fatal */ }
+  alertLowStock(title, item.quantity_available).catch(() => {});
+}
+
 // GET /api/admin/inventory
 router.get('/', async (req: Request, res: Response) => {
   const page = parseInt(String(req.query.page || '1'));
@@ -111,17 +128,19 @@ router.post('/:id/adjust', async (req: Request, res: Response) => {
     },
   });
 
+  const newStatus = newOnHand <= 0 ? 'out_of_stock' : newOnHand <= item.reorder_point ? 'low_stock' : 'in_stock';
   const updated = await prisma.inventory_items.update({
     where: { id: item.id },
     data: {
       quantity_on_hand: Math.max(0, newOnHand),
       quantity_available: Math.max(0, newOnHand - item.quantity_reserved),
-      status: newOnHand <= 0 ? 'out_of_stock' : newOnHand <= item.reorder_point ? 'low_stock' : 'in_stock',
+      status: newStatus,
       last_restocked_at: type === 'add' ? new Date() : undefined,
       updated_at: new Date(),
     },
   });
 
+  await maybeAlertLowStock(updated, item.status);
   res.json({ item: updated, adjustment: { previous: previousOnHand, new: newOnHand } });
 });
 
@@ -150,16 +169,18 @@ router.post('/:id/set-quantity', async (req: Request, res: Response) => {
     },
   });
 
+  const newStatus = newQuantity <= 0 ? 'out_of_stock' : newQuantity <= item.reorder_point ? 'low_stock' : 'in_stock';
   const updated = await prisma.inventory_items.update({
     where: { id: item.id },
     data: {
       quantity_on_hand: Math.max(0, newQuantity),
       quantity_available: Math.max(0, newQuantity - item.quantity_reserved),
-      status: newQuantity <= 0 ? 'out_of_stock' : newQuantity <= item.reorder_point ? 'low_stock' : 'in_stock',
+      status: newStatus,
       updated_at: new Date(),
     },
   });
 
+  await maybeAlertLowStock(updated, item.status);
   res.json({ item: updated });
 });
 

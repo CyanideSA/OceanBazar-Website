@@ -9,15 +9,45 @@ import { useToast } from "../components/ToastProvider";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
+/** Lowercase — matches BFF / Prisma order.status */
 const STATUS_CONFIG = {
-  PENDING:    { label: "Pending",    cls: "text-crm-warning bg-crm-warning-dim border-crm-warning/20" },
-  PROCESSING: { label: "Processing", cls: "text-crm-primary bg-crm-primary-dim border-crm-primary/20" },
-  SHIPPED:    { label: "Shipped",    cls: "text-crm-purple bg-crm-purple-dim border-crm-purple/20" },
-  DELIVERED:  { label: "Delivered",  cls: "text-crm-success bg-crm-success-dim border-crm-success/20" },
-  CANCELLED:  { label: "Cancelled",  cls: "text-crm-danger bg-crm-danger-dim border-crm-danger/20" },
+  pending:    { label: "Pending",    cls: "text-crm-warning bg-crm-warning-dim border-crm-warning/20" },
+  confirmed:  { label: "Confirmed",  cls: "text-crm-primary bg-crm-primary-dim border-crm-primary/20" },
+  processing: { label: "Processing", cls: "text-crm-primary bg-crm-primary-dim border-crm-primary/20" },
+  shipped:    { label: "Shipped",    cls: "text-crm-purple bg-crm-purple-dim border-crm-purple/20" },
+  delivered:  { label: "Delivered",  cls: "text-crm-success bg-crm-success-dim border-crm-success/20" },
+  cancelled:  { label: "Cancelled",  cls: "text-crm-danger bg-crm-danger-dim border-crm-danger/20" },
+  returned:   { label: "Returned",   cls: "text-crm-danger bg-crm-danger-dim border-crm-danger/20" },
 };
 
-const ORDER_STATUSES = ["PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
+const ORDER_STATUSES = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "returned"];
+
+/** Align CRM display with BFF/Prisma enums (lowercase snake_case). */
+function normalizePaymentStatus(raw) {
+  const s = String(raw ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+  if (!s) return "unpaid";
+  return s;
+}
+
+function paymentIsPaid(raw) {
+  const n = normalizePaymentStatus(raw);
+  return n === "paid" || n === "completed" || n === "captured";
+}
+
+function paymentStatusLabel(raw) {
+  const n = normalizePaymentStatus(raw);
+  const labels = {
+    unpaid: "Unpaid",
+    paid: "Paid",
+    pending: "Pending",
+    failed: "Failed",
+    refunded: "Refunded",
+    partially_refunded: "Partially refunded",
+    authorized: "Authorized",
+    processing: "Processing",
+  };
+  return labels[n] || (raw ? String(raw) : "Unpaid");
+}
 
 export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
   const toast = useToast();
@@ -44,21 +74,25 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
 
   const stats = useMemo(() => ({
     total: rows.length,
-    pending: rows.filter(o => o.status === "PENDING").length,
-    processing: rows.filter(o => o.status === "PROCESSING" || o.status === "SHIPPED").length,
-    delivered: rows.filter(o => o.status === "DELIVERED").length,
+    pending: rows.filter(o => o.status === "pending").length,
+    processing: rows.filter(o => o.status === "processing" || o.status === "shipped").length,
+    delivered: rows.filter(o => o.status === "delivered").length,
     revenue: rows.reduce((s, o) => s + (Number(o.total) || 0), 0),
   }), [rows]);
 
   const filteredOrders = useMemo(() => {
     if (!searchTerm) return rows;
     const q = searchTerm.toLowerCase();
-    return rows.filter(o =>
-      o.id?.toLowerCase().includes(q) ||
-      o.customer?.name?.toLowerCase().includes(q) ||
-      o.customer?.email?.toLowerCase().includes(q) ||
-      o.trackingNumber?.toLowerCase().includes(q)
-    );
+    return rows.filter((o) => {
+      const custName = o.customer?.name || o.user?.name;
+      const custEmail = o.customer?.email || o.user?.email;
+      return (
+        o.id?.toLowerCase().includes(q) ||
+        custName?.toLowerCase().includes(q) ||
+        custEmail?.toLowerCase().includes(q) ||
+        o.trackingNumber?.toLowerCase().includes(q)
+      );
+    });
   }, [rows, searchTerm]);
 
   const openDetail = async (orderId) => {
@@ -71,6 +105,34 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
     } finally {
       setDetailLoading(false);
     }
+  };
+
+  const downloadCSV = (filename, headers, rows) => {
+    const csv = [headers, ...rows]
+      .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${filename}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
+  /* CSV includes customer PII — only export from trusted machines; downloads are client-side blobs (no extra BFF endpoint). */
+  const exportOrders = () => {
+    downloadCSV('orders', ['Order ID', 'Customer', 'Email', 'Status', 'Payment', 'Total (BDT)', 'Date'],
+      filteredOrders.map(o => [
+        o.orderNumber || o.id,
+        o.user?.name || o.customer?.name || 'Guest',
+        o.user?.email || o.customer?.email || '',
+        o.status,
+        paymentStatusLabel(o.paymentStatus),
+        Number(o.total || 0).toFixed(2),
+        o.createdAt ? format(new Date(o.createdAt), 'yyyy-MM-dd HH:mm') : '',
+      ])
+    );
+    toast.success(`Exported ${filteredOrders.length} orders`);
   };
 
   const handleStatusChange = async (orderId, newStatus) => {
@@ -97,7 +159,14 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
         </div>
         <div className="flex items-center gap-2">
           <button className="crm-btn" onClick={fetchOrders}><FiRefreshCw /> Refresh</button>
-          <button className="crm-btn"><FiDownload /> Export</button>
+          <button
+            type="button"
+            className="crm-btn"
+            onClick={exportOrders}
+            aria-label="Export orders as CSV"
+          >
+            <FiDownload /> Export CSV
+          </button>
         </div>
       </div>
 
@@ -161,13 +230,13 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
                       </span>
                     </td>
                     <td>
-                      <p className="font-medium text-crm-text-bright text-sm">{order.customer?.name || "Guest"}</p>
-                      <p className="text-[10px] text-crm-text-dim">{order.customer?.email || ""}</p>
+                      <p className="font-medium text-crm-text-bright text-sm">{order.customer?.name || order.user?.name || "Guest"}</p>
+                      <p className="text-[10px] text-crm-text-dim">{order.customer?.email || order.user?.email || ""}</p>
                     </td>
                     <td><span className={`crm-badge border ${cfg.cls}`}>{cfg.label || order.status}</span></td>
                     <td>
-                      <span className={`text-[10px] font-bold uppercase ${order.paymentStatus === "PAID" ? "text-crm-success" : "text-crm-warning"}`}>
-                        {order.paymentStatus || "UNPAID"}
+                      <span className={`text-[10px] font-bold uppercase ${paymentIsPaid(order.paymentStatus) ? "text-crm-success" : "text-crm-warning"}`}>
+                        {paymentStatusLabel(order.paymentStatus)}
                       </span>
                     </td>
                     <td className="font-bold tabular-nums text-crm-text-bright">৳{Number(order.total).toLocaleString()}</td>
@@ -175,6 +244,7 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
                     <td className="text-right" onClick={e => e.stopPropagation()}>
                       <select
                         className="crm-input w-auto text-xs py-1 px-2 h-7"
+                        aria-label={`Order status for ${order.orderNumber || order.id}`}
                         value={order.status}
                         onChange={e => handleStatusChange(order.id, e.target.value)}
                       >
@@ -196,9 +266,10 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/50 z-50" onClick={() => { setDetailOrder(null); }} />
             <motion.div
+              data-section="order-detail"
               initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-crm-bg-card border-l border-crm-border z-50 flex flex-col overflow-hidden shadow-2xl"
+              className="order-detail fixed right-0 top-0 bottom-0 w-full max-w-lg bg-crm-bg-card border-l border-crm-border z-50 flex flex-col overflow-hidden shadow-2xl"
             >
               {detailLoading ? (
                 <div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-crm-primary" /></div>
@@ -220,8 +291,8 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
                           {STATUS_CONFIG[detailOrder.order.status]?.label || detailOrder.order.status}
                         </span>
                       )}
-                      <span className={`crm-badge ${detailOrder.order?.paymentStatus === "PAID" ? "text-crm-success bg-crm-success-dim" : "text-crm-warning bg-crm-warning-dim"}`}>
-                        {detailOrder.order?.paymentStatus || "UNPAID"}
+                      <span className={`crm-badge ${paymentIsPaid(detailOrder.order?.paymentStatus) ? "text-crm-success bg-crm-success-dim" : "text-crm-warning bg-crm-warning-dim"}`}>
+                        {paymentStatusLabel(detailOrder.order?.paymentStatus)}
                       </span>
                     </div>
 
@@ -229,8 +300,10 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
                     <div className="crm-card bg-crm-bg/50 space-y-3">
                       <h4 className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Customer</h4>
                       <div className="space-y-2 text-sm">
-                        <div className="flex items-center gap-2 text-crm-text-bright"><FiUser size={14} className="text-crm-text-muted" />{detailOrder.order?.customer?.name || "Guest"}</div>
-                        {detailOrder.order?.customer?.email && <div className="flex items-center gap-2 text-crm-text-dim"><FiMail size={14} className="text-crm-text-muted" />{detailOrder.order.customer.email}</div>}
+                        <div className="flex items-center gap-2 text-crm-text-bright"><FiUser size={14} className="text-crm-text-muted" />{detailOrder.order?.customer?.name || detailOrder.order?.user?.name || "Guest"}</div>
+                        {(detailOrder.order?.customer?.email || detailOrder.order?.user?.email) && (
+                          <div className="flex items-center gap-2 text-crm-text-dim"><FiMail size={14} className="text-crm-text-muted" />{detailOrder.order?.customer?.email || detailOrder.order?.user?.email}</div>
+                        )}
                         {detailOrder.order?.customer?.phone && <div className="flex items-center gap-2 text-crm-text-dim"><FiPhone size={14} className="text-crm-text-muted" />{detailOrder.order.customer.phone}</div>}
                       </div>
                     </div>
@@ -290,7 +363,9 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0 }) {
                   <div className="p-4 border-t border-crm-border flex items-center gap-3 bg-crm-bg-alt/50">
                     <select
                       className="crm-input flex-1"
-                      value={detailOrder.order?.status || "PENDING"}
+                      aria-label="Order status in detail panel"
+                      data-testid="order-detail-status-select"
+                      value={detailOrder.order?.status || "pending"}
                       onChange={e => handleStatusChange(detailOrder.order.id, e.target.value)}
                     >
                       {ORDER_STATUSES.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label}</option>)}

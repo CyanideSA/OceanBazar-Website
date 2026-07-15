@@ -1,14 +1,15 @@
 import Link from 'next/link';
-import { getLocale, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import {
   ShieldCheck, Truck, Zap, Building2, MapPin, CreditCard,
   Star, Package, HeadphonesIcon, RefreshCcw, BadgePercent,
   CheckCircle2, Globe, Lock, Clock, TrendingUp,
 } from 'lucide-react';
 
-export default async function MarketingPage() {
-  const locale = await getLocale();
-  const t = await getTranslations('marketing');
+export default async function MarketingPage(props: { params: Promise<{ locale: string }> }) {
+  const params = await props.params;
+  const { locale } = params;
+  const t = await getTranslations({ locale, namespace: 'marketing' });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">

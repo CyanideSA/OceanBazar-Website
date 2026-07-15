@@ -1,66 +1,139 @@
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
+import { logCommunication } from './communicationLogService';
+import {
+  sendOrderConfirmationWhatsApp as sendWaOrderConfirm,
+  sendShippingUpdateWhatsApp as sendWaShipping,
+  isWhatsAppConfigured,
+} from './meta/whatsappClient';
 
 const prisma = new PrismaClient();
 
-async function logSms(to: string, messageType: string, status: string, error?: string) {
+async function logSms(to: string, messageType: string, status: string, channel = 'sms', error?: string) {
   try {
     await prisma.sms_logs.create({
-      data: { id: uuidv4(), to_phone: to, message_type: messageType, status, error },
+      data: { id: uuidv4(), to_phone: to, message_type: messageType, channel, status, error },
+    });
+  } catch { /* non-fatal */ }
+
+  try {
+    await logCommunication({
+      channel: channel === 'whatsapp' ? 'whatsapp' : 'sms',
+      direction: 'outbound',
+      toAddress: to,
+      body: messageType,
+      status,
+      provider: channel === 'whatsapp' ? 'meta_whatsapp' : 'twilio',
+      metadata: error ? { error } : undefined,
     });
   } catch { /* non-fatal */ }
 }
 
-async function sendSmsViaTwilio(to: string, body: string): Promise<boolean> {
+async function sendViaTwilio(to: string, body: string, channel: 'sms' | 'whatsapp' = 'sms'): Promise<boolean> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_FROM_NUMBER;
+  const fromNumber = channel === 'whatsapp'
+    ? (process.env.TWILIO_WHATSAPP_FROM || `whatsapp:${process.env.TWILIO_FROM_NUMBER}`)
+    : process.env.TWILIO_FROM_NUMBER;
 
-  if (!accountSid || !authToken || !fromNumber || accountSid.startsWith('AC') === false) {
-    return false; // Twilio not configured
+  if (!accountSid || !authToken || !fromNumber || !accountSid.startsWith('AC')) {
+    return false;
   }
+
+  const toFormatted = channel === 'whatsapp' ? `whatsapp:${to}` : to;
 
   try {
     const { default: axios } = await import('axios');
     await axios.post(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      new URLSearchParams({ To: to, From: fromNumber, Body: body }),
-      { auth: { username: accountSid, password: authToken } }
+      new URLSearchParams({ To: toFormatted, From: fromNumber, Body: body }),
+      { auth: { username: accountSid, password: authToken } },
     );
     return true;
-  } catch (err: any) {
-    console.error('[sms] Twilio error:', err.response?.data || err.message);
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: unknown }; message?: string })?.response?.data || (err as Error)?.message;
+    console.error(`[${channel}] Twilio error:`, msg);
     return false;
   }
 }
 
-async function sendSms(to: string, body: string, messageType: string): Promise<boolean> {
+async function sendMessage(
+  to: string,
+  body: string,
+  messageType: string,
+  channel: 'sms' | 'whatsapp' = 'sms',
+): Promise<boolean> {
   if (process.env.OTP_TERMINAL_ONLY === 'true') {
-    console.log(`[sms] (DEV) To: ${to}, Type: ${messageType}, Body: ${body}`);
-    await logSms(to, messageType, 'dev_logged');
+    console.log(`[${channel}] (DEV) To: ${to}, Type: ${messageType}, Body: ${body}`);
+    await logSms(to, messageType, 'dev_logged', channel);
     return true;
   }
 
-  const sent = await sendSmsViaTwilio(to, body);
-  await logSms(to, messageType, sent ? 'sent' : 'failed', sent ? undefined : 'provider_error');
+  if (channel === 'whatsapp' && isWhatsAppConfigured()) {
+    const { sendWhatsAppText } = await import('./meta/whatsappClient');
+    const sent = await sendWhatsAppText(to, body);
+    await logSms(to, messageType, sent ? 'sent' : 'failed', 'whatsapp', sent ? undefined : 'meta_whatsapp_error');
+    if (sent) return true;
+  }
+
+  const sent = await sendViaTwilio(to, body, channel);
+  await logSms(to, messageType, sent ? 'sent' : 'failed', channel, sent ? undefined : 'provider_error');
   return sent;
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
-
 export async function sendOtpSms(phone: string, otp: string, type: string): Promise<boolean> {
-  return sendSms(phone, `Your Oceanbazar ${type} code: ${otp}. Valid for ${process.env.OTP_EXPIRE_MINUTES || 10} min.`, 'otp');
+  return sendMessage(phone, `Your Oceanbazar ${type} code: ${otp}. Valid for ${process.env.OTP_EXPIRE_MINUTES || 10} min.`, 'otp', 'sms');
 }
 
 export async function sendOrderConfirmationSms(phone: string, orderNumber: string): Promise<boolean> {
-  return sendSms(phone, `Oceanbazar: Order #${orderNumber} confirmed! Track at oceanbazar.com/orders`, 'order_confirmation');
+  return sendMessage(phone, `Oceanbazar: Order #${orderNumber} confirmed! Track at oceanbazar.com/orders`, 'order_confirmation', 'sms');
+}
+
+export async function sendOrderConfirmationWhatsApp(
+  phone: string,
+  orderNumber: string,
+  total: number,
+  _items: { productTitle: string; quantity: number }[] = [],
+): Promise<boolean> {
+  if (process.env.OTP_TERMINAL_ONLY === 'true') {
+    console.log(`[whatsapp] (DEV) Order confirm ${orderNumber} to ${phone}`);
+    await logSms(phone, 'order_confirmation_wa', 'dev_logged', 'whatsapp');
+    return true;
+  }
+  if (isWhatsAppConfigured()) {
+    const sent = await sendWaOrderConfirm(phone, orderNumber, total);
+    await logSms(phone, 'order_confirmation_wa', sent ? 'sent' : 'failed', 'whatsapp');
+    return sent;
+  }
+  const itemLines = _items.slice(0, 3).map((i) => `  • ${i.productTitle} × ${i.quantity}`).join('\n');
+  const body = `🛍️ *OceanBazar Order Confirmed!*\n\nOrder #${orderNumber}\n${itemLines}\n\n💰 Total: ৳${Number(total).toLocaleString()}\n\nTrack: oceanbazar.com/orders`;
+  return sendMessage(phone, body, 'order_confirmation_wa', 'whatsapp');
+}
+
+export async function sendShippingUpdateWhatsApp(
+  phone: string,
+  orderNumber: string,
+  status: string,
+  trackingNumber?: string,
+): Promise<boolean> {
+  if (process.env.OTP_TERMINAL_ONLY === 'true') {
+    await logSms(phone, 'shipping_update_wa', 'dev_logged', 'whatsapp');
+    return true;
+  }
+  if (isWhatsAppConfigured()) {
+    const sent = await sendWaShipping(phone, orderNumber, status, trackingNumber);
+    await logSms(phone, 'shipping_update_wa', sent ? 'sent' : 'failed', 'whatsapp');
+    return sent;
+  }
+  const body = `📦 OceanBazar: Order #${orderNumber} — ${status}.${trackingNumber ? ` Tracking: ${trackingNumber}` : ''}`;
+  return sendMessage(phone, body, 'shipping_update_wa', 'whatsapp');
 }
 
 export async function sendShippingUpdateSms(
   phone: string,
   orderNumber: string,
   status: string,
-  trackingNumber?: string
+  trackingNumber?: string,
 ): Promise<boolean> {
   const statusText: Record<string, string> = {
     processing: 'is being processed',
@@ -70,5 +143,5 @@ export async function sendShippingUpdateSms(
     delivered: 'has been delivered',
   };
   const msg = `Oceanbazar: Order #${orderNumber} ${statusText[status] || `status: ${status}`}.${trackingNumber ? ` Track: ${trackingNumber}` : ''}`;
-  return sendSms(phone, msg, 'shipping_update');
+  return sendMessage(phone, msg, 'shipping_update', 'sms');
 }

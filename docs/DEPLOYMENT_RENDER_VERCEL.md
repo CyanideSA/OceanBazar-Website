@@ -37,7 +37,7 @@ A starter blueprint is provided at repo root:
 
 Project:
 - Repo: `OCEANBAZAR-Frontend`
-- Root Directory: `frontend`
+- Root Directory: repo root (leave empty)
 - Framework: Next.js
 
 Build:
@@ -64,7 +64,7 @@ NEXT_PUBLIC_FIREBASE_APP_ID=<firebase_app_id>
 Project:
 - Type: Static Site
 - Repo: `OCEANBAZAR-Frontend-Admin`
-- Root Directory: `admin-frontend-react`
+- Root Directory: repo root (leave empty)
 - Build Command: `npm ci && npm run build`
 - Publish Directory: `dist`
 
@@ -82,7 +82,7 @@ VITE_WS_URL=https://<java-domain>
 Project:
 - Type: Web Service
 - Repo: `OCEANBAZAR-Backend`
-- Root Directory: `backend`
+- Root Directory: repo root (leave empty)
 - Build Command: `npm ci && npm run db:generate && npm run build`
 - Start Command: `npx prisma migrate deploy && npm run start`
 

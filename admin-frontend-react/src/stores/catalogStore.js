@@ -34,11 +34,17 @@ export const useCatalogStore = create((set, get) => ({
   // Modals
   modal: null, // { type: "createCategory"|"createProduct"|"rename"|"delete"|"move", data: {} }
 
+  // Brand nodes (categoryId -> BrandNode[])
+  categoryBrands: {},          // { [categoryId]: BrandNode[] }
+  loadingBrands: new Set(),    // set of categoryIds currently fetching brands
+  selectedBrandId: null,       // currently active brand filter
+  selectedBrandCategoryId: null,
+
   // Actions
   setTree: (tree) => set({ tree }),
   setLoadingTree: (v) => set({ loadingTree: v }),
 
-  setCurrentCategoryId: (id) => set({ currentCategoryId: id, selectedIds: new Set(), openProductId: null }),
+  setCurrentCategoryId: (id) => set({ currentCategoryId: id, selectedIds: new Set(), openProductId: null, selectedBrandId: null, selectedBrandCategoryId: null }),
   setBreadcrumb: (crumbs) => set({ breadcrumb: crumbs }),
   setFolderContents: (contents) => set({ folderContents: contents }),
   setLoadingContents: (v) => set({ loadingContents: v }),
@@ -89,4 +95,24 @@ export const useCatalogStore = create((set, get) => ({
 
   openModal: (type, data = {}) => set({ modal: { type, data } }),
   closeModal: () => set({ modal: null }),
+
+  setCategoryBrands: (categoryId, brands) => {
+    const cb = { ...get().categoryBrands, [categoryId]: brands };
+    const lb = new Set(get().loadingBrands);
+    lb.delete(categoryId);
+    set({ categoryBrands: cb, loadingBrands: lb });
+  },
+  setLoadingBrands: (categoryId, loading) => {
+    const lb = new Set(get().loadingBrands);
+    if (loading) lb.add(categoryId); else lb.delete(categoryId);
+    set({ loadingBrands: lb });
+  },
+  selectBrand: (brandId, categoryId) => set({
+    selectedBrandId: brandId,
+    selectedBrandCategoryId: categoryId,
+    currentCategoryId: categoryId,
+    selectedIds: new Set(),
+    openProductId: null,
+  }),
+  clearBrandSelection: () => set({ selectedBrandId: null, selectedBrandCategoryId: null }),
 }));

@@ -10,6 +10,10 @@ RUN mvn -B -DskipTests clean package \
 # Run — Render injects PORT; Spring must listen on it (no separate "start command" in the UI)
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
+# docker-compose healthcheck uses curl; the JRE image does not include it by default
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/application.jar app.jar
 # Shell form so $PORT is expanded at container start
 CMD java -jar app.jar --server.port=$PORT

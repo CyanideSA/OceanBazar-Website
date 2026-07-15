@@ -1,6 +1,6 @@
 'use client';
 
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -10,26 +10,80 @@ import {
   type Auth,
 } from 'firebase/auth';
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyAsLuUVSdDRgynoSJIx3jOJgkQgGUevg3w',
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'oceanbazarbd.firebaseapp.com',
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'oceanbazarbd',
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:749559457588:web:f67ca8249309c0887ae761',
-};
+function readFirebaseConfig() {
+  return {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || '',
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || '',
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || '',
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || '',
+  };
+}
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const firebaseAuth: Auth = getAuth(app);
+function isComplete(cfg: ReturnType<typeof readFirebaseConfig>): boolean {
+  return !!(cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId);
+}
+
+/** Values copied verbatim from `.env.example` break Firebase and confuse local dev */
+function looksLikeExamplePlaceholder(cfg: ReturnType<typeof readFirebaseConfig>): boolean {
+  return (
+    cfg.apiKey === 'your_firebase_api_key' ||
+    cfg.authDomain === 'your_project.firebaseapp.com' ||
+    cfg.projectId === 'your_firebase_project_id' ||
+    cfg.appId === 'your_firebase_app_id'
+  );
+}
+
+let cachedApp: FirebaseApp | null | undefined;
+let warnedMissing = false;
+
+function getFirebaseApp(): FirebaseApp | null {
+  if (cachedApp !== undefined) return cachedApp;
+
+  const cfg = readFirebaseConfig();
+  const usable = isComplete(cfg) && !looksLikeExamplePlaceholder(cfg);
+
+  if (!usable) {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development' && !warnedMissing) {
+      warnedMissing = true;
+      console.warn(
+        '[Oceanbazar] Firebase client env not configured (or still using .env.example placeholders). ' +
+          'Copy frontend/.env.example → .env.local and set NEXT_PUBLIC_FIREBASE_* . Social login stays disabled until then.'
+      );
+    }
+    cachedApp = null;
+    return null;
+  }
+
+  try {
+    cachedApp = getApps().length === 0 ? initializeApp(cfg) : getApps()[0];
+  } catch (e) {
+    console.error('[Oceanbazar] Firebase initializeApp failed:', e);
+    cachedApp = null;
+  }
+
+  return cachedApp ?? null;
+}
+
+function getFirebaseAuth(): Auth | null {
+  const app = getFirebaseApp();
+  return app ? getAuth(app) : null;
+}
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 const facebookProvider = new FacebookAuthProvider();
 
+const missingConfigMessage =
+  'Firebase is not configured. Add NEXT_PUBLIC_FIREBASE_* to frontend/.env.local (see .env.example).';
+
 /**
  * Sign in with Google via Firebase popup and return the Firebase ID token.
  */
 export async function signInWithGoogle(): Promise<string> {
-  const result = await signInWithPopup(firebaseAuth, googleProvider);
+  const auth = getFirebaseAuth();
+  if (!auth) throw new Error(missingConfigMessage);
+  const result = await signInWithPopup(auth, googleProvider);
   const idToken = await result.user.getIdToken();
   return idToken;
 }
@@ -38,7 +92,9 @@ export async function signInWithGoogle(): Promise<string> {
  * Sign in with Facebook via Firebase popup and return the Firebase ID token.
  */
 export async function signInWithFacebook(): Promise<string> {
-  const result = await signInWithPopup(firebaseAuth, facebookProvider);
+  const auth = getFirebaseAuth();
+  if (!auth) throw new Error(missingConfigMessage);
+  const result = await signInWithPopup(auth, facebookProvider);
   const idToken = await result.user.getIdToken();
   return idToken;
 }
@@ -47,5 +103,11 @@ export async function signInWithFacebook(): Promise<string> {
  * Sign out from Firebase (client-side cleanup).
  */
 export async function firebaseSignOut(): Promise<void> {
-  await fbSignOut(firebaseAuth);
+  const auth = getFirebaseAuth();
+  if (!auth) return;
+  await fbSignOut(auth);
+}
+
+export function isFirebaseClientConfigured(): boolean {
+  return getFirebaseAuth() !== null;
 }

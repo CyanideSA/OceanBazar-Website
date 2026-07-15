@@ -1,0 +1,7 @@
+{
+  "checkout_enabled": true,
+  "payments_enabled": true,
+  "admin_enabled": true,
+  "wholesale_enabled": true,
+  "realtime_enabled": true
+}

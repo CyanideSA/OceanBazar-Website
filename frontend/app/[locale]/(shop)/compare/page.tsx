@@ -128,10 +128,13 @@ export default function ComparePage() {
                 <td className="px-4 py-3 font-medium text-muted-foreground">Price</td>
                 {products.map((p) => (
                   <td key={p.id} className="px-4 py-3 text-center">
-                    <span className="text-lg font-bold text-primary">৳{Number(p.price).toLocaleString()}</span>
-                    {p.comparePrice && Number(p.comparePrice) > Number(p.price) && (
+                    <span className="text-lg font-bold text-primary">
+                      ৳{Number((p as any).pricing?.retail?.price ?? 0).toLocaleString()}
+                    </span>
+                    {(p as any).pricing?.retail?.compareAt &&
+                      Number((p as any).pricing.retail.compareAt) > Number((p as any).pricing.retail.price) && (
                       <span className="ml-2 text-sm text-muted-foreground line-through">
-                        ৳{Number(p.comparePrice).toLocaleString()}
+                        ৳{Number((p as any).pricing.retail.compareAt).toLocaleString()}
                       </span>
                     )}
                   </td>
@@ -163,14 +166,12 @@ export default function ComparePage() {
                 <td className="px-4 py-3 font-medium text-muted-foreground">Stock</td>
                 {products.map((p) => (
                   <td key={p.id} className="px-4 py-3 text-center">
-                    {p.stockQty != null ? (
-                      <span className={cn(
-                        'rounded-full px-2 py-0.5 text-xs font-semibold',
-                        Number(p.stockQty) > 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                      )}>
-                        {Number(p.stockQty) > 0 ? `${p.stockQty} in stock` : 'Out of stock'}
-                      </span>
-                    ) : '—'}
+                    <span className={cn(
+                      'rounded-full px-2 py-0.5 text-xs font-semibold',
+                      (p.stock ?? 0) > 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                    )}>
+                      {(p.stock ?? 0) > 0 ? `${p.stock} in stock` : 'Out of stock'}
+                    </span>
                   </td>
                 ))}
               </tr>

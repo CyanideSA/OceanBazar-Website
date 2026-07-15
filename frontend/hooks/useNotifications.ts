@@ -12,24 +12,23 @@ import { getSocket, connectSocket } from '@/lib/socket';
  */
 export function useNotifications() {
   const { user, isAuthenticated } = useAuthStore();
-  const { items, add, markRead, markAllRead } = useNotificationsStore();
+  const { items, add, hasServerId, markRead, markAllRead } = useNotificationsStore();
   const fetchedRef = useRef(false);
 
   const fetchFromServer = useCallback(async () => {
     if (!user?.id) return;
     try {
       const { data } = await notificationsApi.list(user.id);
-      const serverItems = data?.notifications || [];
-      const existingIds = new Set(items.map((n) => n.id));
+      const serverItems: Array<{ id: string; title?: string; body?: string; message?: string }> = data?.notifications || [];
       for (const sn of serverItems) {
-        if (!existingIds.has(sn.id)) {
-          add({ title: sn.title || 'Notification', body: sn.body || sn.message || '' });
+        if (!hasServerId(sn.id)) {
+          add({ serverId: sn.id, title: sn.title || 'Notification', body: sn.body || sn.message || '' });
         }
       }
     } catch {
       /* non-fatal */
     }
-  }, [user?.id, items, add]);
+  }, [user?.id, hasServerId, add]);
 
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;

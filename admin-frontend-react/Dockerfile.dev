@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache curl
+
+COPY package*.json ./
+RUN npm ci
+
+ENV HOST=0.0.0.0
+
+EXPOSE 5173
+
+CMD ["sh", "-c", "if [ ! -d node_modules/vite ]; then npm ci; fi; exec npm run dev -- --host 0.0.0.0"]

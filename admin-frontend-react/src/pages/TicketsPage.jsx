@@ -10,7 +10,8 @@ import {
 } from "react-icons/fi";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import useAdminRealtimeSocket from '../hooks/useAdminRealtimeSocket';
+import { useToast } from '../components/ToastProvider';
+import useAdminBffSocket from '../hooks/useAdminBffSocket';
 
 const STATUS_CFG = {
   open:        { label: 'Open',        dot: 'bg-crm-warning',   class: 'crm-badge-warning' },
@@ -48,6 +49,7 @@ function PriorityBadge({ priority }) {
 }
 
 export default function TicketsPage() {
+  const toast = useToast();
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState(null);
   const [reply, setReply] = useState('');
@@ -55,7 +57,7 @@ export default function TicketsPage() {
   const [uploading, setUploading] = useState(false);
   const [filter, setFilter] = useState({ status: '', priority: '', category: '' });
   const [showCreate, setShowCreate] = useState(false);
-  const { connected: wsConnected } = useAdminRealtimeSocket();
+  const { connected: wsConnected } = useAdminBffSocket();
   const fileRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -80,9 +82,24 @@ export default function TicketsPage() {
 
   const { data: detail } = useQuery({
     queryKey: ['admin-ticket', selectedId],
-    queryFn: () => selectedId ? api.get(`/api/admin/tickets/${selectedId}`).then(r => r.data) : null,
+    queryFn: () => selectedId ? api.get(`/api/admin/tickets/${selectedId}`).then(r => r.data?.ticket ?? r.data) : null,
     enabled: !!selectedId,
     refetchInterval: wsConnected ? false : 15000,
+  });
+
+  const [newTicketForm, setNewTicketForm] = useState({ subject: '', category: 'other', priority: 'medium', userId: '', message: '' });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => api.post('/api/admin/tickets', data).then(r => r.data),
+    onSuccess: (res) => {
+      setShowCreate(false);
+      setNewTicketForm({ subject: '', category: 'other', priority: 'medium', userId: '', message: '' });
+      qc.invalidateQueries({ queryKey: ['admin-tickets'] });
+      qc.invalidateQueries({ queryKey: ['admin-ticket-stats'] });
+      if (res?.ticket?.id) setSelectedId(res.ticket.id);
+      toast.success('Ticket created successfully');
+    },
+    onError: () => toast.error('Failed to create ticket'),
   });
 
   /* ── Mutations ── */
@@ -146,6 +163,69 @@ export default function TicketsPage() {
           <button onClick={() => setShowCreate(true)} className="crm-btn crm-btn-primary">
             <FiPlus /> New Ticket
           </button>
+
+          {/* New Ticket Modal */}
+          {showCreate && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)} />
+              <div className="relative w-full max-w-lg bg-crm-bg-card border border-crm-border rounded-2xl shadow-2xl z-10">
+                <div className="flex items-center justify-between p-6 border-b border-crm-border">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-crm-primary-dim text-crm-primary"><FiHelpCircle size={20} /></div>
+                    <div>
+                      <h3 className="font-bold text-crm-text-bright">New Support Ticket</h3>
+                      <p className="text-xs text-crm-text-dim">Create a ticket on behalf of a customer</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowCreate(false)} className="p-1.5 hover:bg-crm-bg-hover rounded-lg text-crm-text-dim"><FiXCircle /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Customer User ID <span className="text-crm-danger">*</span></label>
+                    <input className="crm-input w-full" placeholder="8-character user ID" value={newTicketForm.userId}
+                      onChange={e => setNewTicketForm(f => ({ ...f, userId: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Subject <span className="text-crm-danger">*</span></label>
+                    <input className="crm-input w-full" placeholder="Brief description of the issue"
+                      value={newTicketForm.subject} onChange={e => setNewTicketForm(f => ({ ...f, subject: e.target.value }))} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Category</label>
+                      <select className="crm-input w-full" value={newTicketForm.category}
+                        onChange={e => setNewTicketForm(f => ({ ...f, category: e.target.value }))}>
+                        {['payment','delivery','product','other'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Priority</label>
+                      <select className="crm-input w-full" value={newTicketForm.priority}
+                        onChange={e => setNewTicketForm(f => ({ ...f, priority: e.target.value }))}>
+                        {Object.keys(PRIORITY_CFG).map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Initial Message</label>
+                    <textarea className="crm-input w-full min-h-[80px] resize-none" placeholder="Describe the issue in detail..."
+                      value={newTicketForm.message} onChange={e => setNewTicketForm(f => ({ ...f, message: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="px-6 pb-6 flex gap-3">
+                  <button className="crm-btn flex-1" onClick={() => setShowCreate(false)}>Cancel</button>
+                  <button
+                    className="crm-btn crm-btn-primary flex-1"
+                    disabled={createMutation.isPending || !newTicketForm.subject.trim() || !newTicketForm.userId.trim()}
+                    onClick={() => createMutation.mutate({ userId: newTicketForm.userId, subject: newTicketForm.subject, category: newTicketForm.category, priority: newTicketForm.priority, message: newTicketForm.message })}
+                  >
+                    {createMutation.isPending ? <span className="animate-spin h-4 w-4 border-b-2 border-white rounded-full inline-block" /> : <FiPlus />}
+                    {createMutation.isPending ? 'Creating...' : 'Create Ticket'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

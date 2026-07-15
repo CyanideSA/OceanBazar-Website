@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useShopRouter } from '@/lib/shopNavigation';
+import { ShieldCheck, Package } from 'lucide-react';
 import type { Product, ProductPricing } from '@/types';
-import { calculatePrice, RETAIL_MAX_UNITS } from '@/lib/pricing';
+import { calculatePrice, parseTierBands, RETAIL_MAX_UNITS, FREE_FEES_THRESHOLD } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/authStore';
 
 interface Props {
   product: Product;
@@ -18,6 +20,10 @@ interface Props {
 
 function tierRows(pricing: ProductPricing | null | undefined) {
   if (!pricing) return [];
+  const bands = parseTierBands(pricing);
+  if (bands.length > 0) {
+    return bands.map((b) => ({ minQty: b.minQty, maxQty: b.maxQty, discount: b.discountPct, price: b.price ?? null }));
+  }
   const rows: Array<{ minQty: number; maxQty: number | null; discount: number } | null> = [
     pricing.tier1MinQty && pricing.tier1Discount != null
       ? {
@@ -37,12 +43,20 @@ function tierRows(pricing: ProductPricing | null | undefined) {
       ? { minQty: pricing.tier3MinQty, discount: pricing.tier3Discount, maxQty: null }
       : null,
   ];
-  return rows.filter(Boolean) as Array<{ minQty: number; maxQty: number | null; discount: number }>;
+  return rows.filter(Boolean).map((r) => ({ ...r, price: null })) as Array<{ minQty: number; maxQty: number | null; discount: number; price: number | null }>;
 }
 
 /** Resolve which tier index (0 = base, 1-3 = tier) is active for a given qty */
 function activeTierIndex(pricing: ProductPricing | null | undefined, qty: number): number {
   if (!pricing) return 0;
+  const bands = parseTierBands(pricing);
+  if (bands.length > 0) {
+    for (let i = bands.length - 1; i >= 0; i -= 1) {
+      const band = bands[i];
+      if (qty >= band.minQty && (band.maxQty == null || qty <= band.maxQty)) return i + 1;
+    }
+    return 0;
+  }
   const t3 = pricing.tier3MinQty ?? Infinity;
   const t2 = pricing.tier2MinQty ?? Infinity;
   const t1 = pricing.tier1MinQty ?? Infinity;
@@ -81,6 +95,11 @@ function ActivePricingPanel({
   const savings = previousPrice && previousPrice > pricingResult.unitPrice
     ? Math.round((previousPrice - pricingResult.unitPrice) * qty * 100) / 100
     : 0;
+
+  const currentTotal = pricingResult.lineTotal;
+  const previousTotal = previousPrice && previousPrice > pricingResult.unitPrice
+    ? Math.round(previousPrice * qty * 100) / 100
+    : null;
 
   const tiers = tierRows(pricing);
   const activeIdx = activeTierIndex(pricing, qty);
@@ -130,12 +149,30 @@ function ActivePricingPanel({
         )}
       </div>
 
-      {/* Savings */}
-      {savings > 0 && (
-        <p className="mt-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-          {td('youSave')} {tc('taka')}{savings.toLocaleString('bn-BD')}
-        </p>
-      )}
+      {/* Total price */}
+      <div className="mt-3 rounded-lg border border-primary/20 bg-gradient-to-r from-primary/10 via-background/70 to-background px-3 py-2.5 shadow-sm">
+        <div className="mb-2 h-px w-full bg-gradient-to-r from-primary/35 via-primary/15 to-transparent" />
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-sm font-semibold text-muted-foreground">
+            {tp('total')}
+          </span>
+          <div className="text-right">
+            <div className="text-xl font-extrabold text-foreground">
+              {tc('taka')}{currentTotal.toLocaleString('bn-BD')}
+            </div>
+          </div>
+        </div>
+        {savings > 0 && previousTotal != null && previousTotal > currentTotal && (
+          <div className="mt-2 flex items-center justify-between gap-3 text-sm">
+            <p className="font-semibold text-emerald-600 dark:text-emerald-400">
+              {td('youSave')} {tc('taka')}{savings.toLocaleString('bn-BD')}
+            </p>
+            <div className="text-xs text-muted-foreground line-through">
+              {tc('taka')}{previousTotal.toLocaleString('bn-BD')}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Tier table */}
       {tiers.length > 0 && (
@@ -157,7 +194,7 @@ function ActivePricingPanel({
                 )}
               >
                 <td className="px-2 py-1.5 text-foreground">
-                  1{pricing?.tier1MinQty ? `–${pricing.tier1MinQty - 1}` : '+'}
+                  1{tiers[0]?.minQty ? `–${tiers[0].minQty - 1}` : '+'}
                 </td>
                 <td className="px-2 py-1.5 text-muted-foreground">—</td>
                 <td className="px-2 py-1.5 text-right font-medium text-foreground">
@@ -179,7 +216,7 @@ function ActivePricingPanel({
                     -{tier.discount}%
                   </td>
                   <td className="px-2 py-1.5 text-right font-medium text-foreground">
-                    {tc('taka')}{(base * (1 - tier.discount / 100)).toFixed(0)}
+                    {tc('taka')}{(tier.price != null ? tier.price : base * (1 - tier.discount / 100)).toFixed(2)}
                   </td>
                 </tr>
               ))}
@@ -204,25 +241,27 @@ export default function PricingBlock({
   const tp = useTranslations('product');
   const tpr = useTranslations('pricing');
   const locale = useLocale();
-  const router = useRouter();
+  const router = useShopRouter();
   const [qty, setQty] = useState(1);
 
-  const wholesaleAvailable = Boolean(product.pricing.wholesale);
+  const { user } = useAuthStore();
+  const isWholesaleUser = user?.userType === 'wholesale';
+
+  const wholesaleAvailable = Boolean(product.pricing.wholesale) && isWholesaleUser;
   const moq = product.moq ?? 1;
 
-  // Retail max: hard cap at RETAIL_MAX_UNITS (or stock, whichever is lower)
-  const retailHardMax = Math.min(RETAIL_MAX_UNITS, effectiveStock > 0 ? effectiveStock : RETAIL_MAX_UNITS);
-  const maxQty = effectiveStock > 0 ? effectiveStock : 1;
+  const retailT3Max = product.pricing.retail?.tier3MinQty ?? RETAIL_MAX_UNITS;
+  const retailHardMax = Math.min(retailT3Max, effectiveStock > 0 ? effectiveStock : retailT3Max);
+  const maxQty = wholesaleAvailable
+    ? (effectiveStock > 0 ? effectiveStock : 1)
+    : Math.max(1, Math.min(retailHardMax, effectiveStock > 0 ? effectiveStock : retailHardMax));
 
-  // Determine active pricing mode purely from qty
+  // Determine active pricing mode — wholesale only for approved users meeting MOQ
   const isWholesale = wholesaleAvailable && qty >= moq;
   const activeMode: 'retail' | 'wholesale' = isWholesale ? 'wholesale' : 'retail';
 
   const activePricingData = isWholesale ? product.pricing.wholesale : product.pricing.retail;
   const activeResult = calculatePrice(activeMode, product.pricing, qty, moq, variantPriceOverride);
-
-  // For line-total display
-  const lineTotalDisplay = activeResult.lineTotal;
 
   useEffect(() => {
     if (qty > maxQty && maxQty > 0) setQty(maxQty);
@@ -232,36 +271,11 @@ export default function PricingBlock({
 
   return (
     <div className="space-y-4">
-      {/* Single active pricing panel — transitions when mode switches */}
-      <ActivePricingPanel
-        mode={activeMode}
-        pricingResult={activeResult}
-        pricing={activePricingData}
-        qty={qty}
-        tc={tc}
-        td={td}
-        tp={tpr}
-      />
 
-      {/* Contextual hint: retail limit / wholesale threshold */}
-      {wholesaleAvailable && !isWholesale && (
-        <p className="text-xs text-muted-foreground">
-          {td('retailMax', { n: retailHardMax })}{' '}
-          <span className="font-semibold text-amber-700 dark:text-amber-400">
-            ({tpr('wholesale')} {tpr('wholesaleFrom')} {moq}+)
-          </span>
-        </p>
-      )}
-      {isWholesale && (
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-800 dark:text-amber-200">
-          {tpr('meetsMoq')}
-        </div>
-      )}
-
-      {/* Quantity selector */}
+      {/* ── 1. Quantity selector — first, above pricing card ── */}
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm font-medium text-muted-foreground">{tp('quantity')}:</span>
-        <div className="flex items-center overflow-hidden rounded-lg border border-border">
+        <span className="text-sm font-semibold text-foreground">{tp('quantity')}:</span>
+        <div className="flex items-center overflow-hidden rounded-lg border border-border shadow-sm">
           <button
             type="button"
             onClick={() => setQty(clampQty(qty - 1))}
@@ -275,7 +289,7 @@ export default function PricingBlock({
             max={Math.max(1, maxQty)}
             value={qty}
             onChange={(e) => setQty(clampQty(parseInt(e.target.value, 10) || 1))}
-            className="h-11 w-16 border-x border-border bg-background text-center text-sm font-medium text-foreground focus:outline-none"
+            className="h-11 w-16 border-x border-border bg-background text-center text-sm font-semibold text-foreground focus:outline-none"
           />
           <button
             type="button"
@@ -285,18 +299,57 @@ export default function PricingBlock({
             +
           </button>
         </div>
-        <span className="text-sm text-muted-foreground">
-          = {tc('taka')}{lineTotalDisplay.toLocaleString('bn-BD')}
+        {wholesaleAvailable && !isWholesale && (
+          <span className="text-xs text-muted-foreground">
+            ({tpr('wholesale')} {tpr('wholesaleFrom')} {moq}+)
+          </span>
+        )}
+      </div>
+
+      {/* ── 2. Active pricing panel ── */}
+      <ActivePricingPanel
+        mode={activeMode}
+        pricingResult={activeResult}
+        pricing={activePricingData}
+        qty={qty}
+        tc={tc}
+        td={td}
+        tp={tpr}
+      />
+
+      {/* MOQ badge */}
+      {isWholesale && (
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-800 dark:text-amber-200">
+          {tpr('meetsMoq')}
+        </div>
+      )}
+
+      {/* Free shipping notice */}
+      {activeResult.lineTotal >= FREE_FEES_THRESHOLD && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          Free shipping + no service charge on this order (subtotal above {FREE_FEES_THRESHOLD.toLocaleString()} BDT)
+        </div>
+      )}
+
+      {/* ── 3. Trust badges ── */}
+      <div className="flex flex-wrap gap-4 border-t border-border pt-3 text-sm text-muted-foreground">
+        <span className="inline-flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-primary" />
+          {td('orderProtection')}
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <Package className="h-4 w-4 text-primary" />
+          {td('genuineProduct')}
         </span>
       </div>
 
-      {/* CTA buttons */}
-      <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+      {/* ── 4. CTA buttons ── */}
+      <div className="flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
           onClick={() => onAddToCart?.(qty, variantId ?? null)}
           disabled={effectiveStock === 0}
-          className="flex-1 rounded-lg bg-primary py-3.5 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground min-h-[48px]"
+          className="flex-1 rounded-lg bg-primary py-3.5 font-semibold text-primary-foreground shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground min-h-[48px]"
         >
           {effectiveStock === 0 ? tp('outOfStock') : tp('addToCart')}
         </button>
@@ -308,7 +361,7 @@ export default function PricingBlock({
             else router.push(`/${locale}/checkout`);
           }}
           className={cn(
-            'rounded-lg border-2 border-primary px-6 py-3.5 font-semibold text-primary transition-colors hover:bg-primary/10 min-h-[48px]',
+            'rounded-lg border-2 border-primary px-6 py-3.5 font-semibold text-primary transition-all hover:bg-primary/10 active:scale-[0.98] min-h-[48px]',
             effectiveStock === 0 && 'cursor-not-allowed border-muted text-muted-foreground hover:bg-transparent',
           )}
         >

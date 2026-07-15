@@ -1,0 +1,15 @@
+# Spring Boot 3.2 — production schema discipline (complements application.properties)
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+oceanbazar:
+  websocket:
+    stomp:
+      enabled: false

@@ -42,6 +42,90 @@ async function main() {
   });
   console.log('  ✓ CRM admin ready (username: rjsuvosa)');
 
+  // ─── E2E storefront user (Playwright) ───────────────────────────────────────
+  const e2eEmail = 'e2e.storefront@oceanbazar.test';
+  const e2ePasswordHash = await bcrypt.hash('Test@1234', 12);
+  const existingE2e = await prisma.user.findFirst({ where: { email: e2eEmail } });
+  if (!existingE2e) {
+    await prisma.user.create({
+      data: {
+        id: generateEntityId(),
+        name: 'E2E Storefront',
+        email: e2eEmail,
+        passwordHash: e2ePasswordHash,
+        emailVerified: true,
+        accountStatus: 'active',
+      },
+    });
+    console.log(`  ✓ E2E storefront user: ${e2eEmail} / Test@1234`);
+  } else {
+    await prisma.user.update({
+      where: { id: existingE2e.id },
+      data: {
+        passwordHash: e2ePasswordHash,
+        emailVerified: true,
+        accountStatus: 'active',
+      },
+    });
+    console.log(`  ✓ E2E storefront user refreshed: ${e2eEmail}`);
+  }
+
+  // ─── E2E sample order (storefront order list + detail) ──────────────────────
+  const e2eUserForOrder = await prisma.user.findUnique({ where: { email: e2eEmail } });
+  if (e2eUserForOrder) {
+    const anyProduct = await prisma.product.findFirst({
+      where: { status: 'active' },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (anyProduct) {
+      const existingE2eOrder = await prisma.order.findFirst({ where: { userId: e2eUserForOrder.id } });
+      if (!existingE2eOrder) {
+        const orderId = generateEntityId();
+        const orderNumber = `OB-E2E-${orderId.slice(0, 4)}`;
+        await prisma.order.create({
+          data: {
+            id: orderId,
+            orderNumber,
+            userId: e2eUserForOrder.id,
+            status: 'pending',
+            customerType: 'retail',
+            subtotal: 1000,
+            discount: 0,
+            gst: 0,
+            shippingFee: 60,
+            serviceFee: 10,
+            obPointsUsed: 0,
+            obDiscount: 0,
+            total: 1070,
+            paymentMethod: 'cod',
+            paymentStatus: 'unpaid',
+            items: {
+              create: [
+                {
+                  productId: anyProduct.id,
+                  productTitle: anyProduct.titleEn || 'Product',
+                  unitPrice: 1000,
+                  quantity: 1,
+                  lineTotal: 1000,
+                },
+              ],
+            },
+            timeline: {
+              create: [
+                {
+                  status: 'pending',
+                  note: 'Seeded order for E2E / demos',
+                  actorType: 'system',
+                },
+              ],
+            },
+          },
+        });
+        console.log(`  ✓ E2E sample order ${orderNumber} for ${e2eEmail}`);
+      }
+    }
+  }
+
   // ─── Root categories ────────────────────────────────────────────────────────
   const categoryData = [
     { nameEn: 'Electronics', nameBn: 'ইলেকট্রনিক্স', icon: '📱' },
@@ -91,12 +175,18 @@ async function main() {
           titleBn: 'স্যামসাং গ্যালাক্সি A54',
           descriptionEn: 'A stunning 6.4-inch Super AMOLED display, 50MP camera, and 5000mAh battery.',
           descriptionBn: '৬.৪ ইঞ্চি সুপার AMOLED ডিসপ্লে, ৫০MP ক্যামেরা এবং ৫০০০mAh ব্যাটারি।',
-          categoryId: electronicsSubcat.id,
           brand: 'Samsung',
           sku: 'SAM-A54-BLK',
           status: 'active',
           moq: 1,
           stock: 100,
+          productCategories: {
+            create: {
+              categoryId: electronicsSubcat.id,
+              isPrimary: true,
+              sortOrder: 0,
+            },
+          },
           pricing: {
             create: [
               {
@@ -142,6 +232,7 @@ async function main() {
   console.log('\n✅ Seed complete!\n');
   console.log('   Admin login: superadmin / Admin@1234');
   console.log('   CRM admin:   rjsuvosa (password set in seed)');
+  console.log('   E2E user:    e2e.storefront@oceanbazar.test / Test@1234');
   console.log('   API: http://localhost:4000');
 }
 

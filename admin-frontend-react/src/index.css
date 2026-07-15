@@ -11,6 +11,27 @@
     @apply h-full m-0 overflow-hidden;
   }
 
+  @media (max-width: 1024px) {
+    html,
+    body,
+    #root {
+      height: auto;
+      min-height: 100%;
+      min-height: 100dvh;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+
+  @supports (padding: env(safe-area-inset-bottom)) {
+    body {
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  }
+
   body {
     @apply font-sans antialiased;
     background-color: var(--crm-bg);
@@ -27,11 +48,22 @@
 
   ::-webkit-scrollbar-thumb {
     background: var(--crm-bg-hover);
-    @apply rounded-full hover:bg-crm-text-muted;
+    @apply rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--crm-text-muted);
   }
 
   button, input, select, textarea {
-    @apply focus:outline-none focus:ring-1 focus:ring-crm-primary;
+    outline: none;
+  }
+
+  button:focus,
+  input:focus,
+  select:focus,
+  textarea:focus {
+    box-shadow: 0 0 0 1px var(--crm-primary);
   }
 }
 
@@ -44,15 +76,33 @@
   }
 
   .crm-card-interactive {
-    @apply crm-card cursor-pointer transition-all hover:border-crm-border-strong hover:bg-crm-bg-card;
+    @apply crm-card cursor-pointer transition-all;
+  }
+
+  .crm-card-interactive:hover {
+    border-color: var(--crm-border-strong);
+    background-color: var(--crm-bg-card);
+  }
+
+  .glass-surface {
+    background: color-mix(in srgb, var(--crm-bg-alt) 72%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-color: color-mix(in srgb, var(--crm-border) 60%, transparent);
+    box-shadow: var(--crm-shadow-md);
   }
 
   .crm-btn {
-    @apply inline-flex items-center justify-center px-4 py-2 font-medium transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center px-4 py-2 font-medium transition-all rounded-md;
     background-color: var(--crm-bg-hover);
     border: 1px solid var(--crm-border);
     color: var(--crm-text-bright);
     gap: 0.5rem;
+  }
+
+  .crm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .crm-btn:hover:not(:disabled) {
@@ -950,4 +1000,69 @@
   font-size: 0.75rem;
   color: #64748b;
   margin-bottom: 0.25rem;
+}
+
+/* Toast notifications — must sit above modals (wizard z-50) */
+.toast-viewport {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(24rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--crm-border, #334155);
+  background: var(--crm-bg-alt, #1e293b);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  color: var(--crm-text-bright, #f8fafc);
+}
+
+.toast-error {
+  border-color: #ef4444;
+  background: #450a0a;
+}
+
+.toast-success {
+  border-color: #22c55e;
+  background: #052e16;
+}
+
+.toast-info {
+  border-color: #3b82f6;
+  background: #172554;
+}
+
+.toast-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.toast-message {
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  opacity: 0.9;
+}
+
+.toast-close {
+  float: right;
+  margin-left: 0.5rem;
+  font-size: 1.125rem;
+  line-height: 1;
+  opacity: 0.6;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: inherit;
+}
+
+.toast-close:hover {
+  opacity: 1;
 }

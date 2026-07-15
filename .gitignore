@@ -4,6 +4,7 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
+config/maintenance.env
 .DS_Store
 build/
 .cache/
@@ -11,3 +12,36 @@ build/
 backend/prisma/dev.db
 admin-frontend-react/dist/
 frontend/.next/
+
+# Local dev binaries (e.g. Windows Redis when Docker is unavailable)
+.dev/
+
+# Terraform (local state / vars — use remote backend in prod)
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars
+infra/terraform/crash.log
+infra/terraform/override.tf
+infra/terraform/*_override.tf
+
+# Build outputs
+backend/dist/
+content-id-frontend/dist/
+frontend/out/
+
+# Logs / local errors
+*.err
+
+# Test artifacts
+frontend/playwright-report/
+frontend/test-results/
+
+# Local backups & IDE
+backups/
+.cursor/
+
+# Python
+ml-service/__pycache__/
+ml-service/.venv/
+**/__pycache__/

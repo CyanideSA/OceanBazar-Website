@@ -1,0 +1,73 @@
+aws_region   = "ap-southeast-1"
+project_name = "oceanbazar"
+environment  = "staging"
+
+# --- Use your own VPC (recommended if you already have one) ---
+# use_existing_vpc = true
+# existing_vpc_id  = "vpc-0123456789abcdef0"
+# existing_private_subnet_ids = ["subnet-aaa...", "subnet-bbb..."] # ECS, RDS, Redis — need outbound to internet (NAT) for Fargate pulls unless using VPC endpoints
+# existing_public_subnet_ids  = ["subnet-ccc...", "subnet-ddd..."] # ALB — different AZs than above pairs
+
+vpc_cidr            = "10.20.0.0/16"
+az_count            = 2
+single_nat_gateway  = true
+alb_allowed_cidr_ipv4 = "0.0.0.0/0"
+
+db_instance_class    = "db.t4g.micro"
+db_allocated_storage = 20
+db_multi_az          = false
+db_backup_retention_days = 7
+db_skip_final_snapshot   = true
+db_deletion_protection   = false
+# db_storage_encrypted = true   # default true; set false only for exceptional legacy reasons
+
+# For literal environment = "prod", Terraform enforces: ALB HTTPS + ACM, RDS Multi-AZ + deletion
+# protection + final snapshot on destroy + backups >=7d, and (if static hosting) custom CF domains + us-east-1 ACM.
+# Use environment = "staging" until those values are ready, then switch to prod.
+
+redis_node_type = "cache.t4g.micro"
+
+# Leave at 0 until images exist in ECR; bump after terraform apply + docker push + prisma migrate.
+bff_desired_count  = 0
+java_desired_count = 0
+ml_desired_count   = 0
+
+container_image_tag = "latest"
+
+# --- Enterprise intelligence layer (optional) ---
+# OpenAI powers AI SEO/marketing copy in the ML service. Leave empty for heuristic fallbacks.
+# openai_api_key = "sk-..."
+
+# Microsoft 365 Graph (transactional + marketing email). Leave empty to use SMTP fallback.
+# ms_tenant_id     = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# ms_client_id     = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# ms_client_secret = "your-client-secret"
+# ms_sender_addresses = "no-reply@yourdomain.com,support@yourdomain.com"
+# ms_default_sender   = "no-reply@yourdomain.com"
+
+# ML service sizing (defaults are fine for staging)
+# ml_cpu           = 512
+# ml_memory        = 1024
+# ml_model_version = "v1"
+
+# --- GitHub Actions OIDC (optional): IAM deploy role + registry login ---
+# If true, also set github_organization and github_repository (repository short name).
+enable_github_oidc = false
+# github_organization = "MYORG"
+# github_repository = "OCEANBAZAR-Website"
+
+# Adds S3 sync + CloudFront invalidation to the same OIDC role (needs static hosting).
+enable_github_static_deploy = false
+
+# --- ALB HTTPS (optional): ACM cert ARN in var.aws_region ---
+enable_alb_https          = false
+# alb_acm_certificate_arn = "arn:aws:acm:ap-southeast-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# --- Static hosting (S3 + CloudFront). Set false to skip buckets/distributions. ---
+enable_static_hosting = true
+# cloudfront_price_class = "PriceClass_100"
+
+# Custom domains on CloudFront require ACM in **us-east-1** (manual/DNS validation outside repo).
+# storefront_cloudfront_aliases      = ["www.example.com"]
+# admin_cloudfront_aliases           = ["admin.example.com"]
+# cloudfront_acm_certificate_arn_us_east_1 = "arn:aws:acm:us-east-1:123456789012:certificate/..."

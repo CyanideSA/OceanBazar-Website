@@ -1,12 +1,13 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useShopRouter } from '@/lib/shopNavigation';
 import { Globe } from 'lucide-react';
 
 export default function LanguageToggle() {
   const locale = useLocale();
-  const router = useRouter();
+  const router = useShopRouter();
   const pathname = usePathname();
   const t = useTranslations('common');
 

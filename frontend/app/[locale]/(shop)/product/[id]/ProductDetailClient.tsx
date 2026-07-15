@@ -4,21 +4,26 @@ import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { notFound, useRouter } from 'next/navigation';
-import { AlertTriangle, Package, ShieldCheck, Truck } from 'lucide-react';
+import { notFound } from 'next/navigation';
+import { useShopRouter } from '@/lib/shopNavigation';
+import { AlertTriangle, Truck, Bell } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
-import { productsApi, cartApi } from '@/lib/api';
+import { productsApi, cartApi, stockNotifyApi } from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
 import PricingBlock from '@/components/product/PricingBlock';
 import ProductZoomGallery from '@/components/product/ProductZoomGallery';
 import ProductVariantSelectors from '@/components/product/ProductVariantSelectors';
 import ProductStarRating from '@/components/product/ProductStarRating';
 import ProductDetailTabs from '@/components/product/ProductDetailTabs';
+import ProductBannerCarousel from '@/components/product/ProductBannerCarousel';
 import ProductRelatedSections from '@/components/product/ProductRelatedSections';
 import ProductActionsBar from '@/components/product/ProductActionsBar';
 import type { ProductDetail } from '@/types';
 import { filterImagesByColor, pickVariant } from '@/lib/variants';
 import { getMediaUrl } from '@/lib/mediaUrl';
+import { useTrackRecentlyViewed } from '@/hooks/useRecentlyViewed';
+import RecentlyViewedProducts from '@/components/product/RecentlyViewedProducts';
+import SizeGuideModal from '@/components/product/SizeGuideModal';
 interface Props {
   productId: string;
   locale: string;
@@ -30,13 +35,16 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   const tc = useTranslations('common');
   const { setCart, setOpen } = useCartStore();
   const { success, error: toastError } = useToast();
-  const router = useRouter();
+  const router = useShopRouter();
 
   const [activeImage, setActiveImage] = useState(0);
   const [colorSlug, setColorSlug] = useState<string | null>(null);
   const [sizeSel, setSizeSel] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'description' | 'specs' | 'attributes' | 'tags' | 'reviews'>('description');
+  const [detailTab, setDetailTab] = useState<'description' | 'specs' | 'attributes' | 'tags' | 'reviews' | 'qa'>('description');
   const [stickyQty, setStickyQty] = useState(1);
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState('');
+  const [notifySent, setNotifySent] = useState(false);
 
   const { data: product, isLoading, error } = useQuery({
     queryKey: ['product', productId, locale],
@@ -85,14 +93,21 @@ export default function ProductDetailClient({ productId, locale }: Props) {
           brandLogoUrl: d.brandLogoUrl ?? null,
           popularityRank: d.popularityRank ?? null,
           popularityLabel: d.popularityLabel ?? null,
+          hasFreeShipping: Boolean(d.hasFreeShipping ?? d.freeShipping ?? false),
+          banners: Array.isArray(d.banners) ? d.banners : [],
         } as ProductDetail;
       }),
   });
 
   const addMutation = useMutation({
     mutationFn: (args: { qty: number; variantId?: string | null }) =>
-      cartApi.add(productId, args.qty, args.variantId ?? undefined).then((r) => r.data),
-    onError: () => toastError(tc('error')),
+      cartApi.add(product?.id || productId, args.qty, args.variantId ?? undefined).then((r) => r.data),
+    onError: (err: any) => {
+      const status = err?.response?.status;
+      if (status === 401) toastError('Please log in to add items to cart');
+      else if (status === 404) toastError('This product is currently unavailable');
+      else toastError(tc('error'));
+    },
   });
 
   const variants = product?.variants ?? [];
@@ -122,6 +137,10 @@ export default function ProductDetailClient({ productId, locale }: Props) {
 
   const variantPriceOverride = matchedVariant?.priceOverride ?? null;
   const variantIdForCart = matchedVariant?.id ?? (variants.length === 1 ? variants[0].id : null);
+
+  // Track recently viewed
+  const retailPrice = product?.pricing?.retail?.price ?? product?.retailPrice ?? null;
+  useTrackRecentlyViewed(product?.id ?? '', product?.title, product?.primaryImage, typeof retailPrice === 'number' ? retailPrice : null);
 
   if (isLoading) {
     return (
@@ -160,46 +179,59 @@ export default function ProductDetailClient({ productId, locale }: Props) {
           onSelectIndex={setActiveImage}
         />
 
-        <div className="space-y-5">
-          {tag && (
-            <span className="inline-block rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
-              {tag}
-            </span>
-          )}
+        <div className="space-y-4">
 
+          {/* ── Brand + Title + SKU ── */}
           <div>
-            <div className="mb-2 flex flex-wrap items-center gap-3">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
               {brandLogo ? (
-                <Image src={brandLogo} alt="" width={40} height={40} className="rounded-md object-contain" unoptimized />
+                <Image src={brandLogo} alt="" width={32} height={32} className="rounded object-contain" unoptimized />
               ) : null}
-              {product.brand && <p className="text-sm font-medium text-muted-foreground">{product.brand}</p>}
+              {product.brand && <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{product.brand}</p>}
+              {tag && (
+                <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-primary">
+                  {tag}
+                </span>
+              )}
             </div>
-            <h1 className="text-xl font-bold leading-tight text-foreground sm:text-2xl md:text-3xl">{product.title}</h1>
+            <h1 className="text-2xl font-bold leading-tight text-foreground sm:text-3xl">{product.title}</h1>
             {product.sku && (
               <p className="mt-1 text-xs text-muted-foreground">
-                {t('sku')}: {matchedVariant?.sku ?? product.sku}
+                {t('sku')}: <span className="font-medium">{matchedVariant?.sku ?? product.sku}</span>
               </p>
             )}
           </div>
 
+          {/* ── Rating + Orders on one row ── */}
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+            <ProductStarRating value={ratingAvg} count={reviewCount} />
+            <span className="h-4 w-px bg-border" />
             <span>
               {td('sold')}: <strong className="text-foreground">{orderCount.toLocaleString()}</strong>
             </span>
             {matchedVariant?.name && (
-              <span>
-                {td('variant')}: <strong className="text-foreground">{matchedVariant.name}</strong>
+              <>
+                <span className="h-4 w-px bg-border" />
+                <span>{td('variant')}: <strong className="text-foreground">{matchedVariant.name}</strong></span>
+              </>
+            )}
+          </div>
+
+          {/* ── Wishlist | Compare | Share | Free Shipping — one row ── */}
+          <div className="flex flex-wrap items-center gap-2">
+            <ProductActionsBar productId={product.id} title={product.title} />
+            {product.hasFreeShipping && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                <Truck className="h-4 w-4" />
+                {td('freeShippingQuota')}
               </span>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <ProductStarRating value={ratingAvg} count={reviewCount} />
-          </div>
-
+          {/* ── Popularity badge ── */}
           {(product.popularityLabel || product.popularityRank) && (
             <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 dark:bg-amber-500/5">
-              {catIcon && <Image src={catIcon} alt="" width={36} height={36} className="rounded-md object-contain" unoptimized />}
+              {catIcon && <Image src={catIcon} alt="" width={32} height={32} className="rounded object-contain" unoptimized />}
               <div>
                 {product.popularityRank != null && (
                   <p className="text-xs font-semibold uppercase text-amber-800 dark:text-amber-200">
@@ -213,36 +245,17 @@ export default function ProductDetailClient({ productId, locale }: Props) {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 text-sm">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-800 dark:text-emerald-300">
-              <Truck className="h-4 w-4" />
-              {td('freeShippingOver')}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap gap-3 border-y border-border py-3 text-sm text-muted-foreground sm:gap-4 sm:py-4">
-            <span className="inline-flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              {td('orderProtection')}
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <Package className="h-4 w-4 text-primary" />
-              {td('genuineProduct')}
-            </span>
-          </div>
-
+          {/* ── Variant selectors ── */}
           <ProductVariantSelectors
             variants={variants}
             selectedColorSlug={colorSlug}
             selectedSize={sizeSel}
             onColor={setColorSlug}
             onSize={setSizeSel}
-            onReset={() => {
-              setColorSlug(null);
-              setSizeSel(null);
-            }}
+            onReset={() => { setColorSlug(null); setSizeSel(null); }}
           />
 
+          {/* ── Stock warnings ── */}
           {effectiveStock > 0 && effectiveStock < 10 && (
             <div className="flex items-center gap-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2.5">
               <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -250,13 +263,36 @@ export default function ProductDetailClient({ productId, locale }: Props) {
             </div>
           )}
           {effectiveStock === 0 && (
-            <div className="flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2.5">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
-              <p className="text-sm font-semibold text-destructive">{tc('outOfStock')}</p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+                <p className="text-sm font-semibold text-destructive">{tc('outOfStock')}</p>
+              </div>
+              {!notifySent ? (
+                <div className="flex gap-2">
+                  <input
+                    type="email" placeholder="Enter email for restock alert"
+                    value={notifyEmail} onChange={(e) => setNotifyEmail(e.target.value)}
+                    className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                  <button type="button"
+                    disabled={!notifyEmail}
+                    onClick={async () => {
+                      try {
+                        await stockNotifyApi.subscribe(product!.id, notifyEmail);
+                        setNotifySent(true);
+                        success("We'll notify you when it's back in stock!");
+                      } catch { toastError('Could not save. Try again.'); }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+                    <Bell className="h-4 w-4" /> Notify Me
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">✅ You'll be notified when back in stock</p>
+              )}
             </div>
           )}
-
-          <ProductActionsBar productId={product.id} title={product.title} />
 
           <PricingBlock
             product={product}
@@ -284,14 +320,24 @@ export default function ProductDetailClient({ productId, locale }: Props) {
         </div>
       </div>
 
+      {product.banners && product.banners.length > 0 && (
+        <div className="mt-8">
+          <ProductBannerCarousel banners={product.banners} />
+        </div>
+      )}
+
       <ProductDetailTabs
         product={product}
         tab={detailTab}
-        onTab={setDetailTab}
+        onTab={setDetailTab as any}
         reviews={reviews}
       />
 
+      <RecentlyViewedProducts excludeId={product.id} />
+
       <ProductRelatedSections productId={product.id} categoryId={product.categoryId} />
+
+      {sizeGuideOpen && <SizeGuideModal onClose={() => setSizeGuideOpen(false)} />}
     </div>
 
     {/* ── Sticky bottom bar — mobile only ── */}

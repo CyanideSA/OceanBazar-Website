@@ -18,12 +18,18 @@ export function cacheResponse(options: CacheOptions) {
 
     const key = `${options.keyPrefix}:${req.originalUrl}`;
 
+    const swr = options.ttlSeconds * 2; // stale-while-revalidate = 2× TTL
+
     try {
       const redis = await getRedisClient();
       const cached = await redis.get(key);
 
       if (cached) {
         res.setHeader('X-Cache', 'HIT');
+        res.setHeader(
+          'Cache-Control',
+          `public, max-age=${options.ttlSeconds}, stale-while-revalidate=${swr}`
+        );
         return res.json(JSON.parse(cached));
       }
     } catch {
@@ -33,6 +39,10 @@ export function cacheResponse(options: CacheOptions) {
     const originalJson = res.json.bind(res);
     res.json = function (body: any) {
       res.setHeader('X-Cache', 'MISS');
+      res.setHeader(
+        'Cache-Control',
+        `public, max-age=${options.ttlSeconds}, stale-while-revalidate=${swr}`
+      );
       // Store in Redis asynchronously (fire and forget)
       getRedisClient()
         .then((redis) => redis.setEx(key, options.ttlSeconds, JSON.stringify(body)))

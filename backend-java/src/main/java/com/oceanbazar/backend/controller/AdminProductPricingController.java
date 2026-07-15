@@ -87,6 +87,7 @@ public class AdminProductPricingController {
         if (payload.getTier2Discount() != null) existing.setTier2Discount(payload.getTier2Discount());
         if (payload.getTier3MinQty() != null) existing.setTier3MinQty(payload.getTier3MinQty());
         if (payload.getTier3Discount() != null) existing.setTier3Discount(payload.getTier3Discount());
+        if (payload.getTierBands() != null) existing.setTierBands(payload.getTierBands());
         if (payload.getSortOrder() != null) existing.setSortOrder(payload.getSortOrder());
         return pricingRepository.save(existing);
     }

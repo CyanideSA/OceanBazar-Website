@@ -128,6 +128,41 @@ router.get('/live-snapshot', async (_req: Request, res: Response) => {
   });
 });
 
+// GET /api/admin/analytics/category-revenue — revenue breakdown by category
+router.get('/category-revenue', async (_req: Request, res: Response) => {
+  const items = await prisma.orderItem.findMany({
+    where: { order: { paymentStatus: 'paid' } },
+    include: {
+      product: {
+        include: {
+          productCategories: {
+            include: { category: { select: { nameEn: true } } },
+            take: 1,
+          },
+        },
+      },
+    },
+  });
+
+  const catRevenue: Record<string, { name: string; value: number; count: number }> = {};
+  for (const item of items) {
+    const cat = (item.product as any)?.productCategories?.[0]?.category;
+    const name = cat?.nameEn || 'Uncategorized';
+    if (!catRevenue[name]) catRevenue[name] = { name, value: 0, count: 0 };
+    catRevenue[name].value += Number((item as any).lineTotal || 0);
+    catRevenue[name].count += (item as any).quantity || 0;
+  }
+
+  const sorted = Object.values(catRevenue).sort((a, b) => b.value - a.value).slice(0, 10);
+  const totalValue = sorted.reduce((s, c) => s + c.value, 0);
+  const categories = sorted.map(c => ({
+    ...c,
+    percent: totalValue > 0 ? Math.round((c.value / totalValue) * 1000) / 10 : 0,
+  }));
+
+  res.json({ categories });
+});
+
 // GET /api/admin/analytics/customers — customer analytics
 router.get('/customers', async (_req: Request, res: Response) => {
   const totalUsers = await prisma.user.count();

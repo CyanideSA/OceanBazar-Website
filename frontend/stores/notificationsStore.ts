@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 
 export interface StoredNotification {
   id: string;
+  serverId?: string;
   title: string;
   body: string;
   read: boolean;
@@ -17,7 +18,8 @@ function genId() {
 
 interface State {
   items: StoredNotification[];
-  add: (n: Omit<StoredNotification, 'id' | 'read' | 'createdAt'>) => void;
+  add: (n: Omit<StoredNotification, 'id' | 'read' | 'createdAt'> & { id?: string; serverId?: string }) => void;
+  hasServerId: (serverId: string) => boolean;
   markRead: (id: string) => void;
   markAllRead: () => void;
   remove: (id: string) => void;
@@ -32,14 +34,17 @@ export const useNotificationsStore = create<State>()(
         set({
           items: [
             {
-              ...n,
-              id: genId(),
+              title: n.title,
+              body: n.body,
+              id: n.id ?? genId(),
+              serverId: n.serverId,
               read: false,
               createdAt: new Date().toISOString(),
             },
             ...get().items,
           ],
         }),
+      hasServerId: (serverId) => get().items.some((x) => x.serverId === serverId || x.id === serverId),
       markRead: (id) =>
         set({
           items: get().items.map((x) => (x.id === id ? { ...x, read: true } : x)),

@@ -13,10 +13,10 @@ import { motion, AnimatePresence } from "framer-motion";
 const FILTERS = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
-  { key: "processing", label: "Processing" },
-  { key: "paid", label: "Paid" },
+  { key: "success", label: "Paid" },
   { key: "failed", label: "Failed" },
   { key: "refunded", label: "Refunded" },
+  { key: "mismatch", label: "State mismatch" },
 ];
 
 export default function PaymentsPage({ liveTick = 0 }) {
@@ -35,8 +35,13 @@ export default function PaymentsPage({ liveTick = 0 }) {
   const fetchPayments = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await adminApi.payments({ status: statusFilter === "all" ? undefined : statusFilter });
-      setItems(Array.isArray(res) ? res : res?.payments || res?.items || []);
+      const res =
+        statusFilter === "mismatch"
+          ? await adminApi.paymentReconciliationMismatches()
+          : await adminApi.payments({
+              status: statusFilter === "all" ? undefined : statusFilter,
+            });
+      setItems(Array.isArray(res) ? res : res?.transactions || res?.payments || res?.items || []);
     } catch (err) {
       toast.error("Failed to fetch payments");
     } finally {
@@ -64,16 +69,44 @@ export default function PaymentsPage({ liveTick = 0 }) {
   const filteredPayments = useMemo(() => {
     if (!search) return items;
     const q = search.toLowerCase();
-    return items.filter(p => 
-      p.transactionId?.toLowerCase().includes(q) ||
-      p.orderNumber?.toLowerCase().includes(q) ||
-      p.paymentMethod?.toLowerCase().includes(q)
+    return items.filter(p =>
+      (p.id || p.transactionId)?.toLowerCase().includes(q) ||
+      (p.order?.orderNumber || p.orderNumber)?.toLowerCase().includes(q) ||
+      (p.method || p.paymentMethod)?.toLowerCase().includes(q)
     );
   }, [items, search]);
 
+  const downloadCSV = (filename, headers, rows) => {
+    const csv = [headers, ...rows]
+      .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${filename}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
+  const exportLedger = () => {
+    downloadCSV('payments-ledger',
+      ['Transaction ID', 'Status', 'Method', 'Amount (BDT)', 'Order #', 'Customer', 'Date'],
+      filteredPayments.map(p => [
+        p.id || p.transactionId || '',
+        p.status || p.paymentStatus || '',
+        p.method || p.paymentMethod || 'Manual',
+        Number(p.amount || 0).toFixed(2),
+        p.order?.orderNumber || p.orderNumber || 'N/A',
+        p.user?.name || p.userName || '',
+        p.createdAt ? format(new Date(p.createdAt), 'yyyy-MM-dd HH:mm') : '',
+      ])
+    );
+    toast.success(`Exported ${filteredPayments.length} transactions`);
+  };
+
   const getStatusBadge = (status) => {
     const s = (status || "pending").toLowerCase();
-    if (s === "paid") return <span className="crm-badge crm-badge-success">Paid</span>;
+    if (s === "paid" || s === "success") return <span className="crm-badge crm-badge-success">Paid</span>;
     if (s === "failed") return <span className="crm-badge crm-badge-danger">Failed</span>;
     if (s === "refunded") return <span className="crm-badge bg-crm-purple-dim text-crm-purple border-crm-purple/30">Refunded</span>;
     if (s === "processing") return <span className="crm-badge bg-crm-primary-dim text-crm-primary border-crm-primary/30">Processing</span>;
@@ -88,7 +121,7 @@ export default function PaymentsPage({ liveTick = 0 }) {
           <p className="text-crm-text-dim text-sm">Monitor and reconcile all incoming payments</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="crm-btn">
+          <button className="crm-btn" onClick={exportLedger}>
             <FiDownload /> Export Ledger
           </button>
         </div>
@@ -151,33 +184,38 @@ export default function PaymentsPage({ liveTick = 0 }) {
                 </tr>
               ) : (
                 filteredPayments.map((p) => (
-                  <tr key={p.transactionId} className="group">
+                  <tr key={p.id || p.transactionId} className="group">
                     <td>
                       <span className="font-mono text-[11px] font-bold text-crm-text-dim bg-crm-bg-hover px-2 py-1 rounded">
-                        {p.transactionId?.slice(0, 16)}...
+                        {(p.id || p.transactionId || '').slice(0, 16)}...
                       </span>
                     </td>
-                    <td>{getStatusBadge(p.paymentStatus)}</td>
+                    <td>{getStatusBadge(p.status || p.paymentStatus)}</td>
                     <td>
                       <div className="flex items-center gap-2">
                         <FiCreditCard className="text-crm-text-muted" />
-                        <span className="text-sm">{p.paymentMethod || "Manual"}</span>
+                        <span className="text-sm">{p.method || p.paymentMethod || "Manual"}</span>
                       </div>
                     </td>
                     <td>
                       <span className="font-bold tabular-nums text-crm-text-bright">
-                        ৳{Number(p.amount).toLocaleString()}
+                        ৳{Number(p.amount || 0).toLocaleString()}
                       </span>
                     </td>
                     <td>
-                      <p className="font-medium text-crm-primary">#{p.orderNumber || "N/A"}</p>
+                      <p className="font-medium text-crm-primary">#{p.order?.orderNumber || p.orderNumber || "N/A"}</p>
+                      {statusFilter === "mismatch" && p.order && (
+                        <p className="text-[10px] text-crm-warning mt-1">
+                          Tx: {(p.status || "").toString()} · Order pay: {(p.order.paymentStatus || "").toString()}
+                        </p>
+                      )}
                     </td>
                     <td className="text-xs text-crm-text-dim">
                       {p.createdAt ? format(new Date(p.createdAt), "MMM dd, HH:mm") : "—"}
                     </td>
                     <td>
-                      <button 
-                        onClick={() => openDetail(p.transactionId)}
+                      <button
+                        onClick={() => openDetail(p.id || p.transactionId)}
                         className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-primary transition-colors"
                       >
                         <FiArrowRight size={16} />

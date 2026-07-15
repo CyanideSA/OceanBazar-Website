@@ -1,11 +1,16 @@
 package com.oceanbazar.backend.service;
 
 import org.springframework.stereotype.Service;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 public class PricingService {
+    private static final ObjectMapper OM = new ObjectMapper();
 
     public static final BigDecimal GST_RATE = new BigDecimal("0.05");
     public static final BigDecimal SERVICE_FEE = new BigDecimal("1.50");
@@ -26,6 +31,13 @@ public class PricingService {
         public BigDecimal tier2Discount;
         public Integer tier3MinQty;
         public BigDecimal tier3Discount;
+        public String tierBands;
+    }
+
+    public static class TierBand {
+        public Integer minQty;
+        public Integer maxQty;
+        public BigDecimal discountPct;
     }
 
     public static class PricingResult {
@@ -48,6 +60,17 @@ public class PricingService {
     }
 
     private static int[] resolveTier(PricingRow row, int qty) {
+        List<TierBand> bands = parseTierBands(row);
+        if (!bands.isEmpty()) {
+            for (int i = bands.size() - 1; i >= 0; i--) {
+                TierBand b = bands.get(i);
+                if (b.minQty == null || b.discountPct == null) continue;
+                boolean inRange = qty >= b.minQty && (b.maxQty == null || qty <= b.maxQty);
+                if (inRange) {
+                    return new int[]{b.discountPct.intValue(), i + 1};
+                }
+            }
+        }
         int t3 = row.tier3MinQty != null ? row.tier3MinQty : Integer.MAX_VALUE;
         int t2 = row.tier2MinQty != null ? row.tier2MinQty : Integer.MAX_VALUE;
         int t1 = row.tier1MinQty != null ? row.tier1MinQty : Integer.MAX_VALUE;
@@ -56,6 +79,21 @@ public class PricingService {
         if (qty >= t2 && row.tier2Discount != null) return new int[]{row.tier2Discount.intValue(), 2};
         if (qty >= t1 && row.tier1Discount != null) return new int[]{row.tier1Discount.intValue(), 1};
         return new int[]{0, 0};
+    }
+
+    private static List<TierBand> parseTierBands(PricingRow row) {
+        if (row == null || row.tierBands == null || row.tierBands.isBlank()) return List.of();
+        try {
+            List<TierBand> parsed = OM.readValue(row.tierBands, new TypeReference<List<TierBand>>() {});
+            List<TierBand> valid = new ArrayList<>();
+            for (TierBand b : parsed) {
+                if (b == null || b.minQty == null || b.discountPct == null) continue;
+                valid.add(b);
+            }
+            return valid;
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     private static PricingResult buildResult(BigDecimal basePrice, BigDecimal discountPct, int tierApplied, int qty) {

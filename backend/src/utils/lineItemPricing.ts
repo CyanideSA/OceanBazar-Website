@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { calculatePrice, type PricingRow } from './pricing';
+import { calculatePrice, parseTierBands, type PricingRow } from './pricing';
 
 type CartItemIncl = Prisma.CartItemGetPayload<{
   include: {
@@ -12,26 +12,31 @@ export function toPricingRow(
   row:
     | {
         price: unknown;
+        compareAt?: unknown;
         tier1MinQty: number | null;
         tier1Discount: unknown;
         tier2MinQty: number | null;
         tier2Discount: unknown;
         tier3MinQty: number | null;
         tier3Discount: unknown;
+        tierBands?: unknown;
       }
     | undefined,
 ): PricingRow | null {
   if (!row) return null;
-  return {
+  const bands = parseTierBands(row.tierBands);
+  const base: PricingRow = {
     price: Number(row.price),
-    compareAt: null,
+    compareAt: row.compareAt != null ? Number(row.compareAt) : null,
     tier1MinQty: row.tier1MinQty,
     tier1Discount: row.tier1Discount != null ? Number(row.tier1Discount) : null,
     tier2MinQty: row.tier2MinQty,
     tier2Discount: row.tier2Discount != null ? Number(row.tier2Discount) : null,
     tier3MinQty: row.tier3MinQty,
     tier3Discount: row.tier3Discount != null ? Number(row.tier3Discount) : null,
+    tierBands: bands && bands.length ? bands : undefined,
   };
+  return base;
 }
 
 export function applyVariantOverride(row: PricingRow | null, priceOverride: unknown): PricingRow | null {

@@ -7,12 +7,12 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import com.oceanbazar.backend.security.AdminAuthenticationFilter;
 import com.oceanbazar.backend.security.AdminEndpointAccessFilter;
 import com.oceanbazar.backend.security.JwtAuthenticationFilter;
 import com.oceanbazar.backend.security.LoginRateLimitFilter;
+import com.oceanbazar.backend.security.RequestIdCorrelationFilter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -75,6 +75,9 @@ public class SecurityConfig {
                         .authenticated()
                 );
 
+        // Anchor custom filters to a known Spring Security filter to avoid
+        // "does not have a registered order" startup failures.
+        http.addFilterBefore(new RequestIdCorrelationFilter(), UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(adminAuthenticationFilter, JwtAuthenticationFilter.class);
@@ -87,13 +90,4 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    /**
-     * SockJS issues HTTP GET to {@code /ws/info} (and similar) before STOMP CONNECT.
-     * Ignoring these paths avoids 403 from any filter in the main chain (JWT, admin, CORS edge cases).
-     * STOMP security remains enforced in {@link com.oceanbazar.backend.security.StompAuthChannelInterceptor}.
-     */
-    @Bean
-    public WebSecurityCustomizer webSecurityCustomizer() {
-        return (web) -> web.ignoring().requestMatchers("/ws", "/ws/**");
-    }
 }

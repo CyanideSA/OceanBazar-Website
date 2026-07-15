@@ -5,6 +5,7 @@ import {
   FiPhone, FiMapPin, FiBarChart2, FiMessageSquare, FiInfo, FiTruck
 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
+import { normalizeApplication } from "../lib/normalize";
 import { getAdminUser } from "../lib/auth";
 import { useToast } from "../components/ToastProvider";
 import { format } from "date-fns";
@@ -26,6 +27,8 @@ export default function ApplicationsPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [adminNotes, setAdminNotes] = useState("");
+  const [deciding, setDeciding] = useState(false);
 
   const fetchApplications = useCallback(async () => {
     setLoading(true);
@@ -34,8 +37,10 @@ export default function ApplicationsPage() {
         adminApi.wholesaleApplications(),
         adminApi.businessInquiries()
       ]);
-      setWholesale(Array.isArray(w) ? w : w?.applications || w?.items || []);
-      setInquiries(Array.isArray(i) ? i : i?.inquiries || i?.items || []);
+      const wholesaleRows = Array.isArray(w) ? w : w?.applications || w?.items || [];
+      const inquiryRows = Array.isArray(i) ? i : i?.inquiries || i?.items || [];
+      setWholesale(wholesaleRows.map(normalizeApplication));
+      setInquiries(inquiryRows.map(normalizeApplication));
     } catch (err) {
       toast.error("Failed to load applications");
     } finally {
@@ -60,6 +65,27 @@ export default function ApplicationsPage() {
   const openDetail = (item) => {
     setDetail(item);
     setDetailId(item.id);
+    setAdminNotes(item.adminNotes || "");
+  };
+
+  const decideApplication = async (status) => {
+    if (!detail?.id) return;
+    setDeciding(true);
+    try {
+      const payload = { status, admin_notes: adminNotes.trim() || undefined };
+      const res = activeTab === "wholesale"
+        ? await adminApi.updateWholesaleApplication(detail.id, payload)
+        : await adminApi.updatePartnerRequest(detail.id, payload);
+      const updated = normalizeApplication(res?.application || res?.inquiry || res);
+      toast.success(status === "approved" ? "Application approved" : "Application rejected");
+      setDetail(updated);
+      setDetailId(null);
+      fetchApplications();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to update application");
+    } finally {
+      setDeciding(false);
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -294,15 +320,26 @@ export default function ApplicationsPage() {
                       <textarea 
                         className="crm-input min-h-[120px] bg-crm-bg" 
                         placeholder="Add notes about your review or decision..."
-                        defaultValue={detail.adminNotes}
+                        value={adminNotes}
+                        onChange={(e) => setAdminNotes(e.target.value)}
                       />
                     </div>
-                    {detail.status === "pending" ? (
+                    {(detail.status || "pending").toLowerCase() === "pending" ? (
                       <div className="flex flex-wrap gap-2">
-                        <button className="crm-btn crm-btn-primary flex-1 py-2.5">
+                        <button
+                          type="button"
+                          disabled={deciding}
+                          onClick={() => decideApplication("approved")}
+                          className="crm-btn crm-btn-primary flex-1 py-2.5"
+                        >
                           <FiCheckCircle /> Approve Account
                         </button>
-                        <button className="crm-btn border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex-1 py-2.5">
+                        <button
+                          type="button"
+                          disabled={deciding}
+                          onClick={() => decideApplication("rejected")}
+                          className="crm-btn border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex-1 py-2.5"
+                        >
                           <FiXCircle /> Reject
                         </button>
                       </div>

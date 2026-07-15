@@ -131,7 +131,7 @@ export async function createStore(storeData: {
 export async function getCities(): Promise<any[]> {
   const token = await ensureToken();
   const client = getAuthClient(token);
-  const { data } = await client.get('/aladdin/api/v1/countries/1/city-list');
+  const { data } = await client.get('/aladdin/api/v1/city-list');
   return data.data?.data || data.data || [];
 }
 

@@ -1,33 +1,63 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { FiStar, FiTarget, FiSearch, FiX, FiRefreshCw } from "react-icons/fi";
 import { adminApi } from "../../lib/api";
 import { useCatalogStore } from "../../stores/catalogStore";
+import { useToast } from "../ToastProvider";
 import {
   IconClose, IconInfo, IconPricing, IconImage, IconTag, IconVariants,
   IconSettings, IconSpinner, IconPackage, IconStar, IconPlus, IconTrash,
   IconEdit, IconCheck, IconUpload,
 } from "./ExplorerIcons";
+import RichTextEditor from "../products/RichTextEditor";
 
 const TABS = [
   { id: "Info",       icon: <IconInfo size={12} />,     label: "Info" },
   { id: "Pricing",    icon: <IconPricing size={12} />,  label: "Pricing" },
   { id: "Media",      icon: <IconImage size={12} />,    label: "Media" },
-  { id: "Attributes", icon: <IconSettings size={12} />, label: "Attrs" },
+  { id: "Attributes", icon: <IconSettings size={12} />, label: "Specs" },
   { id: "Tags",       icon: <IconTag size={12} />,      label: "Tags" },
   { id: "Variants",   icon: <IconVariants size={12} />, label: "Variants" },
 ];
 
+function parsekv(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) return parsed.filter(r => r && (r.key || r.attrKey));
+    if (typeof parsed === "object") return Object.entries(parsed).map(([k, v]) => ({ key: k, value: String(v) }));
+  } catch {}
+  return [];
+}
+
+function kvToJson(rows) {
+  const filled = rows.filter(r => String(r.key || "").trim());
+  if (!filled.length) return null;
+  return JSON.stringify(filled.map(r => ({ key: String(r.key || "").trim(), value: String(r.value || "").trim() })));
+}
+
 export default function ProductDetailPanel({ onClose, onProductUpdated }) {
   const { openProductId, productDetail, setProductDetail, loadingDetail, setLoadingDetail } = useCatalogStore();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState("Info");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
+  const [showCatPicker, setShowCatPicker] = useState(false);
+  const [catTree, setCatTree] = useState([]);
+  const [catSearch, setCatSearch] = useState("");
+  const [brands, setBrands] = useState([]);
+  const [brandSearch, setBrandSearch] = useState("");
+  const [brandOpen, setBrandOpen] = useState(false);
 
   const loadDetail = useCallback(async () => {
     if (!openProductId) return;
     setLoadingDetail(true);
     try {
-      const d = await adminApi.productDetail(openProductId);
+      const resp = await adminApi.productDetail(openProductId);
+      const d = resp?.product || resp;
       setProductDetail(d);
+      const primaryCat = d.productCategories?.find(m => m.isPrimary) ?? d.productCategories?.[0];
+      const specs = parsekv(d.specifications);
+      const attrs = parsekv(d.attributesExtra);
       setForm({
         titleEn: d.titleEn || "",
         titleBn: d.titleBn || "",
@@ -40,10 +70,23 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
         seoTitle: d.seoTitle || "",
         seoDescription: d.seoDescription || "",
         isFeatured: d.isFeatured || false,
+        isBestSeller: d.isBestSeller || false,
+        brandName: d.brand || "",
+        brandId: d.brandId || "",
+        categoryId: primaryCat?.category?.id || "",
+        categoryName: primaryCat?.category?.nameEn || "",
+        specifications: specs.length ? specs : [{ key: "", value: "" }],
+        keyAttributes: attrs.length ? attrs : [{ key: "", value: "" }],
       });
-    } catch { /* ignore */ }
-    finally { setLoadingDetail(false); }
-  }, [openProductId, setProductDetail, setLoadingDetail]);
+      setBrandSearch(d.brand || "");
+    } catch (err) {
+      toast.error("Failed to load product detail");
+    } finally { setLoadingDetail(false); }
+  }, [openProductId, setProductDetail, setLoadingDetail, toast]);
+
+  useEffect(() => {
+    adminApi.brands().then(r => setBrands(Array.isArray(r) ? r : r?.brands || [])).catch(() => {});
+  }, []);
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
@@ -54,16 +97,32 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
     setSaving(true);
     try {
       await adminApi.updateProduct(openProductId, {
-        ...productDetail,
-        ...form,
+        titleEn: form.titleEn,
+        titleBn: form.titleBn,
+        descriptionEn: form.descriptionEn,
+        sku: form.sku || null,
+        status: form.status,
         stock: Number(form.stock),
         moq: Number(form.moq),
         weight: form.weight ? Number(form.weight) : null,
+        isFeatured: form.isFeatured,
+        isBestSeller: form.isBestSeller,
+        brand: form.brandName || null,
+        brandId: form.brandId || null,
+        seoTitle: form.seoTitle || null,
+        seoDescription: form.seoDescription || null,
+        specifications: kvToJson(form.specifications),
+        attributesExtra: kvToJson(form.keyAttributes),
       });
+      if (form.categoryId) {
+        await adminApi.setProductCategories(openProductId, [form.categoryId]);
+      }
       await loadDetail();
       onProductUpdated?.();
-    } catch { /* ignore */ }
-    finally { setSaving(false); }
+      toast.success("Product saved");
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to save product");
+    } finally { setSaving(false); }
   };
 
   if (loadingDetail) {
@@ -79,8 +138,8 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
 
   if (!productDetail || !form) return null;
 
-  const thumbUrl = productDetail.assets?.find((a) => a.isPrimary)?.url
-    || productDetail.assets?.[0]?.url;
+  const thumbUrl = productDetail.productAssets?.find((a) => a.isPrimary)?.url
+    || productDetail.productAssets?.[0]?.url;
 
   return (
     <div className="product-detail-panel animate-fade-in bg-crm-bg-alt border-l border-crm-border">
@@ -95,7 +154,8 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
             <div className="flex items-center gap-2 mt-1">
               <span className={`crm-badge border ${productDetail.status === 'active' ? 'crm-badge-success' : 'text-crm-text-dim border-crm-border'}`}>{productDetail.status}</span>
               {productDetail.sku && <span className="text-[10px] text-crm-text-dim font-mono uppercase tracking-widest">SKU: {productDetail.sku}</span>}
-              {productDetail.isFeatured && <FiStar className="text-crm-warning fill-current" size={12} />}
+              {productDetail.isFeatured && <FiStar className="text-yellow-400 fill-current" size={12} />}
+          {productDetail.isBestSeller && <IconStar size={12} color="#f97316" />}
             </div>
           </div>
         </div>
@@ -138,7 +198,7 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-crm-text-dim uppercase">Description</label>
-                  <textarea className="crm-input min-h-[100px]" rows={4} value={form.descriptionEn} onChange={(e) => setField("descriptionEn", e.target.value)} />
+                  <RichTextEditor value={form.descriptionEn} onChange={(v) => setField("descriptionEn", v)} minHeight={160} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -168,14 +228,82 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
                     <input className="crm-input tabular-nums" type="number" step="0.001" value={form.weight} onChange={(e) => setField("weight", e.target.value)} />
                   </div>
                 </div>
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input type="checkbox" className="w-4 h-4 rounded border-crm-border bg-crm-bg text-crm-primary focus:ring-crm-primary" checked={form.isFeatured} onChange={(e) => setField("isFeatured", e.target.checked)} />
-                  <span className="text-sm font-medium text-crm-text-dim group-hover:text-crm-text-bright transition-colors">Promote as Featured Product</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-crm-border">
+                <label className="flex items-start gap-3 cursor-pointer group p-3 rounded-lg bg-crm-bg border border-crm-border hover:border-crm-primary/40 transition-colors">
+                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-crm-primary" checked={form.isBestSeller} onChange={e => setField("isBestSeller", e.target.checked)} />
+                  <div>
+                    <p className="text-xs font-bold text-orange-400">Best Seller</p>
+                    <p className="text-[10px] text-crm-text-dim">Badge on product card</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer group p-3 rounded-lg bg-crm-bg border border-crm-border hover:border-crm-primary/40 transition-colors">
+                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-crm-primary" checked={form.isFeatured} onChange={e => setField("isFeatured", e.target.checked)} />
+                  <div>
+                    <p className="text-xs font-bold text-yellow-400">Featured</p>
+                    <p className="text-[10px] text-crm-text-dim">Homepage featured section</p>
+                  </div>
                 </label>
               </div>
 
+              {/* Brand */}
+              <div className="space-y-1.5 pt-4 border-t border-crm-border">
+                <label className="text-xs font-bold text-crm-text-dim uppercase">Brand</label>
+                <div className="relative">
+                  <input
+                    className="crm-input"
+                    value={brandSearch}
+                    onChange={e => { setBrandSearch(e.target.value); setField("brandName", e.target.value); setBrandOpen(true); }}
+                    onFocus={() => setBrandOpen(true)}
+                    onBlur={() => setTimeout(() => setBrandOpen(false), 150)}
+                    placeholder="Search or type brand name…"
+                  />
+                  {brandOpen && brands.length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-crm-bg-alt border border-crm-border rounded-xl shadow-xl max-h-40 overflow-y-auto custom-scrollbar">
+                      {brands
+                        .filter(b => (typeof b === "string" ? b : b.nameEn || b.name || "").toLowerCase().includes(brandSearch.toLowerCase()))
+                        .slice(0, 12)
+                        .map(b => {
+                          const id = b?.id || "";
+                          const name = typeof b === "string" ? b : b.nameEn || b.name || "";
+                          return (
+                            <button key={id || name} type="button"
+                              onMouseDown={() => { setField("brandName", name); setField("brandId", id); setBrandSearch(name); setBrandOpen(false); }}
+                              className="w-full text-left px-3 py-2 text-sm text-crm-text-bright hover:bg-crm-bg-hover">
+                              {name}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Category */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase">Category</label>
+                <button type="button"
+                  onClick={() => {
+                    if (!catTree.length) adminApi.categoryTree().then(r => setCatTree(Array.isArray(r) ? r : r?.tree || [])).catch(() => {});
+                    setShowCatPicker(true);
+                  }}
+                  className="crm-input text-left flex items-center justify-between w-full">
+                  <span className={form.categoryName ? "text-crm-text-bright" : "text-crm-text-dim"}>
+                    {form.categoryName || "Select category…"}
+                  </span>
+                  <FiSearch size={13} className="text-crm-text-muted" />
+                </button>
+                {form.categoryId && (
+                  <button type="button" onClick={() => { setField("categoryId", ""); setField("categoryName", ""); }}
+                    className="text-[10px] text-crm-text-dim hover:text-crm-danger">
+                    × Clear category
+                  </button>
+                )}
+              </div>
+
               <div className="pt-6 border-t border-crm-border space-y-4">
-                <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest flex items-center gap-2"><FiTarget /> SEO Optimization</h4>
+                <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest flex items-center gap-2"><FiTarget size={13} /> SEO Optimization</h4>
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-crm-text-dim uppercase">SEO Title</label>
@@ -199,26 +327,71 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
           )}
 
           {activeTab === "Attributes" && (
-            <AttributesTab productDetail={productDetail} />
+            <AttributesTab form={form} setField={setField} onSave={handleSave} saving={saving} />
           )}
 
           {activeTab === "Tags" && (
-            <TagsTab productId={openProductId} currentTags={productDetail.tags || []} onRefresh={loadDetail} />
+            <TagsTab
+              productId={openProductId}
+              currentTags={(productDetail.productTags || []).map(pt => pt.tags).filter(Boolean)}
+              onRefresh={loadDetail}
+            />
           )}
 
           {activeTab === "Variants" && (
-            <VariantsTab productDetail={productDetail} />
+            <VariantsTab productDetail={{ ...productDetail, variants: productDetail.variants || [] }} />
           )}
         </div>
       </div>
 
       {/* Footer */}
-      {activeTab === "Info" && (
+      {(activeTab === "Info" || activeTab === "Attributes") && (
         <div className="detail-footer">
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? <><IconSpinner size={13} />Saving…</> : <><IconCheck size={13} />Save Changes</>}
           </button>
+        </div>
+      )}
+
+      {/* Category Picker Modal */}
+      {showCatPicker && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-crm-bg-alt border border-crm-border rounded-2xl w-80 max-h-[70vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-crm-border">
+              <h3 className="text-sm font-bold text-crm-text-bright">Select Category</h3>
+              <button type="button" onClick={() => setShowCatPicker(false)} className="text-crm-text-dim hover:text-crm-text-bright"><FiX size={16} /></button>
+            </div>
+            <div className="px-3 py-2 border-b border-crm-border">
+              <div className="relative">
+                <FiSearch className="absolute left-2 top-2.5 text-crm-text-muted" size={13} />
+                <input autoFocus value={catSearch} onChange={e => setCatSearch(e.target.value)}
+                  placeholder="Search categories…"
+                  className="w-full bg-crm-bg border border-crm-border text-sm text-crm-text-bright rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-crm-primary" />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1 custom-scrollbar">
+              {(function renderNodes(nodes, depth = 0) {
+                const filtered = catSearch.trim()
+                  ? nodes.flatMap(function flat(n) { return [(n.nameEn || "").toLowerCase().includes(catSearch.toLowerCase()) ? n : null, ...(n.children?.flatMap(flat) || [])].filter(Boolean); })
+                  : nodes;
+                return filtered.map(node => (
+                  <React.Fragment key={node.id}>
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 hover:bg-crm-bg-hover cursor-pointer rounded transition-colors text-sm text-crm-text-bright"
+                      style={{ paddingLeft: `${depth * 14 + 12}px` }}
+                      onClick={() => { setField("categoryId", node.id); setField("categoryName", node.nameEn); setShowCatPicker(false); setCatSearch(""); }}
+                    >
+                      {depth > 0 && <span className="text-crm-text-muted text-xs">↳</span>}
+                      {node.nameEn}
+                    </div>
+                    {node.children?.length > 0 && renderNodes(node.children, depth + 1)}
+                  </React.Fragment>
+                ));
+              })(catTree)}
+              {catTree.length === 0 && <div className="text-center text-crm-text-dim text-sm py-6">Loading…</div>}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -232,8 +405,8 @@ function PricingTab({ productId, productDetail, onRefresh }) {
   const [addingType, setAddingType] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const TYPES = ["RETAIL", "WHOLESALE", "VIP", "RESELLER"];
-  const existingTypes = pricing.map((p) => p.customerType);
+  const TYPES = ["retail", "wholesale"];
+  const existingTypes = pricing.map((p) => (p.customerType || "").toLowerCase());
   const unusedTypes = TYPES.filter((t) => !existingTypes.includes(t));
 
   const [editForm, setEditForm] = useState({});
@@ -335,7 +508,7 @@ function PricingTab({ productId, productDetail, onRefresh }) {
         <div key={p.id}>
           <div className="pricing-type-header">
             <span className="pricing-type-label">
-              <IconPricing size={12} color={p.customerType === "RETAIL" ? "#56d364" : "#79c0ff"} />
+              <IconPricing size={12} color={(p.customerType || "").toLowerCase() === "retail" ? "#56d364" : "#79c0ff"} />
               {p.customerType}
             </span>
             <div style={{ display: "flex", gap: 4 }}>
@@ -389,7 +562,7 @@ function PricingTab({ productId, productDetail, onRefresh }) {
       )}
 
       {pricing.length === 0 && !addingType && (
-        <div className="pricing-empty-add" onClick={() => startAdd("RETAIL")}>
+        <div className="pricing-empty-add" onClick={() => startAdd("retail")}>
           <IconPlus size={14} />
           <div style={{ marginTop: 4 }}>Click to add pricing</div>
         </div>
@@ -402,9 +575,10 @@ function PricingTab({ productId, productDetail, onRefresh }) {
 function MediaTab({ productId, onRefresh }) {
   const [assets, setAssets] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const normalizeAssets = (value) => (Array.isArray(value) ? value : []);
 
   useEffect(() => {
-    adminApi.productAssets(productId).then(setAssets).catch(() => {});
+    adminApi.productAssets(productId).then((rows) => setAssets(normalizeAssets(rows))).catch(() => {});
   }, [productId]);
 
   const handleUpload = async (e) => {
@@ -414,7 +588,7 @@ function MediaTab({ productId, onRefresh }) {
     try {
       await adminApi.uploadProductAsset(productId, file, file.type.startsWith("video") ? "video" : "image");
       const updated = await adminApi.productAssets(productId);
-      setAssets(updated);
+      setAssets(normalizeAssets(updated));
       onRefresh();
     } catch { /* ignore */ }
     finally { setUploading(false); }
@@ -428,7 +602,7 @@ function MediaTab({ productId, onRefresh }) {
   const handleSetPrimary = async (assetId) => {
     await adminApi.updateProductAsset(productId, assetId, { isPrimary: true });
     const updated = await adminApi.productAssets(productId);
-    setAssets(updated);
+    setAssets(normalizeAssets(updated));
     onRefresh();
   };
 
@@ -469,26 +643,51 @@ function MediaTab({ productId, onRefresh }) {
   );
 }
 
-/* ─── Attributes Tab ───────────────────────────────────────── */
-function AttributesTab({ productDetail }) {
-  const attrs = productDetail.attributes || [];
-  if (attrs.length === 0) {
-    return <div className="tab-empty">No attributes defined for this product.</div>;
-  }
+/* ─── Attributes Tab (editable KV) ─────────────────────────── */
+function KVEditor({ rows, onChange, label, addLabel }) {
+  const add = () => onChange([...rows, { key: "", value: "" }]);
+  const remove = (i) => onChange(rows.filter((_, j) => j !== i));
+  const update = (i, field, val) => { const next = [...rows]; next[i] = { ...next[i], [field]: val }; onChange(next); };
   return (
-    <table className="attr-table">
-      <thead>
-        <tr><th>Attribute</th><th>Value</th></tr>
-      </thead>
-      <tbody>
-        {attrs.map((a) => (
-          <tr key={a.id}>
-            <td style={{ color: "#8b949e" }}>{a.attrKey}</td>
-            <td>{a.attrValue}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="tab-section">
+      <div style={{ fontSize: 10, color: "#484f58", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{label}</div>
+      <table className="attr-table" style={{ marginBottom: 6 }}>
+        <thead><tr><th>Key</th><th>Value</th><th style={{ width: 28 }} /></tr></thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i}>
+              <td><input className="form-input" value={row.key || ""} onChange={e => update(i, "key", e.target.value)} placeholder="e.g. Material" /></td>
+              <td><input className="form-input" value={row.value || ""} onChange={e => update(i, "value", e.target.value)} placeholder="e.g. Cotton" /></td>
+              <td><button type="button" onClick={() => remove(i)} className="btn-icon-sm" style={{ color: "#f85149" }}><IconTrash size={11} /></button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button type="button" onClick={add} className="btn-ghost" style={{ fontSize: 11, padding: "3px 8px" }}>
+        <IconPlus size={11} /> {addLabel}
+      </button>
+    </div>
+  );
+}
+
+function AttributesTab({ form, setField, onSave, saving }) {
+  return (
+    <div>
+      <KVEditor
+        rows={form.keyAttributes || [{ key: "", value: "" }]}
+        onChange={rows => setField("keyAttributes", rows)}
+        label="Key Attributes (shown on storefront)"
+        addLabel="Add Attribute"
+      />
+      <div style={{ borderTop: "1px solid var(--crm-border)", marginTop: 16, paddingTop: 16 }}>
+        <KVEditor
+          rows={form.specifications || [{ key: "", value: "" }]}
+          onChange={rows => setField("specifications", rows)}
+          label="Specifications (shown on storefront)"
+          addLabel="Add Specification"
+        />
+      </div>
+    </div>
   );
 }
 

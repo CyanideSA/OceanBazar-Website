@@ -24,7 +24,8 @@ export default function ReviewsPage() {
         productName: r.product?.titleEn || r.productName || "Unknown",
         customerName: r.user?.name || r.customerName || "Anonymous",
         rating: r.rating,
-        comment: r.comment || r.review || "",
+        comment: r.body || r.comment || r.review || "",
+        title: r.title || "",
         status: r.status,
         date: r.createdAt || r.date,
       })));

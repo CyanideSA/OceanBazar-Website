@@ -8,6 +8,7 @@ import {
   Bell,
   Bookmark,
   CreditCard,
+  Gift,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -20,7 +21,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 import { authApi } from '@/lib/api';
 import { firebaseSignOut } from '@/lib/firebase';
-import { useRouter } from 'next/navigation';
+import { useShopRouter } from '@/lib/shopNavigation';
 
 type NavKey =
   | 'dashboard'
@@ -30,6 +31,7 @@ type NavKey =
   | 'paymentMethods'
   | 'addresses'
   | 'reviews'
+  | 'referral'
   | 'settings';
 
 type NavItem = {
@@ -43,11 +45,12 @@ type NavItem = {
 const items: NavItem[] = [
   { href: '', key: 'dashboard', Icon: LayoutDashboard, exact: true },
   { href: '/wishlist', key: 'wishlist', Icon: Bookmark },
-  { href: '/orders', key: 'orders', Icon: Package, external: true },
+  { href: '/orders', key: 'orders', Icon: Package },
   { href: '/notifications', key: 'notifications', Icon: Bell },
   { href: '/payments', key: 'paymentMethods', Icon: CreditCard },
   { href: '/addresses', key: 'addresses', Icon: MapPin },
   { href: '/reviews', key: 'reviews', Icon: Star },
+  { href: '/referral', key: 'referral', Icon: Gift },
   { href: '/settings', key: 'settings', Icon: Settings },
 ];
 
@@ -55,7 +58,7 @@ export default function AccountSidebar() {
   const t = useTranslations('account');
   const locale = useLocale();
   const pathname = usePathname();
-  const router = useRouter();
+  const router = useShopRouter();
   const { logout } = useAuthStore();
   const unreadCount = useNotificationsStore((s) => s.items.filter((n) => !n.read).length);
   const base = `/${locale}/account`;

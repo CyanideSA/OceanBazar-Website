@@ -2,19 +2,20 @@
 
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { useRef, useEffect, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { storefrontApi } from '@/lib/api';
+import { newsletterApi, storefrontApi } from '@/lib/api';
 import { useLocale, useTranslations } from 'next-intl';
 import LanguageSelect from '@/components/shared/LanguageSelect';
 import PaymentLogos from '@/components/layout/PaymentLogos';
-import Logo from '@/components/shared/Logo';
-import Image from 'next/image';
+import Logo, { LOGO_SRC_TRANSPARENT } from '@/components/shared/Logo';
+import OceanVideoBackground from '@/components/shared/OceanVideoBackground';
 import {
   Facebook,
   Twitter,
   Instagram,
   Youtube,
+  Mail,
 } from 'lucide-react';
 
 export default function Footer() {
@@ -23,14 +24,8 @@ export default function Footer() {
   const tPolicy = useTranslations('policies');
   const tNav = useTranslations('nav');
   const year = new Date().getFullYear();
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video) {
-      video.playbackRate = 0.75;
-    }
-  }, []);
+  const [newsletterEmail, setNewsletterEmail] = useState('');
+  const [newsletterState, setNewsletterState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -64,25 +59,7 @@ export default function Footer() {
 
   return (
     <footer className="relative overflow-hidden text-white">
-      {/* ── Realistic Ocean Video Background ── */}
-      <video
-        ref={videoRef}
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="none"
-        className="absolute inset-0 h-full w-full object-cover"
-        poster="https://images.pexels.com/videos/1409899/free-video-1409899.jpg?auto=compress&cs=tinysrgb&w=1920"
-      >
-        <source
-          src="https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4"
-          type="video/mp4"
-        />
-      </video>
-
-      {/* Dark overlay — ensures text readability */}
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-blue-950/85 to-slate-950/95" />
+      <OceanVideoBackground overlayClassName="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-blue-950/85 to-slate-950/95" />
 
       {/* Animated shimmer across the footer */}
       <div className="footer-shimmer absolute inset-0 pointer-events-none" />
@@ -93,39 +70,44 @@ export default function Footer() {
       {/* ── Content ── */}
       <div className="relative z-10">
         <motion.div
-          className="container-tight"
+          className="w-full px-4 sm:px-6 lg:px-8"
           variants={containerVariants}
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, margin: '-60px' }}
         >
-          <div className="grid grid-cols-1 gap-x-6 gap-y-8 pt-20 pb-10 xs:grid-cols-2 sm:gap-x-8 md:grid-cols-4 md:pt-24 md:pb-16">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-8 pt-14 pb-10 xs:grid-cols-2 sm:gap-x-8 md:grid-cols-4 md:pt-16 md:pb-12">
             {/* Brand */}
             <motion.div variants={itemVariants} className="col-span-1 xs:col-span-2 md:col-span-1 md:row-span-1">
-              <div className="mb-4">
-                <Logo width={300} height={90} variant="dark" />
+              <div className="mb-3 -ml-1">
+                <Logo
+                  width={282}
+                  height={173}
+                  src={LOGO_SRC_TRANSPARENT}
+                  interaction="footer"
+                />
               </div>
-              <p className="max-w-xs text-sm leading-relaxed text-blue-100/80">
+              <p className="text-sm leading-relaxed text-blue-100/80 text-justify md:max-w-xs">
                 {t('tagline')}
               </p>
-              <div className="mt-5">
-                <PaymentLogos />
-              </div>
-              <div className="mt-5 flex gap-3">
+              <div className="mt-3 flex items-center gap-3">
                 {socialLinks.map((social) => (
                   <motion.a
                     key={social.label}
                     href={social.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-blue-200 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white sm:h-9 sm:w-9"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-blue-200 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
                     aria-label={social.label}
-                    whileHover={{ scale: 1.15, y: -3 }}
+                    whileHover={{ scale: 1.1, y: -2 }}
                     whileTap={{ scale: 0.95 }}
                   >
                     <social.icon className="h-4 w-4" />
                   </motion.a>
                 ))}
+              </div>
+              <div className="mt-3">
+                <PaymentLogos />
               </div>
             </motion.div>
 
@@ -136,8 +118,8 @@ export default function Footer() {
                 <li><Link href={`/${locale}/products`} className="block py-1 transition-colors hover:text-white">{t('allProducts')}</Link></li>
                 <li><Link href={`/${locale}/products/featured`} className="block py-1 transition-colors hover:text-white">{t('featured')}</Link></li>
                 <li><Link href={`/${locale}/products/top-trending`} className="block py-1 transition-colors hover:text-white">{t('topTrending')}</Link></li>
-                <li><Link href={`/${locale}/products/latest`} className="block py-1 transition-colors hover:text-white">{t('latest')}</Link></li>
-                <li><Link href={`/${locale}/products/best-seller`} className="block py-1 transition-colors hover:text-white">{t('bestSeller')}</Link></li>
+                <li><Link href={`/${locale}/products/most-sold`} className="block py-1 transition-colors hover:text-white">{t('mostSold')}</Link></li>
+                <li><Link href={`/${locale}/products/best-rated`} className="block py-1 transition-colors hover:text-white">{t('bestRated')}</Link></li>
               </ul>
             </motion.div>
 
@@ -146,7 +128,8 @@ export default function Footer() {
               <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-cyan-300">{tNav('account')}</h4>
               <ul className="space-y-1.5 text-sm text-blue-100/80">
                 <li><Link href={`/${locale}/account`} className="block py-1 transition-colors hover:text-white">{t('myAccount')}</Link></li>
-                <li><Link href={`/${locale}/orders`} className="block py-1 transition-colors hover:text-white">{t('myOrders')}</Link></li>
+                <li><Link href={`/${locale}/account/orders`} className="block py-1 transition-colors hover:text-white">{t('myOrders')}</Link></li>
+                <li><Link href={`/${locale}/order-tracking`} className="block py-1 transition-colors hover:text-white">Track Order</Link></li>
                 <li><Link href={`/${locale}/account/points`} className="block py-1 transition-colors hover:text-white">{t('obPoints')}</Link></li>
                 <li><Link href={`/${locale}/support`} className="block py-1 transition-colors hover:text-white">{t('supportCenter')}</Link></li>
                 <li><Link href={`/${locale}/chat`} className="block py-1 transition-colors hover:text-white">{tNav('chat')}</Link></li>
@@ -160,6 +143,7 @@ export default function Footer() {
               <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-cyan-300">{t('business')}</h4>
               <ul className="space-y-1.5 text-sm text-blue-100/80">
                 <li><Link href={`/${locale}/marketing`} className="block py-1 transition-colors hover:text-white">{t('whyOceanBazar')}</Link></li>
+                <li><Link href={`/${locale}/contact`} className="block py-1 transition-colors hover:text-white">{t('contactUs')}</Link></li>
                 <li><Link href={`/${locale}/business-inquiries`} className="block py-1 transition-colors hover:text-white">{t('businessInquiries')}</Link></li>
                 <li><Link href={`/${locale}/policies/privacy`} className="block py-1 transition-colors hover:text-white">{tPolicy('privacyPolicy')}</Link></li>
                 <li><Link href={`/${locale}/policies/returns`} className="block py-1 transition-colors hover:text-white">{tPolicy('returnPolicy')}</Link></li>
@@ -167,6 +151,51 @@ export default function Footer() {
               </ul>
             </motion.div>
           </div>
+
+          <motion.div variants={itemVariants} className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-white">Newsletter</p>
+                <p className="mt-1 text-xs text-blue-100/80">Get flash sales, restock alerts, and curated picks first.</p>
+              </div>
+              <form
+                className="flex w-full flex-col gap-2 xs:flex-row sm:max-w-md"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!newsletterEmail) return;
+                  setNewsletterState('loading');
+                  try {
+                    await newsletterApi.subscribe(newsletterEmail);
+                    setNewsletterState('done');
+                    setNewsletterEmail('');
+                  } catch {
+                    setNewsletterState('error');
+                  }
+                }}
+              >
+                <div className="flex flex-1 items-center gap-2 rounded-xl border border-white/20 bg-black/20 px-3">
+                  <Mail className="h-4 w-4 text-blue-200/80" />
+                  <input
+                    type="email"
+                    value={newsletterEmail}
+                    onChange={(e) => setNewsletterEmail(e.target.value)}
+                    required
+                    placeholder="your@email.com"
+                    className="h-11 w-full bg-transparent text-sm text-white placeholder:text-blue-100/60 outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={newsletterState === 'loading'}
+                  className="h-11 rounded-xl bg-cyan-500 px-4 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-50"
+                >
+                  {newsletterState === 'loading' ? 'Joining…' : 'Subscribe'}
+                </button>
+              </form>
+            </div>
+            {newsletterState === 'done' && <p className="mt-2 text-xs text-emerald-300">Subscribed successfully.</p>}
+            {newsletterState === 'error' && <p className="mt-2 text-xs text-rose-300">Could not subscribe right now.</p>}
+          </motion.div>
 
           {/* Divider */}
           <motion.div

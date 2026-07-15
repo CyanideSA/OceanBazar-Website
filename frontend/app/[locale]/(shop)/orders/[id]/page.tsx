@@ -1,23 +1,15 @@
-import { Suspense } from 'react';
-import OrderDetailClient from '@/components/orders/OrderDetailClient';
+import { redirect } from 'next/navigation';
+import { staticExportPlaceholderIdParams } from '@/lib/staticExportDummyParams';
 
-interface Props {
-  params: { id: string; locale: string };
+export async function generateStaticParams() {
+  return staticExportPlaceholderIdParams();
 }
 
-export default function OrderPage({ params }: Props) {
-  return (
-    <Suspense fallback={<OrderDetailFallback />}>
-      <OrderDetailClient orderId={params.id} />
-    </Suspense>
-  );
-}
-
-function OrderDetailFallback() {
-  return (
-    <div className="mx-auto max-w-4xl space-y-4 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
-      <div className="h-64 animate-pulse rounded-2xl bg-muted" />
-    </div>
-  );
+export default async function LegacyOrderDetailRedirect(
+  props: {
+    params: Promise<{ locale: string; id: string }>;
+  }
+) {
+  const params = await props.params;
+  redirect(`/${params.locale}/account/orders/${params.id}`);
 }

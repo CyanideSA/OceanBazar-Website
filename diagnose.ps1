@@ -86,7 +86,7 @@ if ($percentFree -lt 10) {
 
 # Check project structure
 Write-Host "`n[Project Structure]" -ForegroundColor Yellow
-$base = "c:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website"
+$base = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $folders = @(
     "backend-java\pom.xml",
     "frontend\package.json",

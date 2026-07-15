@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="50%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="cart" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#64748b"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#f0f9ff" stroke="url(#wave)" stroke-width="2"/>
+  <!-- Wave shape -->
+  <path d="M12 36 C16 28, 24 24, 28 30 C32 36, 36 26, 44 30 C48 32, 50 36, 52 34" fill="none" stroke="url(#wave)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M14 42 C18 36, 26 32, 30 37 C34 42, 38 34, 46 38 C48 39, 50 42, 52 40" fill="none" stroke="url(#wave)" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <!-- Cart base -->
+  <path d="M18 46 L22 46 L24 50 L44 50 L46 46 L50 46" fill="none" stroke="url(#cart)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Wheels -->
+  <circle cx="28" cy="54" r="2.5" fill="url(#cart)"/>
+  <circle cx="40" cy="54" r="2.5" fill="url(#cart)"/>
+  <!-- Sun -->
+  <circle cx="42" cy="18" r="6" fill="#f59e0b" opacity="0.9"/>
+  <circle cx="42" cy="18" r="4" fill="#fbbf24"/>
+  <!-- Glossy overlay -->
+  <circle cx="32" cy="32" r="29" fill="url(#shine)" opacity="0.3"/>
+</svg>

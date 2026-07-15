@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { routeParam } from '../utils/params';
 import { requireAuth } from '../middleware/auth';
 import { generateEntityId } from '../utils/hexId';
-import { io } from '../app';
+import { emitToRoom, emitToUser } from '../lib/adminEvents';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -12,11 +12,11 @@ router.use(requireAuth);
 
 // POST /api/tickets
 router.post('/', async (req: Request, res: Response) => {
-  const { orderId, productId, subject, category, priority = 'medium', message } = req.body as {
+  const { orderId, productId, subject, category = 'other', priority = 'medium', message } = req.body as {
     orderId?: string;
     productId?: string;
     subject: string;
-    category: string;
+    category?: string;
     priority?: string;
     message: string;
   };
@@ -30,12 +30,20 @@ router.post('/', async (req: Request, res: Response) => {
       subject,
       category: category as 'payment' | 'delivery' | 'product' | 'other',
       priority: priority as 'low' | 'medium' | 'high' | 'urgent',
-      messages: { create: { senderType: 'customer', senderId: req.user!.userId, message } },
+      messages: { create: { senderType: 'customer', senderId: req.user!.userId, message, attachments: [] } },
     },
     include: { messages: true },
   });
 
-  io.to('admin:chat').emit('ticket:new', { ticket });
+  emitToRoom('admin:chat', 'ticket:new', { ticket });
+  emitToRoom('admin:crm', 'ticket:new', { ticket });
+  if (subject?.toLowerCase().includes('return') || category === 'other') {
+    emitToRoom('admin:returns', 'admin:return:new', { ticketId: ticket.id, subject, userId: req.user!.userId });
+  }
+  try {
+    const { alertNewTicket } = await import('../services/teamsService');
+    alertNewTicket(ticket.id, subject, priority).catch(() => {});
+  } catch { /* non-fatal */ }
   res.status(201).json({ ticket });
 });
 
@@ -85,8 +93,8 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
 
   await prisma.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
 
-  io.to(`ticket:${ticket.id}`).emit('ticket:message', { ticketId: ticket.id, message: msg });
-  io.to('admin:chat').emit('ticket:message', { ticketId: ticket.id, message: msg });
+  emitToUser(ticket.userId, 'ticket:message', { ticketId: ticket.id, message: msg });
+  emitToRoom('admin:chat', 'ticket:message', { ticketId: ticket.id, message: msg });
 
   res.status(201).json({ message: msg });
 });
@@ -103,8 +111,8 @@ router.post('/:id/seen', async (req: Request, res: Response) => {
     data: { seenAt: new Date() },
   });
 
-  io.to(`ticket:${ticket.id}`).emit('ticket:seen', { ticketId: ticket.id, seenBy: 'customer' });
-  io.to('admin:chat').emit('ticket:seen', { ticketId: ticket.id, seenBy: 'customer' });
+  emitToUser(ticket.userId, 'ticket:seen', { ticketId: ticket.id, seenBy: 'customer' });
+  emitToRoom('admin:chat', 'ticket:seen', { ticketId: ticket.id, seenBy: 'customer' });
 
   res.json({ ok: true });
 });

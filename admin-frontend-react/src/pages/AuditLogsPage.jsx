@@ -58,7 +58,7 @@ export default function AuditLogsPage() {
     const q = search.toLowerCase();
     return items.filter(l => 
       l.action?.toLowerCase().includes(q) ||
-      l.details?.toLowerCase().includes(q) ||
+      String(l.details || '').toLowerCase().includes(q) ||
       l.targetId?.toLowerCase().includes(q) ||
       l.actorAdminId?.toLowerCase().includes(q)
     );
@@ -162,7 +162,7 @@ export default function AuditLogsPage() {
                           </div>
                         </td>
                         <td className="max-w-[200px]">
-                          <p className="text-sm text-crm-text-dim truncate">{l.details}</p>
+                          <p className="text-sm text-crm-text-dim truncate">{typeof l.details === 'object' && l.details !== null ? JSON.stringify(l.details) : String(l.details || '')}</p>
                         </td>
                         <td>
                           <div className="flex items-center gap-2">
@@ -203,7 +203,7 @@ export default function AuditLogsPage() {
                                       </div>
                                     </div>
                                     <div className="p-4 rounded-lg bg-crm-bg border border-crm-border text-crm-text-bright italic">
-                                      "{l.details || "No additional details recorded."}"
+                                      "{typeof l.details === 'object' && l.details !== null ? JSON.stringify(l.details) : (l.details || 'No additional details recorded.')}"
                                     </div>
                                   </div>
                                   <div className="space-y-4">

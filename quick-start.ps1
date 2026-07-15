@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$base = "c:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website"
+$base = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 
 # Kill any existing processes on ports
 function Clear-Port($port) {

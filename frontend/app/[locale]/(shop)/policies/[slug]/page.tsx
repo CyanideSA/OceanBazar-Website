@@ -8,10 +8,13 @@ import { getPolicies, type PolicyKey, type SectionIcon } from '@/lib/policies';
 
 const SLUG_TO_KEY: Record<string, PolicyKey> = {
   privacy: 'privacy',
+  'privacy-policy': 'privacy',
   returns: 'returns',
+  'return-policy': 'returns',
   refunds: 'refunds',
   shipping: 'shipping',
   terms: 'terms',
+  'terms-and-conditions': 'terms',
   warranty: 'warranty',
 };
 
@@ -59,11 +62,16 @@ const TAG_LABELS_BN: Record<string, string> = {
   info:        'তথ্য',
 };
 
-export default function PolicyPage({
-  params,
-}: {
-  params: { locale: string; slug: string };
-}) {
+export function generateStaticParams() {
+  return Object.keys(SLUG_TO_KEY).map((slug) => ({ slug }));
+}
+
+export default async function PolicyPage(
+  props: {
+    params: Promise<{ locale: string; slug: string }>;
+  }
+) {
+  const params = await props.params;
   const TAG_LABELS = params.locale === 'bn' ? TAG_LABELS_BN : TAG_LABELS_EN;
   const key = SLUG_TO_KEY[params.slug];
   if (!key) notFound();

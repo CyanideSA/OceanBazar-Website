@@ -19,10 +19,11 @@ $ports = @{
     admin      = 5173
 }
 
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $paths = @{
-    backend    = "c:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\backend-java"
-    storefront = "c:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\frontend"
-    admin      = "c:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\admin-frontend-react"
+    backend    = Join-Path $repoRoot "backend-java"
+    storefront = Join-Path $repoRoot "frontend"
+    admin      = Join-Path $repoRoot "admin-frontend-react"
 }
 
 $urls = @{

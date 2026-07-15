@@ -7,9 +7,20 @@ let connected = false;
 
 export async function getRedisClient(): Promise<RedisClientType> {
   if (!client) {
-    client = createClient({ url: REDIS_URL });
+    client = createClient({
+      url: REDIS_URL,
+      socket: {
+        reconnectStrategy: (retries) => {
+          if (retries >= 3) {
+            console.warn('[redis] Giving up after 3 retries — caching disabled.');
+            return false;
+          }
+          return Math.min(retries * 1000, 3000);
+        },
+      },
+    });
     client.on('error', (err) => {
-      console.error('[redis] Connection error:', err.message);
+      if (!connected) console.warn('[redis] Connection error:', err.message);
       connected = false;
     });
     client.on('connect', () => {

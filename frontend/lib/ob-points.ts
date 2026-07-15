@@ -2,13 +2,10 @@ import type { OBTier } from '@/types';
 
 export const TIER_THRESHOLDS = { Bronze: 0, Silver: 10_000, Gold: 50_000 } as const;
 
-export const REDEMPTION_TABLE: Record<OBTier, Record<number, number>> = {
-  Bronze: { 1000: 10, 5000: 75, 10000: 180 },
-  Silver: { 1000: 15, 5000: 100, 10000: 250 },
-  Gold: { 1000: 20, 5000: 125, 10000: 300 },
-};
-
-export const REDEMPTION_AMOUNTS = [1000, 5000, 10000] as const;
+export const SLAB_SIZE = 10_000;
+export const SLAB_BASE_VALUE = 500;
+export const SLAB_INCREMENT = 250;
+export const MIN_REDEEMABLE_POINTS = 1000;
 
 export function getTier(lifetimeSpend: number): OBTier {
   if (lifetimeSpend >= TIER_THRESHOLDS.Gold) return 'Gold';
@@ -16,8 +13,60 @@ export function getTier(lifetimeSpend: number): OBTier {
   return 'Bronze';
 }
 
-export function getRedemptionValue(tier: OBTier, points: number): number | null {
-  return REDEMPTION_TABLE[tier][points] ?? null;
+/**
+ * Cumulative slab redemption formula:
+ *   Slab 1 (first 10k) = 500 BDT
+ *   Slab 2 (next 10k)  = 750 BDT
+ *   Slab N              = 500 + (N-1)*250
+ *   Partial slab gets proportional value.
+ */
+export function calculateSlabRedemptionValue(points: number): number {
+  if (points <= 0) return 0;
+  const fullSlabs = Math.floor(points / SLAB_SIZE);
+  const remainder = points % SLAB_SIZE;
+
+  let total = 0;
+  for (let i = 1; i <= fullSlabs; i++) {
+    total += SLAB_BASE_VALUE + (i - 1) * SLAB_INCREMENT;
+  }
+
+  if (remainder > 0) {
+    const nextSlabFull = SLAB_BASE_VALUE + fullSlabs * SLAB_INCREMENT;
+    total += Math.round((remainder / SLAB_SIZE) * nextSlabFull);
+  }
+
+  return total;
+}
+
+/** @deprecated Use calculateSlabRedemptionValue */
+export function getRedemptionValue(_tier: OBTier, points: number): number | null {
+  if (points < MIN_REDEEMABLE_POINTS) return null;
+  return calculateSlabRedemptionValue(points);
+}
+
+export function getRedemptionOptions(balance: number) {
+  const amounts = [10_000, 20_000, 30_000, 50_000, 100_000];
+  const options: { points: number; bdtValue: number; canRedeem: boolean }[] = [];
+
+  for (const pts of amounts) {
+    if (pts > balance * 2) break;
+    options.push({
+      points: pts,
+      bdtValue: calculateSlabRedemptionValue(pts),
+      canRedeem: balance >= pts,
+    });
+  }
+
+  if (balance >= MIN_REDEEMABLE_POINTS && !options.some((o) => o.points === balance)) {
+    options.push({
+      points: balance,
+      bdtValue: calculateSlabRedemptionValue(balance),
+      canRedeem: true,
+    });
+    options.sort((a, b) => a.points - b.points);
+  }
+
+  return options;
 }
 
 export function getNextTierInfo(lifetimeSpend: number) {

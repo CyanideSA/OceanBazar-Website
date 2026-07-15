@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -126,7 +126,7 @@ const PAY_BADGE: Record<string, string> = {
   refunded: 'bg-muted text-muted-foreground',
 };
 
-export default function OrderDetailClient({ orderId }: { orderId: string }) {
+function OrderDetailClientInner({ orderId }: { orderId: string }) {
   const t = useTranslations('orders');
   const tCh = useTranslations('checkout');
   const tc = useTranslations('common');
@@ -181,7 +181,7 @@ export default function OrderDetailClient({ orderId }: { orderId: string }) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:px-8">
         <p className="text-muted-foreground">{t('notFound')}</p>
-        <Link href={`/${locale}/orders`} className="mt-4 inline-flex items-center gap-2 text-primary hover:underline">
+        <Link href={`/${locale}/account/orders`} className="mt-4 inline-flex items-center gap-2 text-primary hover:underline">
           <ArrowLeft className="h-4 w-4" />
           {t('backToOrders')}
         </Link>
@@ -233,7 +233,7 @@ export default function OrderDetailClient({ orderId }: { orderId: string }) {
     <div className="mx-auto max-w-4xl space-y-4 px-3 py-4 sm:space-y-6 sm:px-6 sm:py-8 lg:px-8">
       <div>
         <Link
-          href={`/${locale}/orders`}
+          href={`/${locale}/account/orders`}
           className="mb-3 inline-flex min-h-[40px] items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -261,6 +261,14 @@ export default function OrderDetailClient({ orderId }: { orderId: string }) {
             >
               {t('fulfillment')}: {t(order.status)}
             </span>
+            <Link
+              href={`/${locale}/account/orders/${orderId}/invoice`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-border px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            >
+              🖨️ Invoice
+            </Link>
             {canCancel ? (
               <button
                 type="button"
@@ -549,5 +557,20 @@ function ShipmentCard({
         </div>
       </dl>
     </li>
+  );
+}
+
+export default function OrderDetailClient(props: { orderId: string }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-4xl space-y-4 px-4 py-8 sm:px-6 lg:px-8">
+          <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
+          <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+        </div>
+      }
+    >
+      <OrderDetailClientInner {...props} />
+    </Suspense>
   );
 }

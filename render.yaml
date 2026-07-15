@@ -1,0 +1,143 @@
+services:
+  - type: web
+    name: oceanbazar-storefront
+    env: node
+    repo: https://github.com/CyanideSA/OCEANBAZAR-Frontend
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://<bff-service>.onrender.com
+      - key: NEXT_PUBLIC_WS_URL
+        value: https://<java-service>.onrender.com
+      - key: NEXT_PUBLIC_SITE_URL
+        value: https://<storefront-service>.onrender.com
+      - key: NEXT_PUBLIC_FIREBASE_API_KEY
+        value: <FIREBASE_API_KEY>
+      - key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+        value: <FIREBASE_AUTH_DOMAIN>
+      - key: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+        value: <FIREBASE_PROJECT_ID>
+      - key: NEXT_PUBLIC_FIREBASE_APP_ID
+        value: <FIREBASE_APP_ID>
+
+  - type: web
+    name: oceanbazar-java-api
+    env: docker
+    repo: https://github.com/CyanideSA/OCEANBAZAR-Backend
+    rootDir: backend-java
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SERVER_PORT
+        value: 10000
+      - key: DATABASE_URL
+        value: jdbc:postgresql://ep-small-sunset-aom3ownz.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      - key: DB_USER
+        value: neondb_owner
+      - key: DB_PASSWORD
+        value: <NEON_PASSWORD>
+      - key: JWT_SECRET_KEY
+        value: change_me_java_jwt_secret_min_32_chars
+      - key: PUBLIC_BASE_URL
+        value: https://<java-service>.onrender.com
+      - key: UPLOAD_DIR
+        value: /tmp/uploads
+      - key: CACHE_TYPE
+        value: simple
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://<storefront-service>.onrender.com,https://<admin>.onrender.com
+      - key: WEBSOCKET_ALLOWED_ORIGINS
+        value: https://<storefront-service>.onrender.com,https://<admin>.onrender.com
+      - key: WEBSOCKET_ALLOWED_ORIGIN_PATTERNS
+        value: https://*.vercel.app,https://*.onrender.com
+      - key: CLOUDINARY_CLOUD_NAME
+        value: <CLOUDINARY_CLOUD_NAME>
+      - key: CLOUDINARY_API_KEY
+        value: <CLOUDINARY_API_KEY>
+      - key: CLOUDINARY_API_SECRET
+        value: <CLOUDINARY_API_SECRET>
+
+  - type: web
+    name: oceanbazar-bff
+    env: node
+    repo: https://github.com/CyanideSA/OCEANBAZAR-Backend
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
+    buildCommand: npm ci --include=dev && npm run db:generate && npm run build
+    startCommand: npx prisma migrate deploy && npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: CLIENT_URL
+        value: https://<storefront-service>.onrender.com
+      - key: ADMIN_URL
+        value: https://<admin>.onrender.com
+      - key: JAVA_API_URL
+        value: https://<java-service>.onrender.com
+      - key: DATABASE_URL
+        value: postgresql://neondb_owner:<NEON_PASSWORD>@ep-small-sunset-aom3ownz-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      - key: JWT_ACCESS_SECRET
+        value: change_me_bff_access_secret_min_32_chars
+      - key: JWT_REFRESH_SECRET
+        value: change_me_bff_refresh_secret_min_32_chars
+      - key: JWT_ACCESS_EXPIRES
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES
+        value: 7d
+      - key: OTP_EXPIRE_MINUTES
+        value: 10
+      - key: OTP_TERMINAL_ONLY
+        value: true
+      - key: CART_ABANDONMENT_CRON
+        value: false
+      - key: UPLOAD_DIR
+        value: /tmp/uploads
+      - key: PUBLIC_BASE_URL
+        value: https://<bff-service>.onrender.com
+      - key: CLOUDINARY_CLOUD_NAME
+        value: <CLOUDINARY_CLOUD_NAME>
+      - key: CLOUDINARY_API_KEY
+        value: <CLOUDINARY_API_KEY>
+      - key: CLOUDINARY_API_SECRET
+        value: <CLOUDINARY_API_SECRET>
+      - key: FIREBASE_API_KEY
+        value: <FIREBASE_API_KEY>
+      - key: FIREBASE_PROJECT_ID
+        value: <FIREBASE_PROJECT_ID>
+      - key: RECAPTCHA_SITE_KEY
+        value: <RECAPTCHA_SITE_KEY>
+      - key: RECAPTCHA_PROJECT_ID
+        value: <RECAPTCHA_PROJECT_ID>
+      - key: SMTP_HOST
+        value: <SMTP_HOST_OR_EMPTY>
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: <SMTP_USER_OR_EMPTY>
+      - key: SMTP_PASS
+        value: <SMTP_PASS_OR_EMPTY>
+      - key: EMAIL_FROM
+        value: Oceanbazar <noreply@oceanbazar.com>
+
+  - type: web
+    env: static
+    name: oceanbazar-admin-crm
+    repo: https://github.com/CyanideSA/OCEANBAZAR-Frontend-Admin
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    envVars:
+      - key: VITE_ADMIN_API_URL
+        value: https://<bff-service>.onrender.com
+      - key: VITE_WS_URL
+        value: https://<java-service>.onrender.com

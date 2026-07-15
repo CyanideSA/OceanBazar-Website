@@ -1,20 +1,20 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { 
-  FiSearch, FiFilter, FiPlus, FiBox, FiTrendingUp, FiCheckCircle, 
-  FiXCircle, FiMoreVertical, FiEye, FiEdit2, FiTrash2,
-  FiDollarSign, FiArchive, FiImage, FiRefreshCw, FiChevronRight,
-  FiChevronLeft, FiCamera, FiVideo, FiTag, FiHash, FiTruck, FiActivity,
-  FiExternalLink, FiLayers, FiInfo
+  FiSearch, FiPlus, FiBox, FiTrendingUp, FiCheckCircle, 
+  FiMoreVertical, FiEdit2, FiTrash2,
+  FiImage, FiRefreshCw, FiChevronRight,
+  FiChevronLeft, FiDownload, FiSquare, FiCheckSquare,
 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { getAdminUser } from "../lib/auth";
 import { useToast } from "../components/ToastProvider";
 import { normalizeProductImageUrl } from "../utils/mediaUrl";
 import { format } from "date-fns";
-import { motion, AnimatePresence } from "framer-motion";
+import AddProductWizard from "../components/products/AddProductWizard";
+import EditProductDrawer from "../components/products/EditProductDrawer";
 
-const CATEGORY_OPTIONS = ["Electronics", "Fashion", "Beauty", "Home & Kitchen", "Sports", "Toys", "Health"];
-const BRAND_OPTIONS = ["OceanBazar", "Apple", "Samsung", "Sony", "Nike", "Adidas", "Logitech"];
+
+const PAGE_LIMIT = 50;
 
 export default function ProductsPage({ initialSearch = "" }) {
   const toast = useToast();
@@ -22,281 +22,137 @@ export default function ProductsPage({ initialSearch = "" }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch);
   const [activeTab, setActiveTab] = useState("all");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [activeCount, setActiveCount] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const searchTimerRef = useRef(null);
   const [showForm, setShowCreateForm] = useState(false);
-  const [formStep, setFormStep] = useState(1);
-  const [formData, setForm] = useState({
-    name: "", category: "", brand: "", tags: [],
-    images: [], video: null, banner: null,
-    price: "", previousPrice: "", retailTiers: ["", "", ""], wholesaleTiers: ["", "", ""],
-    stock: "", sku: "", 
-    attributes: { application: "", feature: "", ingredients: "" },
-    specs: { productCode: "", category: "", shipping: "", dispatch: "" },
-    flags: { featured: false, bestSeller: false, reviewConfirmed: false }
-  });
+  const [editProductId, setEditProductId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const adminRole = useMemo(() => String(getAdminUser()?.role || "STAFF").toUpperCase(), []);
   const canEdit = adminRole === "SUPER_ADMIN" || adminRole === "ADMIN";
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_LIMIT));
 
-  const fetchProducts = useCallback(async () => {
+  const fetchProducts = useCallback(async (pg = 1, tab = "all", q = "") => {
     setLoading(true);
     try {
-      const res = await adminApi.products();
-      setItems(Array.isArray(res) ? res : []);
-    } catch (err) {
-      toast.error("Failed to fetch products");
+      const params = { page: pg, limit: PAGE_LIMIT };
+      if (tab && tab !== "all") {
+        params.status = tab === "published" ? "active" : tab;
+      }
+      if (q) params.search = q;
+      const res = await adminApi.products(params);
+      const raw = Array.isArray(res) ? res : Array.isArray(res?.products) ? res.products : [];
+      const normalized = raw.map(p => ({
+        ...p,
+        price: p.price ?? p.pricing?.find(pr => (pr.customerType || "").toLowerCase() === "retail")?.price ?? p.pricing?.[0]?.price ?? 0,
+        mainImage: p.mainImage ?? p.productAssets?.[0]?.url ?? null,
+        categoryName: p.categoryName ?? p.productCategories?.[0]?.category?.nameEn ?? null,
+      }));
+      setItems(normalized);
+      setTotalCount(Number(res?.total ?? raw.length));
+      setActiveCount(Number(res?.activeCount ?? 0));
+      setLowStockCount(Number(res?.lowStockCount ?? 0));    } catch (err) {      toast.error("Failed to fetch products");
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    fetchProducts(1, activeTab, search);
+    setPage(1);
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filteredProducts = useMemo(() => {
-    return items.filter(p => {
-      const matchesTab = activeTab === "all" || (p.status || "draft").toLowerCase() === activeTab;
-      const q = search.toLowerCase();
-      const matchesSearch = !search || 
-        `${p.titleEn} ${p.sku} ${p.id}`.toLowerCase().includes(q);
-      return matchesTab && matchesSearch;
-    });
-  }, [items, activeTab, search]);
+  useEffect(() => {
+    fetchProducts(1, activeTab, initialSearch);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setPage(1);
+      fetchProducts(1, activeTab, val);
+    }, 400);
+  };
+
+  const handlePageChange = (newPage) => {
+    setPage(newPage);
+    fetchProducts(newPage, activeTab, search);
+  };
+
+  const filteredProducts = items; // server already filtered
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this product permanently?")) return;
     try {
       await adminApi.deleteProduct(id);
-      setItems(prev => prev.filter(p => p.id !== id));
+      fetchProducts(page, activeTab, search);
       toast.success("Product deleted successfully");
     } catch (err) {
       toast.error("Failed to delete product");
     }
   };
 
-  const handleCreateSubmit = async (e) => {
-    e.preventDefault();
-    toast.success("Product submitted for validation");
-    setShowCreateForm(false);
-    fetchProducts();
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const allSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedIds.has(p.id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filteredProducts.map(p => p.id)));
   };
 
-  const renderFormStep = () => {
-    switch(formStep) {
-      case 1:
-        return (
-          <div className="space-y-6 animate-fade-in">
-            <h3 className="text-lg font-bold text-crm-text-bright border-b border-crm-border pb-2 flex items-center gap-2"><FiInfo /> Basic Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-crm-text-dim uppercase">Product Name</label>
-                <input className="crm-input" placeholder="e.g. Pro Wireless Gaming Mouse" value={formData.name} onChange={e => setForm({...formData, name: e.target.value})} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-crm-text-dim uppercase">Category</label>
-                <select className="crm-input" value={formData.category} onChange={e => setForm({...formData, category: e.target.value})}>
-                  <option value="">Select Category</option>
-                  {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-crm-text-dim uppercase">Brand</label>
-                <select className="crm-input" value={formData.brand} onChange={e => setForm({...formData, brand: e.target.value})}>
-                  <option value="">Select or Create Brand</option>
-                  {BRAND_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-crm-text-dim uppercase">Tags</label>
-                <input className="crm-input" placeholder="New, Hot, Wired (comma separated)" value={formData.tags.join(", ")} onChange={e => setForm({...formData, tags: e.target.value.split(",").map(t => t.trim()).filter(Boolean)})} />
-              </div>
-            </div>
-          </div>
-        );
-      case 2:
-        return (
-          <div className="space-y-6 animate-fade-in">
-            <h3 className="text-lg font-bold text-crm-text-bright border-b border-crm-border pb-2 flex items-center gap-2"><FiImage /> Media Assets</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-3">
-                <div className="border-2 border-dashed border-crm-border rounded-xl p-12 text-center hover:border-crm-primary transition-colors cursor-pointer group">
-                  <FiCamera size={40} className="mx-auto mb-4 text-crm-text-muted group-hover:text-crm-primary" />
-                  <p className="text-crm-text-bright font-bold">Drop main product images here</p>
-                  <p className="text-xs text-crm-text-dim mt-1">Unlimited uploads via Cloudinary integration</p>
-                </div>
-              </div>
-              <div className="crm-card bg-crm-bg border-none flex flex-col items-center justify-center p-6 gap-3">
-                <FiVideo size={30} className="text-crm-purple" />
-                <span className="text-xs font-bold text-crm-text-dim uppercase">Product Video</span>
-                <button className="crm-btn w-full text-xs">Upload MP4</button>
-              </div>
-              <div className="crm-card bg-crm-bg border-none flex flex-col items-center justify-center p-6 gap-3">
-                <FiImage size={30} className="text-crm-cyan" />
-                <span className="text-xs font-bold text-crm-text-dim uppercase">Landing Banner</span>
-                <button className="crm-btn w-full text-xs">Upload Banner</button>
-              </div>
-            </div>
-          </div>
-        );
-      case 3:
-        return (
-          <div className="space-y-6 animate-fade-in">
-            <h3 className="text-lg font-bold text-crm-text-bright border-b border-crm-border pb-2 flex items-center gap-2"><FiDollarSign /> Pricing Structure</h3>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold text-crm-primary uppercase tracking-widest">Basic Pricing</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs text-crm-text-dim uppercase">Current Price</label>
-                    <input className="crm-input font-bold" type="number" placeholder="৳ 0.00" value={formData.price} onChange={e => setForm({...formData, price: e.target.value})} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs text-crm-text-dim uppercase">Previous Price</label>
-                    <input className="crm-input text-crm-text-muted line-through" type="number" placeholder="৳ 0.00" value={formData.previousPrice} onChange={e => setForm({...formData, previousPrice: e.target.value})} />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold text-crm-success uppercase tracking-widest">Retail Tiers (3 Levels)</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  <input className="crm-input text-xs" placeholder="Tier 1" value={formData.retailTiers[0]} onChange={e => { const t = [...formData.retailTiers]; t[0] = e.target.value; setForm({...formData, retailTiers: t}); }} />
-                  <input className="crm-input text-xs" placeholder="Tier 2" value={formData.retailTiers[1]} onChange={e => { const t = [...formData.retailTiers]; t[1] = e.target.value; setForm({...formData, retailTiers: t}); }} />
-                  <input className="crm-input text-xs" placeholder="Tier 3" value={formData.retailTiers[2]} onChange={e => { const t = [...formData.retailTiers]; t[2] = e.target.value; setForm({...formData, retailTiers: t}); }} />
-                </div>
-              </div>
-              <div className="col-span-2 space-y-4">
-                <h4 className="text-xs font-bold text-crm-purple uppercase tracking-widest">Wholesale Tiers (3 Levels)</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 rounded-xl bg-crm-bg border border-crm-border space-y-2">
-                    <span className="text-[10px] font-bold text-crm-text-dim uppercase">Wholesale Level 1</span>
-                    <input className="crm-input" placeholder="Price per unit" value={formData.wholesaleTiers[0]} onChange={e => { const t = [...formData.wholesaleTiers]; t[0] = e.target.value; setForm({...formData, wholesaleTiers: t}); }} />
-                  </div>
-                  <div className="p-4 rounded-xl bg-crm-bg border border-crm-border space-y-2">
-                    <span className="text-[10px] font-bold text-crm-text-dim uppercase">Wholesale Level 2</span>
-                    <input className="crm-input" placeholder="Price per unit" value={formData.wholesaleTiers[1]} onChange={e => { const t = [...formData.wholesaleTiers]; t[1] = e.target.value; setForm({...formData, wholesaleTiers: t}); }} />
-                  </div>
-                  <div className="p-4 rounded-xl bg-crm-bg border border-crm-border space-y-2">
-                    <span className="text-[10px] font-bold text-crm-text-dim uppercase">Wholesale Level 3</span>
-                    <input className="crm-input" placeholder="Price per unit" value={formData.wholesaleTiers[2]} onChange={e => { const t = [...formData.wholesaleTiers]; t[2] = e.target.value; setForm({...formData, wholesaleTiers: t}); }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      case 4:
-        return (
-          <div className="space-y-6 animate-fade-in">
-            <h3 className="text-lg font-bold text-crm-text-bright border-b border-crm-border pb-2 flex items-center gap-2"><FiHash /> Inventory & SKU</h3>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-crm-text-dim uppercase">Stock Count</label>
-                <input className="crm-input text-lg font-bold" type="number" placeholder="0" value={formData.stock} onChange={e => setForm({...formData, stock: e.target.value})} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-crm-text-dim uppercase">Product SKU</label>
-                <div className="flex gap-2">
-                  <input className="crm-input font-mono bg-crm-bg-hover" readOnly value={formData.sku || "OB-MOUSE-7A8B2C"} />
-                  <button className="crm-btn text-xs">Regenerate</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      case 5:
-        return (
-          <div className="space-y-6 animate-fade-in">
-            <h3 className="text-lg font-bold text-crm-text-bright border-b border-crm-border pb-2 flex items-center gap-2"><FiLayers /> Attributes & Specifications</h3>
-            <div className="grid grid-cols-2 gap-x-12 gap-y-6">
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border/30 pb-1">Detailed Attributes</h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="text-xs text-crm-text-dim whitespace-nowrap">Application</span>
-                    <input className="crm-input h-8 text-xs flex-1" value={formData.attributes.application} onChange={e => setForm({...formData, attributes: {...formData.attributes, application: e.target.value}})} />
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="text-xs text-crm-text-dim whitespace-nowrap">Ingredients</span>
-                    <input className="crm-input h-8 text-xs flex-1" value={formData.attributes.ingredients} onChange={e => setForm({...formData, attributes: {...formData.attributes, ingredients: e.target.value}})} />
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="text-xs text-crm-text-dim whitespace-nowrap">Feature</span>
-                    <input className="crm-input h-8 text-xs flex-1" value={formData.attributes.feature} onChange={e => setForm({...formData, attributes: {...formData.attributes, feature: e.target.value}})} />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border/30 pb-1">Specifications</h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="text-xs text-crm-text-dim whitespace-nowrap">Product Code</span>
-                    <input className="crm-input h-8 text-xs flex-1" value={formData.specs.productCode} onChange={e => setForm({...formData, specs: {...formData.specs, productCode: e.target.value}})} />
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="text-xs text-crm-text-dim whitespace-nowrap">Shipping Weight</span>
-                    <input className="crm-input h-8 text-xs flex-1" value={formData.specs.shipping} onChange={e => setForm({...formData, specs: {...formData.specs, shipping: e.target.value}})} />
-                  </div>
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="text-xs text-crm-text-dim whitespace-nowrap">Dispatch Time</span>
-                    <input className="crm-input h-8 text-xs flex-1" value={formData.specs.dispatch} onChange={e => setForm({...formData, specs: {...formData.specs, dispatch: e.target.value}})} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      case 6:
-        return (
-          <div className="space-y-6 animate-fade-in">
-            <h3 className="text-lg font-bold text-crm-text-bright border-b border-crm-border pb-2 flex items-center gap-2"><FiCheckCircle /> Final Flags & Review</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <label className="flex items-center gap-4 p-4 rounded-xl bg-crm-bg-hover cursor-pointer border border-transparent hover:border-crm-primary transition-all">
-                  <input type="checkbox" className="w-5 h-5 rounded border-crm-border bg-crm-bg text-crm-primary" checked={formData.flags.featured} onChange={e => setForm({...formData, flags: {...formData.flags, featured: e.target.checked}})} />
-                  <div>
-                    <p className="text-sm font-bold text-crm-text-bright">Promote as Featured</p>
-                    <p className="text-xs text-crm-text-dim">Displays on homepage featured sections</p>
-                  </div>
-                </label>
-                <label className="flex items-center gap-4 p-4 rounded-xl bg-crm-bg-hover cursor-pointer border border-transparent hover:border-crm-primary transition-all">
-                  <input type="checkbox" className="w-5 h-5 rounded border-crm-border bg-crm-bg text-crm-primary" checked={formData.flags.bestSeller} onChange={e => setForm({...formData, flags: {...formData.flags, bestSeller: e.target.checked}})} />
-                  <div>
-                    <p className="text-sm font-bold text-crm-text-bright">Mark as Best Seller</p>
-                    <p className="text-xs text-crm-text-dim">Adds hot item badge on storefront</p>
-                  </div>
-                </label>
-                <label className="flex items-center gap-4 p-4 rounded-xl bg-crm-bg-hover cursor-pointer border border-crm-warning/30 hover:border-crm-warning transition-all">
-                  <input type="checkbox" className="w-5 h-5 rounded border-crm-border bg-crm-bg text-crm-warning" checked={formData.flags.reviewConfirmed} onChange={e => setForm({...formData, flags: {...formData.flags, reviewConfirmed: e.target.checked}})} />
-                  <div>
-                    <p className="text-sm font-bold text-crm-warning">Compliance Confirmation</p>
-                    <p className="text-xs text-crm-text-dim">I confirm all product details are accurate</p>
-                  </div>
-                </label>
-              </div>
-              <div className="crm-card bg-crm-bg border-none flex flex-col items-center justify-center p-8 text-center space-y-4">
-                <FiExternalLink size={40} className="text-crm-primary" />
-                <h4 className="font-bold text-crm-text-bright">Live Storefront Preview</h4>
-                <p className="text-xs text-crm-text-dim">See how this product will appear to your customers before publishing.</p>
-                <button className="crm-btn crm-btn-primary w-full">Launch Preview Frame</button>
-              </div>
-            </div>
-          </div>
-        );
-      default: return null;
-    }
+  const handleBulkAction = async () => {
+    if (!bulkAction || selectedIds.size === 0) return;
+    if (bulkAction === 'delete' && !window.confirm(`Delete ${selectedIds.size} products permanently?`)) return;
+    setBulkSaving(true);
+    try {
+      const ids = [...selectedIds];
+      if (bulkAction === 'delete') {
+        await Promise.all(ids.map(id => adminApi.deleteProduct(id)));
+        toast.success(`${ids.length} products deleted`);
+      } else {
+        await Promise.all(ids.map(id => adminApi.updateProduct(id, { status: bulkAction })));
+        toast.success(`${ids.length} products set to ${bulkAction}`);
+      }
+      setSelectedIds(new Set());
+      setBulkAction("");
+      fetchProducts(page, activeTab, search);
+    } catch { toast.error("Bulk action failed"); }
+    finally { setBulkSaving(false); }
   };
+
+  /* CSV may include SKUs and titles — treat as internal data; download is client-side only. */
+  const exportCsv = () => {
+    const src = selectedIds.size > 0 ? filteredProducts.filter(p => selectedIds.has(p.id)) : filteredProducts;
+    const headers = ['ID', 'Title', 'SKU', 'Status', 'Stock', 'Price (BDT)', 'Brand', 'Created'];
+    const rows = src.map(p => [
+      p.id, p.titleEn, p.sku || '', p.status || 'draft', p.stock || 0,
+      p.price || 0, p.brand || '', p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `products_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  };
+
+
+
+
 
   return (
     <div className="space-y-6">
-      <AnimatePresence mode="wait">
-        {!showForm ? (
-          <motion.div 
-            key="list"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="space-y-6"
-          >
+      <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-3 rounded-xl bg-crm-primary-dim text-crm-primary">
@@ -309,7 +165,7 @@ export default function ProductsPage({ initialSearch = "" }) {
               </div>
               <div className="flex items-center gap-2">
                 {canEdit && (
-                  <button onClick={() => { setShowCreateForm(true); setFormStep(1); }} className="crm-btn crm-btn-primary">
+                  <button onClick={() => setShowCreateForm(true)} className="crm-btn crm-btn-primary">
                     <FiPlus /> New Product
                   </button>
                 )}
@@ -318,9 +174,9 @@ export default function ProductsPage({ initialSearch = "" }) {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { label: "Total Products", count: items.length, icon: FiBox, color: "text-crm-primary" },
-                { label: "Published", count: items.filter(p => p.status === 'active').length, icon: FiCheckCircle, color: "text-crm-success" },
-                { label: "Low Stock", count: items.filter(p => (p.stock || 0) < 10).length, icon: FiTrendingUp, color: "text-crm-warning" },
+                { label: "Total Products", count: totalCount, icon: FiBox, color: "text-crm-primary" },
+                { label: "Published", count: activeCount, icon: FiCheckCircle, color: "text-crm-success" },
+                { label: "Low Stock", count: lowStockCount, icon: FiTrendingUp, color: "text-crm-warning" },
               ].map((stat, i) => (
                 <div key={i} className="crm-card flex items-center gap-4">
                   <div className={`p-3 rounded-lg bg-crm-bg-hover ${stat.color}`}>
@@ -335,7 +191,7 @@ export default function ProductsPage({ initialSearch = "" }) {
             </div>
 
             <div className="crm-card p-0 overflow-hidden border-b-0 rounded-b-none flex flex-wrap">
-              {["all", "active", "draft", "archived"].map(tab => (
+              {["all", "draft", "published", "suspended"].map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -345,7 +201,7 @@ export default function ProductsPage({ initialSearch = "" }) {
                       : "border-transparent text-crm-text-dim hover:text-crm-text-bright hover:bg-crm-bg-hover"
                   }`}
                 >
-                  {tab}
+                  {tab === "published" ? "Published" : tab}
                 </button>
               ))}
             </div>
@@ -358,13 +214,53 @@ export default function ProductsPage({ initialSearch = "" }) {
                   placeholder="Search products by name, SKU, or ID..." 
                   className="crm-input pl-10" 
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={handleSearchChange}
                 />
               </div>
-              <button className="crm-btn" onClick={fetchProducts}>
+              <button className="crm-btn" onClick={() => fetchProducts(page, activeTab, search)}>
                 <FiRefreshCw className={loading ? "animate-spin" : ""} /> Refresh
               </button>
+              <button
+                type="button"
+                className="crm-btn"
+                onClick={exportCsv}
+                title="Export product list as CSV"
+                aria-label="Export product list as CSV"
+              >
+                <FiDownload size={14} /> {selectedIds.size > 0 ? `Export CSV (${selectedIds.size})` : 'Export CSV'}
+              </button>
             </div>
+
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-crm-primary-dim border border-crm-primary/30 rounded-xl text-sm">
+                <span className="text-crm-primary font-semibold">{selectedIds.size} selected</span>
+                <select value={bulkAction} onChange={e => setBulkAction(e.target.value)} className="crm-input py-1 text-xs h-7">
+                  <option value="">Choose action…</option>
+                  <option value="active">Publish</option>
+                  <option value="draft">Set Draft</option>
+                  <option value="suspended">Suspend</option>
+                  <option value="delete">Delete</option>
+                </select>
+                <button onClick={handleBulkAction} disabled={!bulkAction || bulkSaving} className="crm-btn crm-btn-primary py-1 text-xs h-7 disabled:opacity-50">
+                  {bulkSaving ? 'Working…' : 'Apply'}
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} className="text-crm-text-dim hover:text-crm-text-bright text-xs">✕ Deselect all</button>
+              </div>
+            )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs text-crm-text-dim">Showing {((page - 1) * PAGE_LIMIT) + 1}–{Math.min(page * PAGE_LIMIT, totalCount)} of {totalCount.toLocaleString()} products</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => handlePageChange(page - 1)} disabled={page <= 1} className="crm-btn px-3 py-1.5 text-xs disabled:opacity-40"><FiChevronLeft size={14} /></button>
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    const p = totalPages <= 7 ? i + 1 : page <= 4 ? i + 1 : page >= totalPages - 3 ? totalPages - 6 + i : page - 3 + i;
+                    return <button key={p} onClick={() => handlePageChange(p)} className={`h-7 w-7 rounded text-xs font-bold transition-colors ${p === page ? 'bg-crm-primary text-white' : 'hover:bg-crm-bg-hover text-crm-text-dim'}`}>{p}</button>;
+                  })}
+                  <button onClick={() => handlePageChange(page + 1)} disabled={page >= totalPages} className="crm-btn px-3 py-1.5 text-xs disabled:opacity-40"><FiChevronRight size={14} /></button>
+                </div>
+              </div>
+            )}
 
             <div className="crm-table-container">
               {loading ? (
@@ -375,6 +271,11 @@ export default function ProductsPage({ initialSearch = "" }) {
                 <table className="crm-table">
                   <thead>
                     <tr>
+                      <th style={{width:36}}>
+                        <button type="button" onClick={toggleSelectAll} className="text-crm-text-dim hover:text-crm-primary">
+                          {allSelected ? <FiCheckSquare size={16} /> : <FiSquare size={16} />}
+                        </button>
+                      </th>
                       <th>Product</th>
                       <th>Status</th>
                       <th>Price</th>
@@ -385,126 +286,85 @@ export default function ProductsPage({ initialSearch = "" }) {
                   </thead>
                   <tbody>
                     {filteredProducts.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="text-center py-12 text-crm-text-dim">No products found</td>
-                      </tr>
-                    ) : (
-                      filteredProducts.map((p) => (
-                        <tr key={p.id} className="group">
-                          <td>
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-lg bg-crm-bg-hover overflow-hidden border border-crm-border shrink-0">
-                                {p.mainImage ? (
-                                  <img src={normalizeProductImageUrl(p.mainImage)} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-crm-text-muted"><FiImage size={20} /></div>
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-bold text-crm-text-bright truncate">{p.titleEn}</p>
-                                <p className="text-[10px] text-crm-text-dim font-mono uppercase tracking-widest">SKU: {p.sku || "N/A"}</p>
-                              </div>
+                      <tr><td colSpan="7" className="text-center py-12 text-crm-text-dim">No products found</td></tr>
+                    ) : filteredProducts.map((p) => (
+                      <tr key={p.id} className={`group ${selectedIds.has(p.id) ? 'bg-crm-primary-dim/20' : ''}`}>
+                        <td onClick={() => toggleSelect(p.id)} style={{cursor:'pointer', width:36}}>
+                          <button type="button" className="text-crm-text-dim hover:text-crm-primary">
+                            {selectedIds.has(p.id) ? <FiCheckSquare size={15} className="text-crm-primary" /> : <FiSquare size={15} />}
+                          </button>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-lg bg-crm-bg-hover overflow-hidden border border-crm-border shrink-0">
+                              {p.mainImage ? (
+                                <img src={normalizeProductImageUrl(p.mainImage)} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-crm-text-muted"><FiImage size={20} /></div>
+                              )}
                             </div>
-                          </td>
-                          <td>
-                            <span className={`crm-badge border ${p.status === 'active' ? 'crm-badge-success' : 'text-crm-text-dim border-crm-border'}`}>
-                              {p.status || 'draft'}
+                            <div className="min-w-0">
+                              <p className="font-bold text-crm-text-bright truncate">{p.titleEn}</p>
+                              <p className="text-[10px] text-crm-text-dim font-mono uppercase tracking-widest">SKU: {p.sku || "N/A"}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`crm-badge border ${p.status === 'active' ? 'crm-badge-success' : p.status === 'suspended' ? 'crm-badge-warning' : 'text-crm-text-dim border-crm-border'}`}>
+                            {p.status === 'active' ? 'published' : (p.status || 'draft')}
+                          </span>
+                        </td>
+                        <td><p className="font-bold text-crm-text-bright tabular-nums">৳{Number(p.price || 0).toLocaleString()}</p></td>
+                        <td>
+                          <div className="flex flex-col gap-1">
+                            <span className={`text-xs font-bold ${p.stock < 10 ? 'text-crm-danger' : 'text-crm-text-dim'}`}>
+                              {p.stock || 0} <span className="text-[10px] font-normal uppercase ml-1">In Stock</span>
                             </span>
-                          </td>
-                          <td>
-                            <p className="font-bold text-crm-text-bright tabular-nums">৳{Number(p.price || 0).toLocaleString()}</p>
-                          </td>
-                          <td>
-                            <div className="flex flex-col gap-1">
-                              <span className={`text-xs font-bold ${p.stock < 10 ? 'text-crm-danger' : 'text-crm-text-dim'}`}>
-                                {p.stock || 0} <span className="text-[10px] font-normal uppercase ml-1">In Stock</span>
-                              </span>
-                              <div className="w-20 h-1 bg-crm-bg-hover rounded-full overflow-hidden">
-                                <div className={`h-full ${p.stock < 10 ? 'bg-crm-danger' : 'bg-crm-success'}`} style={{ width: `${Math.min(100, (p.stock || 0))}%` }} />
-                              </div>
+                            <div className="w-20 h-1 bg-crm-bg-hover rounded-full overflow-hidden">
+                              <div className={`h-full ${p.stock < 10 ? 'bg-crm-danger' : 'bg-crm-success'}`} style={{ width: `${Math.min(100, (p.stock || 0))}%` }} />
                             </div>
-                          </td>
-                          <td className="text-[11px] text-crm-text-dim whitespace-nowrap">
-                            {p.createdAt ? format(new Date(p.createdAt), "MMM dd, yyyy") : "—"}
-                          </td>
-                          <td>
-                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-primary transition-colors" title="Edit">
-                                <FiEdit2 size={16} />
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-danger transition-colors" title="Delete">
-                                <FiTrash2 size={16} />
-                              </button>
-                              <button className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-text-bright">
-                                <FiMoreVertical size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                          </div>
+                        </td>
+                        <td className="text-[11px] text-crm-text-dim whitespace-nowrap">
+                          {p.createdAt ? format(new Date(p.createdAt), "MMM dd, yyyy") : "—"}
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={(e) => { e.stopPropagation(); setEditProductId(p.id); }}
+                              className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-primary transition-colors" title="Edit">
+                              <FiEdit2 size={16} />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-danger transition-colors" title="Delete">
+                              <FiTrash2 size={16} />
+                            </button>
+                            <button className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-text-bright">
+                              <FiMoreVertical size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}
             </div>
-          </motion.div>
-        ) : (
-          <motion.div 
-            key="form"
-            initial={{ x: 20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -20, opacity: 0 }}
-            className="max-w-4xl mx-auto space-y-8 pb-20"
-          >
-            <div className="flex items-center justify-between">
-              <button 
-                onClick={() => setShowCreateForm(false)}
-                className="flex items-center gap-2 text-crm-text-dim hover:text-crm-primary transition-colors font-bold uppercase tracking-widest text-xs"
-              >
-                <FiChevronLeft size={20} /> Back to Catalog
-              </button>
-              <div className="flex gap-2">
-                {[1,2,3,4,5,6].map(s => (
-                  <div key={s} className={`h-1.5 w-8 rounded-full transition-all ${formStep >= s ? "bg-crm-primary shadow-lg shadow-crm-primary/30" : "bg-crm-bg-hover"}`} />
-                ))}
-              </div>
-            </div>
+      </div>
 
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-3xl font-bold text-crm-text-bright tracking-tight">Add New Product</h2>
-                <p className="text-crm-text-dim">Step {formStep} of 6 — {
-                  formStep === 1 ? "Identity" : 
-                  formStep === 2 ? "Media" : 
-                  formStep === 3 ? "Pricing" : 
-                  formStep === 4 ? "Inventory" : 
-                  formStep === 5 ? "Specs" : "Review"
-                }</p>
-              </div>
-              <div className="flex items-center gap-3">
-                {formStep > 1 && (
-                  <button onClick={() => setFormStep(formStep - 1)} className="crm-btn px-6">
-                    Previous
-                  </button>
-                )}
-                {formStep < 6 ? (
-                  <button onClick={() => setFormStep(formStep + 1)} className="crm-btn crm-btn-primary px-10">
-                    Next Step <FiChevronRight />
-                  </button>
-                ) : (
-                  <button onClick={handleCreateSubmit} className="crm-btn crm-btn-primary px-12 bg-crm-success border-crm-success hover:bg-crm-success-hover">
-                    Publish Product <FiCheckCircle />
-                  </button>
-                )}
-              </div>
-            </div>
+      {/* ── Add Product Wizard ───────────────────────────────────────────── */}
+      <AddProductWizard
+        open={showForm}
+        onClose={() => setShowCreateForm(false)}
+        onSuccess={() => fetchProducts(1, activeTab, search)}
+      />
 
-            <div className="crm-card p-10 bg-crm-bg-alt shadow-2xl ring-1 ring-crm-border">
-              {renderFormStep()}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Full Edit Product Drawer ─────────────────────────────────────── */}
+      {editProductId && (
+        <EditProductDrawer
+          productId={editProductId}
+          onClose={() => setEditProductId(null)}
+          onSaved={() => fetchProducts(page, activeTab, search)}
+        />
+      )}
     </div>
   );
 }

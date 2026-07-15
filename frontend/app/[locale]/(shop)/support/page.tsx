@@ -1,14 +1,15 @@
 import Link from 'next/link';
-import { getLocale, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import {
   MessageSquare, RefreshCcw, ShieldCheck, FileText,
   Clock, CheckCircle2, ChevronRight,
   Package, CreditCard, Truck, AlertCircle, Star,
 } from 'lucide-react';
 
-export default async function SupportPage() {
-  const locale = await getLocale();
-  const t = await getTranslations('support');
+export default async function SupportPage(props: { params: Promise<{ locale: string }> }) {
+  const params = await props.params;
+  const { locale } = params;
+  const t = await getTranslations({ locale, namespace: 'support' });
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -44,7 +45,7 @@ export default async function SupportPage() {
             { icon: Package,     color: 'text-amber-600 dark:text-amber-400',   bg: 'bg-amber-500/10',   titleKey: 'orderIssues',      subKey: 'orderIssuesSub',      href: `/${locale}/tickets` },
             { icon: RefreshCcw,  color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10', titleKey: 'returnsRefunds',   subKey: 'returnsRefundsSub',   href: `/${locale}/returns` },
             { icon: CreditCard,  color: 'text-blue-600 dark:text-blue-400',     bg: 'bg-blue-500/10',    titleKey: 'paymentProblems',  subKey: 'paymentProblemsSub', href: `/${locale}/tickets` },
-            { icon: Truck,       color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-500/10',  titleKey: 'deliveryTracking', subKey: 'deliveryTrackingSub',href: `/${locale}/orders` },
+            { icon: Truck,       color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-500/10',  titleKey: 'deliveryTracking', subKey: 'deliveryTrackingSub',href: `/${locale}/account/orders` },
             { icon: Star,        color: 'text-rose-600 dark:text-rose-400',     bg: 'bg-rose-500/10',    titleKey: 'accountPoints',    subKey: 'accountPointsSub',    href: `/${locale}/account` },
             { icon: ShieldCheck, color: 'text-primary',                         bg: 'bg-primary/10',     titleKey: 'warrantyClaims',   subKey: 'warrantyClaimsSub',   href: `/${locale}/tickets` },
           ] as const).map((item) => (

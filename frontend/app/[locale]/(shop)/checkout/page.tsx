@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useShopRouter } from '@/lib/shopNavigation';
 import { ChevronDown, Loader2, MapPin, Package, CreditCard, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
 import { useCartStore } from '@/stores/cartStore';
 import { cartApi, ordersApi, profileApi, paymentsApi } from '@/lib/api';
@@ -19,15 +19,30 @@ import type { SavedAddress, CartSummary } from '@/types';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { cn } from '@/lib/utils';
 
+const GATEWAY_NOT_CONFIGURED_MSG = (method: string) =>
+  `${method.charAt(0).toUpperCase() + method.slice(1)} payment is not configured yet. Please pay with Cash on Delivery (COD) or contact support.`;
+
 async function startOnlinePayment(
   orderId: string,
   method: string
 ): Promise<{ redirectUrl?: string; transactionId?: string }> {
-  if (method === 'bkash') return (await paymentsApi.bkashInitiate(orderId)).data;
-  if (method === 'nagad') return (await paymentsApi.nagadInitiate(orderId)).data;
-  if (method === 'rocket') return (await paymentsApi.rocketInitiate(orderId)).data;
-  if (method === 'upay') return (await paymentsApi.upayInitiate(orderId)).data;
-  if (method === 'sslcommerz') return (await paymentsApi.sslcommerz(orderId)).data;
+  const wrap = async (fn: () => Promise<any>) => {
+    try {
+      return (await fn()).data;
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.error;
+      if (status === 503 || status === 502) {
+        throw new Error(msg || GATEWAY_NOT_CONFIGURED_MSG(method));
+      }
+      throw new Error(msg || `Failed to start ${method} payment. Please try again.`);
+    }
+  };
+  if (method === 'bkash')      return wrap(() => paymentsApi.bkashInitiate(orderId));
+  if (method === 'nagad')      return wrap(() => paymentsApi.nagadInitiate(orderId));
+  if (method === 'rocket')     return wrap(() => paymentsApi.rocketInitiate(orderId));
+  if (method === 'upay')       return wrap(() => paymentsApi.upayInitiate(orderId));
+  if (method === 'sslcommerz') return wrap(() => paymentsApi.sslcommerz(orderId));
   return {};
 }
 
@@ -37,7 +52,7 @@ export default function CheckoutPage() {
   const tPolicy = useTranslations('policies');
   const tc = useTranslations('common');
   const locale = useLocale();
-  const router = useRouter();
+  const router = useShopRouter();
   const { cart, appliedCoupon, appliedObPoints, setCart, clearCart, setAppliedCoupon } = useCartStore();
 
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
@@ -90,7 +105,9 @@ export default function CheckoutPage() {
   const totalsPreview = useMemo(() => {
     if (!activeCart) return null;
     const ob = appliedObPoints?.bdtDiscount ?? 0;
-    return previewOrderTotals(activeCart.subtotal, appliedCoupon, ob);
+    return previewOrderTotals(activeCart.subtotal, appliedCoupon, ob, {
+      retailQuantityOrder: activeCart.retailQuantityOrder,
+    });
   }, [activeCart, appliedCoupon, appliedObPoints]);
 
   const orderTotal = totalsPreview?.total ?? 0;
@@ -122,8 +139,16 @@ export default function CheckoutPage() {
     onSuccess: async (data) => {
       clearCart();
       const { order, requiresPayment } = data;
+      const orderHref = `/${locale}/account/orders/${order.id}`;
+      const settleAfterOrder = async () => {
+        try {
+          await ordersApi.get(order.id);
+        } catch {
+          /* Route still shows skeleton/error UI; don't block overlay forever */
+        }
+      };
       if (paymentMethod === 'cod') {
-        router.push(`/${locale}/orders/${order.id}`);
+        router.push(orderHref, { settle: settleAfterOrder });
         return;
       }
       if (requiresPayment && paymentMethod && paymentMethod !== 'installment') {
@@ -133,13 +158,13 @@ export default function CheckoutPage() {
             window.location.href = pay.redirectUrl;
             return;
           }
-        } catch {
+        } catch (err: any) {
           setPayRetry({ orderId: order.id, method: paymentMethod });
-          setError(t('paymentInitFailed'));
+          setError(err?.message || t('paymentInitFailed'));
           return;
         }
       }
-      router.push(`/${locale}/orders/${order.id}`);
+      router.push(orderHref, { settle: settleAfterOrder });
     },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } }).response?.data?.error ?? tc('error'));
@@ -328,7 +353,20 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">
+            <p className="font-medium text-destructive">{error}</p>
+            {(error.includes('not configured') || error.includes('COD')) && (
+              <button
+                type="button"
+                onClick={() => { setError(''); setPaymentMethod('cod'); }}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                Switch to Cash on Delivery instead
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="rounded-xl border border-border/60 bg-background p-2.5 text-xs text-muted-foreground sm:p-3">
           <p>{tExtra('agreePolicies')}</p>

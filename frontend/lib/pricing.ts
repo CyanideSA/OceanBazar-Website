@@ -9,13 +9,63 @@ export interface PricingResult {
   unitPrice: number;
   discountPct: number;
   lineTotal: number;
-  tierApplied: 0 | 1 | 2 | 3;
+  tierApplied: number;
+}
+
+export interface TierBand {
+  minQty: number;
+  maxQty: number | null;
+  discountPct: number;
+  price?: number | null;
+}
+
+export function parseTierBands(pricing: ProductPricing | null | undefined): TierBand[] {
+  const raw = pricing?.tierBands;
+  if (!Array.isArray(raw)) return [];
+  const bands: TierBand[] = [];
+  for (const band of raw) {
+      const minQty = Number((band as { minQty?: unknown })?.minQty);
+      const maxRaw = (band as { maxQty?: unknown })?.maxQty;
+      const maxQty = maxRaw == null || maxRaw === '' ? null : Number(maxRaw);
+      const discountPct = Number((band as { discountPct?: unknown })?.discountPct ?? 0);
+      const priceRaw = (band as { price?: unknown })?.price;
+      const price = priceRaw == null || priceRaw === '' ? null : Number(priceRaw);
+      if (!Number.isFinite(minQty) || minQty < 1) continue;
+      if (maxQty != null && (!Number.isFinite(maxQty) || maxQty < minQty)) continue;
+      if (!Number.isFinite(discountPct) || discountPct < 0) continue;
+      bands.push({ minQty, maxQty, discountPct, price });
+  }
+  return bands.sort((a, b) => a.minQty - b.minQty);
+}
+
+function resolveBandForQty(bands: TierBand[], qty: number): { index: number; band: TierBand } | null {
+  for (let i = bands.length - 1; i >= 0; i -= 1) {
+    const band = bands[i];
+    if (qty >= band.minQty && (band.maxQty == null || qty <= band.maxQty)) return { index: i + 1, band };
+  }
+  return null;
 }
 
 export function calculateRetailPrice(pricing: ProductPricing, qty: number): PricingResult {
   const base = pricing.price;
   let discountPct = 0;
-  let tierApplied: 0 | 1 | 2 | 3 = 0;
+  let tierApplied = 0;
+
+  const bands = parseTierBands(pricing);
+  if (qty > 1 && bands.length > 0) {
+    const resolved = resolveBandForQty(bands, qty);
+    if (resolved) {
+      tierApplied = resolved.index;
+      discountPct = resolved.band.discountPct;
+      const explicitPrice = resolved.band.price;
+      const unitPrice = round2(
+        explicitPrice != null && Number.isFinite(explicitPrice)
+          ? explicitPrice
+          : base * (1 - discountPct / 100)
+      );
+      return { unitPrice, discountPct, lineTotal: round2(unitPrice * qty), tierApplied };
+    }
+  }
 
   if (qty > 1) {
     const t1 = pricing.tier1MinQty ?? Infinity;
@@ -41,7 +91,23 @@ export function calculateWholesalePrice(
 
   const base = wholesale.price;
   let discountPct = 0;
-  let tierApplied: 0 | 1 | 2 | 3 = 0;
+  let tierApplied = 0;
+
+  const bands = parseTierBands(wholesale);
+  if (bands.length > 0) {
+    const resolved = resolveBandForQty(bands, qty);
+    if (resolved) {
+      tierApplied = resolved.index;
+      discountPct = resolved.band.discountPct;
+      const explicitPrice = resolved.band.price;
+      const unitPrice = round2(
+        explicitPrice != null && Number.isFinite(explicitPrice)
+          ? explicitPrice
+          : base * (1 - discountPct / 100)
+      );
+      return { unitPrice, discountPct, lineTotal: round2(unitPrice * qty), tierApplied };
+    }
+  }
 
   const t1 = wholesale.tier1MinQty ?? Infinity;
   const t2 = wholesale.tier2MinQty ?? Infinity;
@@ -70,7 +136,8 @@ export function calculatePrice(
   if (!pricing.retail) return { unitPrice: 0, discountPct: 0, lineTotal: 0, tierApplied: 0 };
   const retail = withVariantBase(pricing.retail, variantPriceOverride);
   const wholesale = pricing.wholesale ? withVariantBase(pricing.wholesale, variantPriceOverride) : null;
-  if (wholesale && qty >= moq) {
+  // Only apply wholesale bands when caller explicitly selects wholesale mode.
+  if (userType === 'wholesale' && wholesale && qty >= moq) {
     return calculateWholesalePrice(retail, wholesale, qty, moq);
   }
   return calculateRetailPrice(retail, qty);
@@ -80,18 +147,46 @@ export const RETAIL_MAX_UNITS = 25;
 
 export const COD_LIMIT = 5000;
 export const GST_RATE = 0.05;
-export const SERVICE_FEE = 1.5;
-export const SHIPPING_FEE = 25;
-export const FREE_SHIPPING_THRESHOLD = 0; // Free shipping now managed via quota system, not auto-threshold
+export const BASE_SERVICE_FEE = 1.5;
+export const BASE_SHIPPING_FEE = 25;
+export const FREE_FEES_THRESHOLD = 5000;
 
-export function calculateOrderTotals(subtotal: number, couponDiscount = 0, obDiscount = 0) {
+// Legacy aliases for backward compatibility
+export const SERVICE_FEE = BASE_SERVICE_FEE;
+export const SHIPPING_FEE = BASE_SHIPPING_FEE;
+export const FREE_SHIPPING_THRESHOLD = FREE_FEES_THRESHOLD;
+
+export type OrderTotalsOptions = {
+  couponFreeShipping?: boolean;
+  /** When true (all lines within retail qty caps), subtotal threshold waives shipping+service fees. Mirrors backend pricing. */
+  retailQuantityOrder?: boolean;
+};
+
+function normalizeTotalsOpts(opts?: boolean | OrderTotalsOptions): OrderTotalsOptions {
+  if (opts == null) return {};
+  if (typeof opts === 'boolean') return { couponFreeShipping: opts };
+  return opts;
+}
+
+export function calculateOrderTotals(
+  subtotal: number,
+  couponDiscount = 0,
+  obDiscount = 0,
+  opts?: boolean | OrderTotalsOptions,
+) {
+  const o = normalizeTotalsOpts(opts);
   const discount = round2(couponDiscount);
   const afterDiscount = Math.max(0, subtotal - discount);
   const gst = round2(afterDiscount * GST_RATE);
-  const shippingFee = SHIPPING_FEE; // Always charge shipping; free shipping via coupon/quota only
-  const serviceFee = SERVICE_FEE;
-  const total = round2(afterDiscount + gst + shippingFee + serviceFee - obDiscount);
-  return { subtotal: round2(subtotal), discount, gst, shippingFee, serviceFee, obDiscount, total };
+
+  const thresholdWaiver = subtotal >= FREE_FEES_THRESHOLD && o.retailQuantityOrder === true;
+  const feeWaiver = Boolean(o.couponFreeShipping) || thresholdWaiver;
+  const shippingFee = feeWaiver ? 0 : BASE_SHIPPING_FEE;
+  const serviceFee = feeWaiver ? 0 : BASE_SERVICE_FEE;
+
+  const clampedOb = round2(Math.min(obDiscount, afterDiscount + gst + shippingFee + serviceFee));
+  const total = round2(Math.max(0, afterDiscount + gst + shippingFee + serviceFee - clampedOb));
+  return { subtotal: round2(subtotal), discount, gst, shippingFee, serviceFee, obDiscount: clampedOb, total };
 }
 
 export function isCodAllowed(total: number): boolean {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { CartSummary, CartItem } from '@/types';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import type { CartSummary } from '@/types';
 
 interface CartState {
   cart: CartSummary | null;
@@ -11,20 +12,29 @@ interface CartState {
   setAppliedCoupon: (coupon: CartState['appliedCoupon']) => void;
   setAppliedObPoints: (ob: CartState['appliedObPoints']) => void;
   clearCart: () => void;
-  itemCount: number;
 }
 
-export const useCartStore = create<CartState>((set, get) => ({
-  cart: null,
-  isOpen: false,
-  appliedCoupon: null,
-  appliedObPoints: null,
-  setCart: (cart) => set({ cart }),
-  setOpen: (open) => set({ isOpen: open }),
-  setAppliedCoupon: (coupon) => set({ appliedCoupon: coupon }),
-  setAppliedObPoints: (ob) => set({ appliedObPoints: ob }),
-  clearCart: () => set({ cart: null, appliedCoupon: null, appliedObPoints: null }),
-  get itemCount() {
-    return get().cart?.itemCount ?? 0;
-  },
-}));
+export const useCartStore = create<CartState>()(
+  persist(
+    (set) => ({
+      cart: null,
+      isOpen: false,
+      appliedCoupon: null,
+      appliedObPoints: null,
+      setCart: (cart) => set({ cart }),
+      setOpen: (open) => set({ isOpen: open }),
+      setAppliedCoupon: (coupon) => set({ appliedCoupon: coupon }),
+      setAppliedObPoints: (ob) => set({ appliedObPoints: ob }),
+      clearCart: () => set({ cart: null, appliedCoupon: null, appliedObPoints: null }),
+    }),
+    {
+      name: 'ob-cart-v1',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({
+        cart: s.cart,
+        appliedCoupon: s.appliedCoupon,
+        appliedObPoints: s.appliedObPoints,
+      }),
+    }
+  )
+);

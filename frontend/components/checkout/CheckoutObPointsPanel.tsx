@@ -5,7 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Star, X } from 'lucide-react';
 import { cartApi, obPointsApi } from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
-import { REDEMPTION_AMOUNTS, REDEMPTION_TABLE } from '@/lib/ob-points';
+import { getRedemptionOptions, MIN_REDEEMABLE_POINTS } from '@/lib/ob-points';
 import type { OBTier } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -25,9 +25,8 @@ export default function CheckoutObPointsPanel() {
     onSuccess: (data) => setAppliedObPoints({ points: data.points, bdtDiscount: data.bdtDiscount }),
   });
 
-  const tier = balanceData?.tier ?? 'Bronze';
   const balance = balanceData?.balance ?? 0;
-  const rates = REDEMPTION_TABLE[tier];
+  const options = getRedemptionOptions(balance);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -61,34 +60,34 @@ export default function CheckoutObPointsPanel() {
             <X className="h-4 w-4" />
           </button>
         </div>
+      ) : balance < MIN_REDEEMABLE_POINTS ? (
+        <p className="text-sm text-muted-foreground">
+          {tp('needMore', { amount: (MIN_REDEEMABLE_POINTS - balance).toLocaleString() })}
+        </p>
       ) : (
         <>
           <p className="mb-3 text-sm text-muted-foreground">{tp('selectPackage')}</p>
           <div className="grid gap-2 sm:grid-cols-3">
-            {REDEMPTION_AMOUNTS.map((pts) => {
-              const can = balance >= pts;
-              const bdt = rates[pts];
-              return (
-                <button
-                  key={pts}
-                  type="button"
-                  disabled={!can || applyMutation.isPending}
-                  onClick={() => applyMutation.mutate(pts)}
-                  className={cn(
-                    'rounded-xl border-2 px-3 py-3 text-left text-sm transition-colors',
-                    can
-                      ? 'border-border hover:border-primary/50 hover:bg-muted/50'
-                      : 'cursor-not-allowed border-border opacity-50'
-                  )}
-                >
-                  <p className="font-semibold text-foreground">{pts.toLocaleString()} OB</p>
-                  <p className="text-emerald-600 dark:text-emerald-400">
-                    −{tc('taka')}
-                    {bdt}
-                  </p>
-                </button>
-              );
-            })}
+            {options.map((opt) => (
+              <button
+                key={opt.points}
+                type="button"
+                disabled={!opt.canRedeem || applyMutation.isPending}
+                onClick={() => applyMutation.mutate(opt.points)}
+                className={cn(
+                  'rounded-xl border-2 px-3 py-3 text-left text-sm transition-colors',
+                  opt.canRedeem
+                    ? 'border-border hover:border-primary/50 hover:bg-muted/50'
+                    : 'cursor-not-allowed border-border opacity-50'
+                )}
+              >
+                <p className="font-semibold text-foreground">{opt.points.toLocaleString()} OB</p>
+                <p className="text-emerald-600 dark:text-emerald-400">
+                  −{tc('taka')}
+                  {opt.bdtValue.toLocaleString()}
+                </p>
+              </button>
+            ))}
           </div>
         </>
       )}

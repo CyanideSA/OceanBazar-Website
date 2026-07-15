@@ -2,9 +2,59 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
 import { routeParam } from '../utils/params';
+import {
+  getAreas,
+  getPickupStores,
+  getPickupStoreDetails,
+  calculateParcelCharge,
+} from '../services/redxService';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// ─── RedX Area Lookup (public) ────────────────────────────────────────────────
+// GET /api/delivery/redx/areas?post_code=1207
+// GET /api/delivery/redx/areas?district_name=Dhaka
+
+router.get('/redx/areas', async (req: Request, res: Response) => {
+  const areas = await getAreas({
+    postCode: req.query.post_code ? Number(req.query.post_code) : undefined,
+    districtName: req.query.district_name as string | undefined,
+  });
+  res.json({ areas });
+});
+
+// ─── RedX Charge Calculator (public) ─────────────────────────────────────────
+// GET /api/delivery/redx/charge?delivery_area_id=12&pickup_area_id=1&cash_collection_amount=500&weight=300
+
+router.get('/redx/charge', async (req: Request, res: Response) => {
+  const { delivery_area_id, pickup_area_id, cash_collection_amount, weight } = req.query;
+  if (!delivery_area_id || !pickup_area_id || !cash_collection_amount || !weight) {
+    res.status(400).json({ error: 'delivery_area_id, pickup_area_id, cash_collection_amount, weight required' });
+    return;
+  }
+  const result = await calculateParcelCharge({
+    delivery_area_id: Number(delivery_area_id),
+    pickup_area_id: Number(pickup_area_id),
+    cash_collection_amount: Number(cash_collection_amount),
+    weight: Number(weight),
+  });
+  if (!result) { res.status(502).json({ error: 'Could not calculate charge' }); return; }
+  res.json(result);
+});
+
+// ─── RedX Pickup Stores (public) ─────────────────────────────────────────────
+
+router.get('/redx/pickup-stores', async (_req: Request, res: Response) => {
+  const stores = await getPickupStores();
+  res.json({ pickup_stores: stores });
+});
+
+router.get('/redx/pickup-stores/:id', async (req: Request, res: Response) => {
+  const store = await getPickupStoreDetails(Number(routeParam(req.params.id)));
+  if (!store) { res.status(404).json({ error: 'Pickup store not found' }); return; }
+  res.json({ pickup_store: store });
+});
 
 // GET /api/delivery/track/:trackingNumber
 router.get('/track/:trackingNumber', async (req: Request, res: Response) => {

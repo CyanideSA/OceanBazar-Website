@@ -1,17 +1,55 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Bell } from 'lucide-react';
+import { Bell, BellRing } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useNotificationsStore } from '@/stores/notificationsStore';
+import { initPushNotifications } from '@/lib/pushNotifications';
 
 export default function AccountNotificationsPage() {
   const t = useTranslations('notifications');
   const { items, markRead, markAllRead } = useNotifications();
   const remove = useNotificationsStore((s) => s.remove);
+  const [pushStatus, setPushStatus] = useState<'idle' | 'loading' | 'granted' | 'denied'>('idle');
+
+  async function handleEnablePush() {
+    setPushStatus('loading');
+    await initPushNotifications((sub) => {
+      console.log('[Push] Subscribed:', JSON.stringify(sub).slice(0, 60));
+      setPushStatus('granted');
+    });
+    if (typeof window !== 'undefined' && Notification.permission === 'denied') setPushStatus('denied');
+    else if (pushStatus === 'loading') setPushStatus('granted');
+  }
 
   return (
     <div className="space-y-6">
+      {/* Push notification opt-in banner */}
+      {pushStatus !== 'granted' && typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <BellRing className="h-5 w-5 text-primary shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Enable push notifications</p>
+              <p className="text-xs text-muted-foreground">Get notified about orders, deals, and messages even when the tab is closed.</p>
+            </div>
+          </div>
+          {pushStatus === 'denied' ? (
+            <span className="text-xs text-muted-foreground">Blocked in browser settings</span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleEnablePush}
+              disabled={pushStatus === 'loading'}
+              className="shrink-0 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              {pushStatus === 'loading' ? 'Enabling…' : 'Enable'}
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Bell className="h-7 w-7 text-primary" />

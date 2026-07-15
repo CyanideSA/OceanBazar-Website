@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { getBalance, getLedger, adminAdjustPoints } from '../../services/obPointsService';
-import { getTier, REDEMPTION_TABLE } from '../../utils/obPoints';
+import { getTier, getRedemptionOptions } from '../../utils/obPoints';
 import { routeParam } from '../../utils/params';
 
 const router = Router();
@@ -37,7 +37,7 @@ router.get('/', async (req: Request, res: Response) => {
         lifetimeSpend: Number(u.lifetimeSpend),
         tier,
         balance,
-        redemptionRates: REDEMPTION_TABLE[tier],
+        redemptionOptions: getRedemptionOptions(tier, balance),
       };
     })
   );
@@ -52,7 +52,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
   const balance = await getBalance(user.id);
   const tier = getTier(Number(user.lifetimeSpend));
   const ledger = await getLedger(user.id);
-  res.json({ user, balance, tier, redemptionRates: REDEMPTION_TABLE[tier], ledger });
+  res.json({ user, balance, tier, redemptionOptions: getRedemptionOptions(tier, balance), ledger });
 });
 
 export default router;

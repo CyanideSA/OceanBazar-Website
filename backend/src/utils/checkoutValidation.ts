@@ -9,7 +9,8 @@ import {
   calculatePrice,
   calculateOrderTotals,
   round2,
-  RETAIL_MAX_UNITS,
+  getRetailMaxQty,
+  getWholesaleCapQty,
   type PricingRow,
   type PricingResult,
   type OrderTotals,
@@ -17,7 +18,6 @@ import {
 import {
   validateCoupon,
   applyCoupon,
-  applyFreeShipping,
   type CouponData,
 } from './couponRules';
 import {
@@ -63,7 +63,7 @@ export interface CheckoutLineResult {
   unitPrice: number;
   lineTotal: number;
   discountPct: number;
-  tierApplied: 0 | 1 | 2 | 3;
+  tierApplied: number;
 }
 
 export interface CheckoutResult {
@@ -115,11 +115,18 @@ export function validateCheckout(input: CheckoutInput): CheckoutResult {
     }
 
     const hasWholesale = Boolean(item.pricing.wholesale);
-    const isWholesaleQty = hasWholesale && item.quantity >= item.moq;
-    if (input.userType === 'retail' && !isWholesaleQty && item.quantity > RETAIL_MAX_UNITS) {
+    const retailMaxQty = getRetailMaxQty(item.pricing.retail);
+    if (input.userType === 'retail' && item.quantity > retailMaxQty) {
       stockErrors.push(
-        `${item.productTitle}: retail orders are limited to ${RETAIL_MAX_UNITS} units. Add ${item.moq}+ units for wholesale pricing.`,
+        `${item.productTitle}: retail orders are limited to ${retailMaxQty} units. Register as wholesale for higher quantities.`,
       );
+    }
+    const wCap =
+      input.userType === 'wholesale' && item.pricing.wholesale
+        ? getWholesaleCapQty(item.pricing.wholesale)
+        : null;
+    if (wCap != null && item.quantity > wCap) {
+      stockErrors.push(`${item.productTitle}: wholesale quantity is capped at ${wCap} units for this product.`);
     }
 
     const pr: PricingResult = calculatePrice(
@@ -171,12 +178,12 @@ export function validateCheckout(input: CheckoutInput): CheckoutResult {
     }
   }
 
-  // 7. Order totals
-  let totals = calculateOrderTotals(subtotal, couponDiscount, obDiscount);
-  if (freeShipping) {
-    const patched = applyFreeShipping(totals);
-    totals = { ...totals, ...patched };
-  }
+  // 7. Order totals — shipping/service waiver when coupon OR (≥5000 AND every line stays within retail qty cap)
+  const retailQuantityOrder = input.items.every((it) => it.quantity <= getRetailMaxQty(it.pricing.retail));
+  const totals = calculateOrderTotals(subtotal, couponDiscount, obDiscount, {
+    couponFreeShipping: freeShipping,
+    retailQuantityOrder,
+  });
 
   // 8. COD check
   const codResult = checkCodEligibility({

@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
-export default async function PoliciesIndexPage({
-  params,
-}: {
-  params: { locale: string };
-}) {
+export default async function PoliciesIndexPage(
+  props: {
+    params: Promise<{ locale: string }>;
+  }
+) {
+  const params = await props.params;
   const t = await getTranslations({ locale: params.locale, namespace: 'policies' });
 
   const items = [

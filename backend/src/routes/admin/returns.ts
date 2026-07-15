@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { routeParam } from '../../utils/params';
+import { requireAdminReauth } from '../../middleware/adminReauth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -88,7 +89,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
 });
 
 // POST /api/admin/returns/:id/refund
-router.post('/:id/refund', async (req: Request, res: Response) => {
+router.post('/:id/refund', requireAdminReauth(), async (req: Request, res: Response) => {
   const { amount, method, note } = req.body as { amount: number; method?: string; note?: string };
   const rr = await prisma.return_requests.findUnique({ where: { id: routeParam(req.params.id) } });
   if (!rr) { res.status(404).json({ error: 'Not found' }); return; }

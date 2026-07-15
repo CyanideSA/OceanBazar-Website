@@ -2,16 +2,18 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { 
   FiBell, FiShoppingCart, FiCreditCard, FiPackage, 
   FiSearch, FiFilter, FiCheckCircle, FiTrash2, 
-  FiMoreVertical, FiMail, FiUsers, FiRadio, FiChevronDown, FiChevronUp
+  FiMoreVertical, FiMail, FiUsers, FiRadio, FiChevronDown, FiChevronUp,
+  FiX, FiSend, FiSmartphone
 } from "react-icons/fi";
-import { adminApi } from "../lib/api";
+import { adminApi, api } from "../lib/api";
 import { getAdminUser } from "../lib/auth";
 import { hasPermission } from "../auth/permissionMatrix";
 import { useToast } from "../components/ToastProvider";
 import { formatDistanceToNow } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import useAdminRealtimeSocket from '../hooks/useAdminRealtimeSocket';
+import useAdminBffSocket from '../hooks/useAdminBffSocket';
 import { useQueryClient } from '@tanstack/react-query';
+import useStepUpReauth from "../hooks/useStepUpReauth";
 
 const KIND_CONFIG = {
   new_order: { label: "New Order", icon: FiShoppingCart, class: "text-crm-primary bg-crm-primary-dim border-crm-primary/20" },
@@ -29,6 +31,7 @@ const TABS = [
 ];
 
 export default function NotificationsPage({ onInboxChanged }) {
+  const { requestToken, modal: reauthModal } = useStepUpReauth();
   const toast = useToast();
   const qc = useQueryClient();
   const [items, setItems] = useState([]);
@@ -37,11 +40,17 @@ export default function NotificationsPage({ onInboxChanged }) {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showBroadcast, setShowBroadcast] = useState(false);
+  const [broadcastForm, setBroadcastForm] = useState({ title: '', message: '', audience: 'all', kind: 'system' });
+  const [sending, setSending] = useState(false);
+  const [showPushBroadcast, setShowPushBroadcast] = useState(false);
+  const [pushForm, setPushForm] = useState({ title: '', body: '', url: '/' });
+  const [pushSending, setPushSending] = useState(false);
 
   const adminRole = useMemo(() => String(getAdminUser()?.role || "STAFF").toUpperCase(), []);
   const canSend = Boolean(hasPermission(adminRole, "notifications", "send"));
 
-  const { connected: wsConnected, eventTicks } = useAdminRealtimeSocket();
+  const { connected: wsConnected, eventTicks } = useAdminBffSocket();
 
   useEffect(() => {
     if (wsConnected) {
@@ -102,6 +111,54 @@ export default function NotificationsPage({ onInboxChanged }) {
     }
   };
 
+  const sendBroadcast = async () => {
+    if (!broadcastForm.title.trim() || !broadcastForm.message.trim()) {
+      toast.error('Title and message are required');
+      return;
+    }
+    setSending(true);
+    try {
+      const reauthToken = await requestToken();
+      await adminApi.createNotification({
+        title: broadcastForm.title,
+        message: broadcastForm.message,
+        audience: broadcastForm.audience,
+        kind: broadcastForm.kind,
+      }, reauthToken);
+      toast.success('Broadcast sent successfully');
+      setShowBroadcast(false);
+      setBroadcastForm({ title: '', message: '', audience: 'all', kind: 'system' });
+      loadNotifications();
+    } catch {
+      toast.error('Failed to send broadcast');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const sendPushBroadcast = async () => {
+    if (!pushForm.title.trim() || !pushForm.body.trim()) {
+      toast.error('Title and message are required');
+      return;
+    }
+    setPushSending(true);
+    try {
+      const reauthToken = await requestToken();
+      await api.post('/api/push/broadcast', {
+        title: pushForm.title,
+        body: pushForm.body,
+        url: pushForm.url || '/',
+      }, { headers: { "x-admin-reauth-token": reauthToken } });
+      toast.success('Web push notification sent to all subscribers!');
+      setShowPushBroadcast(false);
+      setPushForm({ title: '', body: '', url: '/' });
+    } catch {
+      toast.error('Failed to send push notification');
+    } finally {
+      setPushSending(false);
+    }
+  };
+
   const deleteNotification = async (id) => {
     if (!window.confirm("Permanently delete this alert?")) return;
     try {
@@ -132,9 +189,14 @@ export default function NotificationsPage({ onInboxChanged }) {
             </button>
           )}
           {canSend && (
-            <button className="crm-btn crm-btn-primary">
-              <FiRadio /> New Broadcast
-            </button>
+            <>
+              <button className="crm-btn" onClick={() => setShowPushBroadcast(true)}>
+                <FiSmartphone /> Push Notification
+              </button>
+              <button className="crm-btn crm-btn-primary" onClick={() => setShowBroadcast(true)}>
+                <FiRadio /> New Broadcast
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -267,6 +329,149 @@ export default function NotificationsPage({ onInboxChanged }) {
           })
         )}
       </div>
+      {/* Broadcast Modal */}
+      {showBroadcast && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowBroadcast(false)} />
+          <div className="relative w-full max-w-lg bg-crm-bg-card border border-crm-border rounded-2xl shadow-2xl z-10">
+            <div className="flex items-center justify-between p-6 border-b border-crm-border">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-crm-primary-dim text-crm-primary"><FiRadio size={20} /></div>
+                <div>
+                  <h3 className="font-bold text-crm-text-bright">Send Broadcast</h3>
+                  <p className="text-xs text-crm-text-dim">Push a system notification to users or admins</p>
+                </div>
+              </div>
+              <button onClick={() => setShowBroadcast(false)} className="p-1.5 hover:bg-crm-bg-hover rounded-lg text-crm-text-dim"><FiX /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Title</label>
+                <input
+                  className="crm-input w-full"
+                  placeholder="e.g. System Maintenance Notice"
+                  value={broadcastForm.title}
+                  onChange={e => setBroadcastForm(f => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Message</label>
+                <textarea
+                  className="crm-input w-full min-h-[100px] resize-none"
+                  placeholder="Write your broadcast message here..."
+                  value={broadcastForm.message}
+                  onChange={e => setBroadcastForm(f => ({ ...f, message: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Audience</label>
+                  <select
+                    className="crm-input w-full"
+                    value={broadcastForm.audience}
+                    onChange={e => setBroadcastForm(f => ({ ...f, audience: e.target.value }))}
+                  >
+                    <option value="all">All Users</option>
+                    <option value="admin">Admins Only</option>
+                    <option value="customer">Customers Only</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Type</label>
+                  <select
+                    className="crm-input w-full"
+                    value={broadcastForm.kind}
+                    onChange={e => setBroadcastForm(f => ({ ...f, kind: e.target.value }))}
+                  >
+                    <option value="system">System</option>
+                    <option value="new_order">Order</option>
+                    <option value="payment_update">Payment</option>
+                    <option value="low_stock">Stock Alert</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button className="crm-btn flex-1" onClick={() => setShowBroadcast(false)}>Cancel</button>
+              <button
+                className="crm-btn crm-btn-primary flex-1"
+                onClick={sendBroadcast}
+                disabled={sending}
+              >
+                {sending ? <span className="animate-spin h-4 w-4 border-b-2 border-white rounded-full inline-block" /> : <FiSend />}
+                {sending ? 'Sending...' : 'Send Broadcast'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Web Push Broadcast Modal */}
+      {showPushBroadcast && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPushBroadcast(false)} />
+          <div className="relative w-full max-w-lg bg-crm-bg-card border border-crm-border rounded-2xl shadow-2xl z-10">
+            <div className="flex items-center justify-between p-6 border-b border-crm-border">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-crm-primary-dim text-crm-primary"><FiSmartphone size={20} /></div>
+                <div>
+                  <h3 className="font-bold text-crm-text-bright">Web Push Notification</h3>
+                  <p className="text-xs text-crm-text-dim">Send browser push to all subscribed users</p>
+                </div>
+              </div>
+              <button onClick={() => setShowPushBroadcast(false)} className="p-1.5 hover:bg-crm-bg-hover rounded-lg text-crm-text-dim"><FiX /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Title</label>
+                <input
+                  className="crm-input w-full"
+                  placeholder="e.g. Flash Sale — 50% Off!"
+                  value={pushForm.title}
+                  onChange={e => setPushForm(f => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Message</label>
+                <textarea
+                  className="crm-input w-full min-h-[90px] resize-none"
+                  placeholder="Short notification body (max 120 chars)"
+                  maxLength={120}
+                  value={pushForm.body}
+                  onChange={e => setPushForm(f => ({ ...f, body: e.target.value }))}
+                />
+                <p className="text-right text-[10px] text-crm-text-muted">{pushForm.body.length}/120</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Click URL</label>
+                <input
+                  className="crm-input w-full"
+                  placeholder="/products or https://oceanbazar.com"
+                  value={pushForm.url}
+                  onChange={e => setPushForm(f => ({ ...f, url: e.target.value }))}
+                />
+              </div>
+              <div className="rounded-lg border border-crm-border bg-crm-bg-alt p-3 text-xs text-crm-text-dim">
+                <p className="font-semibold text-crm-text-bright mb-1">📱 Preview</p>
+                <p className="font-medium">{pushForm.title || "(title)"}</p>
+                <p>{pushForm.body || "(message)"}</p>
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button className="crm-btn flex-1" onClick={() => setShowPushBroadcast(false)}>Cancel</button>
+              <button
+                className="crm-btn crm-btn-primary flex-1"
+                onClick={sendPushBroadcast}
+                disabled={pushSending}
+              >
+                {pushSending ? <span className="animate-spin h-4 w-4 border-b-2 border-white rounded-full inline-block" /> : <FiSmartphone />}
+                {pushSending ? 'Sending...' : 'Send Push'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {reauthModal}
     </div>
   );
 }

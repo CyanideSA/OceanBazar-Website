@@ -3,6 +3,8 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '../../middleware/auth';
 import { routeParam } from '../../utils/params';
+import { recordAdminAudit } from '../../lib/adminAudit';
+import { requireAdminReauth } from '../../middleware/adminReauth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -53,7 +55,13 @@ router.post('/members', requireRole('super_admin', 'admin'), async (req: Request
 
   const passwordHash = await bcrypt.hash(password, 12);
   const member = await prisma.adminUser.create({
-    data: { name, username, email, passwordHash, role: (role as 'super_admin' | 'admin' | 'staff') || 'staff' },
+    data: {
+      name, username, email, passwordHash,
+      role: (role as 'super_admin' | 'admin' | 'staff') || 'staff',
+      mustChangePassword: true,
+      twoFaEnabled: false,
+      twoFaSecret: null,
+    },
   });
 
   await prisma.auditLog.create({
@@ -95,7 +103,7 @@ router.put('/members/:id', requireRole('super_admin', 'admin'), async (req: Requ
 });
 
 // PUT /api/admin/team/members/:id/password — reset password
-router.put('/members/:id/password', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
+router.put('/members/:id/password', requireRole('super_admin', 'admin'), requireAdminReauth(), async (req: Request, res: Response) => {
   const { password } = req.body;
   if (!password || password.length < 6) {
     res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -111,6 +119,60 @@ router.put('/members/:id/password', requireRole('super_admin', 'admin'), async (
   });
 
   res.json({ message: 'Password updated' });
+});
+
+// DELETE /api/admin/team/members/:id — deactivate (soft delete)
+router.delete('/members/:id', requireRole('super_admin'), requireAdminReauth(), async (req: Request, res: Response) => {
+  const targetId = parseInt(routeParam(req.params.id));
+  if (targetId === req.admin!.adminId) {
+    res.status(400).json({ error: 'Cannot deactivate your own account' });
+    return;
+  }
+  await prisma.adminUser.update({ where: { id: targetId }, data: { active: false } });
+  await prisma.auditLog.create({
+    data: { adminId: req.admin!.adminId, action: 'DEACTIVATE_ADMIN', targetType: 'admin_user', targetId: String(targetId), details: {} },
+  });
+  res.json({ message: 'Member deactivated' });
+});
+
+// GET /api/admin/team/members/:id/sessions — device/session visibility
+router.get('/members/:id/sessions', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
+  const targetId = parseInt(routeParam(req.params.id));
+  const sessions = await prisma.adminSession.findMany({
+    where: { adminId: targetId },
+    orderBy: { lastSeenAt: 'desc' },
+    select: {
+      deviceId: true,
+      userAgent: true,
+      ipAddress: true,
+      createdAt: true,
+      lastSeenAt: true,
+      revokedAt: true,
+    },
+  });
+  res.json({ sessions });
+});
+
+// POST /api/admin/team/members/:id/sessions/revoke-all — emergency lockout
+router.post('/members/:id/sessions/revoke-all', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
+  const targetId = parseInt(routeParam(req.params.id));
+  const callerIsSuper = req.admin!.role === 'super_admin';
+  const callerIsSelf = targetId === req.admin!.adminId;
+  if (!callerIsSuper && !callerIsSelf) {
+    res.status(403).json({ error: 'Only super_admin can revoke sessions for other members' });
+    return;
+  }
+  const result = await prisma.adminSession.updateMany({
+    where: { adminId: targetId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  await recordAdminAudit(req, {
+    action: 'REVOKE_ADMIN_SESSIONS',
+    targetType: 'admin_user',
+    targetId: String(targetId),
+    details: { revokedSessions: result.count },
+  });
+  res.json({ revokedSessions: result.count });
 });
 
 export default router;

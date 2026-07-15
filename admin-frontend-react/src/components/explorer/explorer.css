@@ -38,7 +38,14 @@
 }
 
 .search-input {
-  @apply crm-input pl-9 h-9;
+  @apply w-full px-3 py-2 rounded-md transition-all text-sm pl-9 h-9;
+  background-color: var(--crm-bg);
+  border: 1px solid var(--crm-border);
+  color: var(--crm-text-bright);
+}
+
+.search-input:focus {
+  @apply ring-1 ring-crm-primary border-crm-primary outline-none;
 }
 
 /* --- Sidebar (Tree) --- */
@@ -72,7 +79,14 @@
 }
 
 .explorer-item {
-  @apply crm-card-interactive p-0 overflow-hidden flex flex-col;
+  @apply p-0 overflow-hidden flex flex-col cursor-pointer transition-all shadow-sm rounded-xl;
+  background-color: var(--crm-bg-alt);
+  border: 1px solid var(--crm-border);
+}
+
+.explorer-item:hover {
+  border-color: var(--crm-border-strong);
+  background-color: var(--crm-bg-card);
 }
 
 .folder-card {

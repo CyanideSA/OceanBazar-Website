@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import Link from 'next/link';
-import { X, Gift, ArrowRight } from 'lucide-react';
+import Image from 'next/image';
+import { X, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'ob_welcome_dismissed';
 const DISMISS_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+const WELCOME_BANNER = '/welcome-popup-banner.png?v=5';
 
 export default function WelcomePopup() {
   const t = useTranslations('welcome');
@@ -15,6 +17,8 @@ export default function WelcomePopup() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_E2E_DISABLE_POPUPS === '1') return;
+    if (typeof window !== 'undefined' && window.localStorage.getItem('ob_e2e_disable_popups') === '1') return;
     const dismissed = localStorage.getItem(STORAGE_KEY);
     if (dismissed && Date.now() - Number(dismissed) < DISMISS_DURATION_MS) return;
     const timer = setTimeout(() => setVisible(true), 1200);
@@ -30,46 +34,48 @@ export default function WelcomePopup() {
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm animate-in fade-in duration-300"
         onClick={dismiss}
         aria-hidden
       />
 
-      {/* Modal */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={t('title')}
         className={cn(
-          'fixed inset-x-4 top-1/2 z-[101] mx-auto max-w-md -translate-y-1/2 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl',
-          'sm:inset-x-auto sm:w-[420px]',
-          'animate-in zoom-in-95 slide-in-from-bottom-4 duration-300',
+          'fixed left-1/2 top-1/2 z-[101] w-[calc(100%-1.5rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl',
+          'animate-in fade-in zoom-in-95 duration-300 ease-out',
         )}
       >
-        {/* Close button */}
         <button
           type="button"
           onClick={dismiss}
-          className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-muted-foreground backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
+          className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors hover:bg-black/70"
           aria-label="Close"
         >
           <X className="h-4 w-4" />
         </button>
 
-        {/* Hero gradient banner */}
-        <div className="relative flex flex-col items-center bg-gradient-to-br from-primary via-primary/90 to-primary/70 px-6 pb-6 pt-8 text-center text-primary-foreground">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
-            <Gift className="h-7 w-7" />
-          </div>
-          <h2 className="text-xl font-bold leading-tight sm:text-2xl">{t('title')}</h2>
-          <p className="mt-1.5 text-sm opacity-90">{t('subtitle')}</p>
+        <div className="relative bg-card">
+          <Image
+            src={WELCOME_BANNER}
+            alt={t('title')}
+            width={1024}
+            height={576}
+            priority
+            unoptimized
+            className="h-auto w-full object-contain"
+          />
         </div>
 
-        {/* Body */}
         <div className="space-y-4 px-6 py-5">
-          {/* Promo code */}
+          <div className="text-center">
+            <h2 className="text-xl font-bold text-foreground">{t('title')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('subtitle')}</p>
+          </div>
+
           <div className="flex items-center justify-between rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3">
             <div>
               <p className="text-xs font-medium text-muted-foreground">{t('promoLabel')}</p>
@@ -82,7 +88,6 @@ export default function WelcomePopup() {
 
           <p className="text-center text-xs text-muted-foreground">{t('hint')}</p>
 
-          {/* CTA */}
           <Link
             href={`/${locale}/products`}
             onClick={dismiss}

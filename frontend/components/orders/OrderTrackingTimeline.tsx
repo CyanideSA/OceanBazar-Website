@@ -381,9 +381,13 @@ export function OrderTrackingTimeline({ status, className, tracking, estimatedDe
               'bg-primary text-primary-foreground shadow-lg shadow-primary/30',
               'ring-2 ring-background',
               'motion-safe:animate-tracking-boat-bob motion-reduce:animate-none',
-              'transition-[left] duration-[900ms] ease-[cubic-bezier(0.33,1,0.68,1)]'
+              'transition-[left]',
             )}
-            style={{ left: `${10 + (Math.max(effective, 0) / (TRACKING_STEP_LABELS.length - 1)) * 80}%` }}
+            style={{
+              left: `${10 + (Math.max(effective, 0) / (TRACKING_STEP_LABELS.length - 1)) * 80}%`,
+              transitionDuration: '900ms',
+              transitionTimingFunction: 'cubic-bezier(0.33, 1, 0.68, 1)',
+            }}
             aria-hidden
           >
             <Ship className="h-[1.15rem] w-[1.15rem]" strokeWidth={2.2} />

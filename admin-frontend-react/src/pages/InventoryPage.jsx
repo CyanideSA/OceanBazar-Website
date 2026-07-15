@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { 
   FiPackage, FiAlertCircle, FiSearch, FiFilter, FiRefreshCw, 
   FiCheckCircle, FiXCircle, FiTrendingUp, FiArrowRight, FiInfo,
-  FiEdit2, FiClock, FiPlusCircle, FiMinusCircle, FiArchive
+  FiEdit2, FiClock, FiPlusCircle, FiMinusCircle, FiArchive,
+  FiMoreVertical
 } from "react-icons/fi";
 import { hasPermission } from "../auth/permissionMatrix";
 import { getAdminUser } from "../lib/auth";
@@ -28,6 +29,11 @@ export default function InventoryPage() {
   const [filter, setFilter] = useState("all");
   const [detailId, setDetailId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [adjustQty, setAdjustQty] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -54,6 +60,48 @@ export default function InventoryPage() {
       (i.warehouseName || "").toLowerCase().includes(q)
     );
   }, [items, search]);
+
+  const openDetail = async (item) => {
+    setDetail(item);
+    setDetailId(item.id);
+    setAdjustQty("");
+    setAdjustNote("");
+    setDetailLoading(true);
+    try {
+      const data = await inventoryService.detail(item.id);
+      if (data?.item) setDetail(data.item);
+      setTransactions(data?.transactions || []);
+    } catch {
+      setTransactions([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const adjustStock = async (type) => {
+    const qty = Number(adjustQty);
+    if (!detail?.id || !qty || qty <= 0) {
+      toast.error("Enter a valid quantity");
+      return;
+    }
+    setAdjusting(true);
+    try {
+      const res = await inventoryService.adjustStock(detail.id, qty, type, adjustNote.trim() || undefined);
+      if (res?.item) {
+        setDetail(res.item);
+        setItems((prev) => prev.map((i) => (i.id === res.item.id ? res.item : i)));
+      }
+      const refreshed = await inventoryService.detail(detail.id);
+      setTransactions(refreshed?.transactions || []);
+      setAdjustQty("");
+      setAdjustNote("");
+      toast.success(type === "add" ? "Stock increased" : "Stock deducted");
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Stock adjustment failed");
+    } finally {
+      setAdjusting(false);
+    }
+  };
 
   const getStatusBadge = (status) => {
     const config = STATUS_MAP[status] || { label: status, class: "text-crm-text-dim border-crm-border" };
@@ -179,7 +227,7 @@ export default function InventoryPage() {
                     <td>
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => { setDetail(item); setDetailId(item.id); }}
+                          onClick={() => openDetail(item)}
                           className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-primary transition-colors"
                           title="View Details"
                         >
@@ -260,7 +308,7 @@ export default function InventoryPage() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-crm-text-dim">Threshold Alert</span>
-                      <span className="text-crm-danger font-medium">10 units</span>
+                      <span className="text-crm-danger font-medium">{detail.reorderPoint ?? 10} units</span>
                     </div>
                   </div>
                 </div>
@@ -269,15 +317,41 @@ export default function InventoryPage() {
                   <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Adjust Stock Level</h4>
                   <div className="space-y-4">
                     <div className="space-y-2">
+                      <label className="text-xs font-bold text-crm-text-dim uppercase">Quantity</label>
+                      <input
+                        type="number"
+                        min="1"
+                        className="crm-input bg-crm-bg"
+                        placeholder="Units to add or remove"
+                        value={adjustQty}
+                        onChange={(e) => setAdjustQty(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">Adjustment Note</label>
-                      <textarea className="crm-input min-h-[80px] bg-crm-bg" placeholder="e.g. Damage report, restock from supplier..." />
+                      <textarea
+                        className="crm-input min-h-[80px] bg-crm-bg"
+                        placeholder="e.g. Damage report, restock from supplier..."
+                        value={adjustNote}
+                        onChange={(e) => setAdjustNote(e.target.value)}
+                      />
                     </div>
                     {canEdit && (
                       <div className="flex flex-wrap gap-2">
-                        <button className="crm-btn bg-crm-success/10 text-crm-success border-crm-success/30 flex-1 py-2.5">
+                        <button
+                          type="button"
+                          disabled={adjusting}
+                          onClick={() => adjustStock("add")}
+                          className="crm-btn bg-crm-success/10 text-crm-success border-crm-success/30 flex-1 py-2.5"
+                        >
                           <FiPlusCircle /> Increase Stock
                         </button>
-                        <button className="crm-btn bg-crm-danger/10 text-crm-danger border-crm-danger/30 flex-1 py-2.5">
+                        <button
+                          type="button"
+                          disabled={adjusting}
+                          onClick={() => adjustStock("deduct")}
+                          className="crm-btn bg-crm-danger/10 text-crm-danger border-crm-danger/30 flex-1 py-2.5"
+                        >
                           <FiMinusCircle /> Deduct Stock
                         </button>
                       </div>
@@ -290,8 +364,27 @@ export default function InventoryPage() {
                     <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Recent Transactions</h4>
                     <FiClock className="text-crm-text-muted" />
                   </div>
-                  <div className="p-4 rounded-lg bg-crm-bg border border-crm-border text-center">
-                    <p className="text-xs text-crm-text-dim italic">No recent transactions recorded for this SKU.</p>
+                  <div className="p-4 rounded-lg bg-crm-bg border border-crm-border">
+                    {detailLoading ? (
+                      <p className="text-xs text-crm-text-dim text-center">Loading transactions…</p>
+                    ) : transactions.length === 0 ? (
+                      <p className="text-xs text-crm-text-dim italic text-center">No recent transactions recorded for this SKU.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {transactions.slice(0, 8).map((tx) => (
+                          <div key={tx.id} className="flex justify-between gap-3 text-xs border-b border-crm-border/50 pb-2 last:border-0">
+                            <div>
+                              <p className="font-bold text-crm-text-bright uppercase">{tx.type?.replace(/_/g, " ")}</p>
+                              <p className="text-crm-text-dim">{tx.note || "No note"}</p>
+                            </div>
+                            <div className="text-right whitespace-nowrap">
+                              <p className="font-bold text-crm-primary">{tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity}</p>
+                              <p className="text-crm-text-muted">{tx.createdAt ? format(new Date(tx.createdAt), "MMM dd, HH:mm") : ""}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

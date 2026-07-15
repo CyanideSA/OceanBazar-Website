@@ -72,9 +72,21 @@ router.get('/addresses', async (req: Request, res: Response) => {
 
 // POST /api/profile/addresses
 router.post('/addresses', async (req: Request, res: Response) => {
-  const { label, line1, line2, city, district, postalCode, isDefault = false } = req.body as {
-    label: string; line1: string; line2?: string; city: string; district: string; postalCode?: string; isDefault?: boolean;
+  const { label, line1, line2, city, district, area, postalCode, isDefault = false } = req.body as {
+    label?: string;
+    line1?: string;
+    line2?: string;
+    city?: string;
+    district?: string;
+    area?: string;
+    postalCode?: string;
+    isDefault?: boolean;
   };
+  const resolvedDistrict = String(district ?? area ?? '').trim();
+  if (!String(label ?? '').trim() || !String(line1 ?? '').trim() || !String(city ?? '').trim() || !resolvedDistrict) {
+    res.status(400).json({ error: 'label, line1, city, and district (or area) are required' });
+    return;
+  }
 
   if (isDefault) {
     await prisma.savedAddress.updateMany({
@@ -84,7 +96,16 @@ router.post('/addresses', async (req: Request, res: Response) => {
   }
 
   const address = await prisma.savedAddress.create({
-    data: { userId: req.user!.userId, label, line1, line2, city, district, postalCode, isDefault },
+    data: {
+      userId: req.user!.userId,
+      label: String(label).trim(),
+      line1: String(line1).trim(),
+      line2,
+      city: String(city).trim(),
+      district: resolvedDistrict,
+      postalCode,
+      isDefault,
+    },
   });
   res.status(201).json({ address });
 });
@@ -92,15 +113,21 @@ router.post('/addresses', async (req: Request, res: Response) => {
 // PUT /api/profile/addresses/:id
 router.put('/addresses/:id', async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id), 10);
-  const { label, line1, line2, city, district, postalCode, isDefault = false } = req.body as {
-    label: string;
-    line1: string;
+  const { label, line1, line2, city, district, area, postalCode, isDefault = false } = req.body as {
+    label?: string;
+    line1?: string;
     line2?: string;
-    city: string;
-    district: string;
+    city?: string;
+    district?: string;
+    area?: string;
     postalCode?: string;
     isDefault?: boolean;
   };
+  const resolvedDistrict = String(district ?? area ?? '').trim();
+  if (!String(label ?? '').trim() || !String(line1 ?? '').trim() || !String(city ?? '').trim() || !resolvedDistrict) {
+    res.status(400).json({ error: 'label, line1, city, and district (or area) are required' });
+    return;
+  }
 
   const existing = await prisma.savedAddress.findFirst({
     where: { id, userId: req.user!.userId },
@@ -119,7 +146,15 @@ router.put('/addresses/:id', async (req: Request, res: Response) => {
 
   const address = await prisma.savedAddress.update({
     where: { id },
-    data: { label, line1, line2, city, district, postalCode, isDefault },
+    data: {
+      label: String(label).trim(),
+      line1: String(line1).trim(),
+      line2,
+      city: String(city).trim(),
+      district: resolvedDistrict,
+      postalCode,
+      isDefault,
+    },
   });
   res.json({ address });
 });
@@ -130,6 +165,99 @@ router.delete('/addresses/:id', async (req: Request, res: Response) => {
     where: { id: parseInt(routeParam(req.params.id), 10), userId: req.user!.userId },
   });
   res.json({ message: 'Address deleted' });
+});
+
+// GET /api/profile/gdpr-export — machine-readable export (authenticated user only)
+router.get('/gdpr-export', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const [user, addresses, orders, paymentTxs] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        preferredLang: true,
+        accountStatus: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.savedAddress.findMany({ where: { userId } }),
+    prisma.order.findMany({
+      where: { userId },
+      take: 200,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        paymentStatus: true,
+        paymentMethod: true,
+        total: true,
+        createdAt: true,
+      },
+    }),
+    prisma.paymentTransaction.findMany({
+      where: { userId },
+      take: 200,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        orderId: true,
+        method: true,
+        status: true,
+        amount: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="oceanbazar-export-${userId}.json"`);
+  res.json({
+    exportedAt: new Date().toISOString(),
+    profile: user,
+    addresses,
+    orders,
+    paymentTransactions: paymentTxs,
+  });
+});
+
+// POST /api/profile/gdpr-delete — anonymize PII in place; orders retained for legal/audit
+router.post('/gdpr-delete', async (req: Request, res: Response) => {
+  const { confirm } = req.body as { confirm?: boolean };
+  if (confirm !== true) {
+    res.status(400).json({ error: 'Set confirm: true to delete your account data' });
+    return;
+  }
+  const userId = req.user!.userId;
+
+  try {
+    await prisma.$executeRaw`DELETE FROM user_wishlists WHERE user_id = ${userId}`;
+  } catch {
+    /* optional legacy table */
+  }
+
+  await prisma.$transaction(async (txn) => {
+    await txn.savedAddress.deleteMany({ where: { userId } });
+    await txn.socialAccount.deleteMany({ where: { userId } });
+    await txn.cart.deleteMany({ where: { userId } });
+    await txn.user.update({
+      where: { id: userId },
+      data: {
+        name: 'Deleted user',
+        email: `deleted-${userId}@gdpr.invalid`,
+        phone: null,
+        passwordHash: null,
+        profileImage: null,
+        accountStatus: 'suspended',
+      },
+    });
+  });
+
+  res.json({ ok: true, message: 'Account anonymized. You have been signed out on other devices.' });
 });
 
 export default router;

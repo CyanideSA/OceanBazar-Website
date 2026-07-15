@@ -4,17 +4,23 @@ import {
   sendOtp, verifyOtp,
   registerUser, loginWithPassword,
   findOrCreateUserByEmail, findOrCreateUserByPhone,
-  issueAccessToken, issueRefreshToken,
+  issueAccessToken,
   changePassword, resetPassword, upsertSocialUser,
 } from '../services/authService';
 import { requireAuth } from '../middleware/auth';
+import { emitAdminEvent } from '../lib/adminEvents';
 import { authLimiter, otpLimiter } from '../middleware/rateLimiter';
 import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import { verifyFirebaseToken } from '../services/firebaseService';
+import { verifyRecaptchaToken } from '../services/recaptchaService';
+import {
+  issueRefreshSession,
+  rotateRefreshSession,
+  revokeRefreshSessionByToken,
+} from '../services/userSessionService';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -96,11 +102,18 @@ router.post(
       return;
     }
     try {
+      const recaptchaToken = (req.body as { recaptchaToken?: string }).recaptchaToken;
+      const captcha = await verifyRecaptchaToken(recaptchaToken || '', 'register');
+      if (!captcha.ok) {
+        res.status(403).json({ error: 'reCAPTCHA verification failed' });
+        return;
+      }
       console.log(`[AUTH] Register attempt for email: ${req.body.email}, phone: ${req.body.phone}`);
       const user = await registerUser(req.body);
       console.log(`[AUTH] Register successful for user: ${user.id}, email: ${user.email}, phone: ${user.phone}`);
+      try { emitAdminEvent('admin:user:new', { userId: user.id, userType: user.userType }); } catch { /* non-fatal */ }
       const access = issueAccessToken(user.id, user.userType);
-      const refresh = issueRefreshToken(user.id);
+      const refresh = await issueRefreshSession(user.id, req);
       res
         .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
         .json({ access, user: sanitizeUser(user) });
@@ -117,18 +130,31 @@ router.post(
 router.post('/send-otp', otpLimiter, async (req: Request, res: Response) => {
   const { target, type = 'login' } = req.body as { target: string; type: string };
   if (!target) { res.status(400).json({ error: 'target (email or phone) required' }); return; }
-  await sendOtp(target, type as 'login' | 'forgot_password');
+  // #region agent log
+  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'E',location:'auth.ts:send-otp',message:'send otp',data:{type,isEmail:target.includes('@'),startsWithPlus:target.trim().startsWith('+'),len:target.length},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  await sendOtp(target, type as 'login' | 'forgot_password' | 'verify_email');
   res.json({ message: 'OTP sent. Check your terminal (dev) or email/SMS.' });
 });
 
 // ─── POST /api/auth/verify-otp ────────────────────────────────────────────────
 
 router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
-  const { target, code } = req.body as { target: string; code: string };
+  const { target, code, type = 'login' } = req.body as { target: string; code: string; type?: string };
   if (!target || !code) { res.status(400).json({ error: 'target and code required' }); return; }
 
-  const ok = await verifyOtp(target, code, 'login');
+  const otpType = (type === 'verify_email' ? 'verify_email' : 'login') as 'login' | 'verify_email';
+  const ok = await verifyOtp(target, code, otpType);
+  // #region agent log
+  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'D',location:'auth.ts:verify-otp',message:'verify otp result',data:{type:otpType,ok,isEmail:target.includes('@')},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   if (!ok) { res.status(401).json({ error: 'Invalid or expired OTP' }); return; }
+
+  // For verify_email type, just confirm verification without creating a session
+  if (otpType === 'verify_email') {
+    res.json({ verified: true, message: 'OTP verified successfully' });
+    return;
+  }
 
   const isEmail = target.includes('@');
   const user = isEmail
@@ -136,7 +162,7 @@ router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
     : await findOrCreateUserByPhone(target);
 
   const access = issueAccessToken(user.id, user.userType);
-  const refresh = issueRefreshToken(user.id);
+  const refresh = await issueRefreshSession(user.id, req);
   res
     .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
     .json({ access, user: sanitizeUser(user) });
@@ -145,17 +171,22 @@ router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
 // ─── POST /api/auth/login (password) ─────────────────────────────────────────
 
 router.post('/login', authLimiter, async (req: Request, res: Response) => {
-  const { identifier, password } = req.body as { identifier: string; password: string };
+  const { identifier, password, recaptchaToken } = req.body as { identifier: string; password: string; recaptchaToken?: string };
   if (!identifier || !password) {
     res.status(400).json({ error: 'identifier and password required' });
     return;
   }
   try {
+    const captcha = await verifyRecaptchaToken(recaptchaToken || '', 'login');
+    if (!captcha.ok) {
+      res.status(403).json({ error: 'reCAPTCHA verification failed' });
+      return;
+    }
     console.log(`[AUTH] Login attempt for identifier: ${identifier}`);
     const user = await loginWithPassword(identifier, password);
     console.log(`[AUTH] Login successful for user: ${user.id}, email: ${user.email}, phone: ${user.phone}`);
     const access = issueAccessToken(user.id, user.userType);
-    const refresh = issueRefreshToken(user.id);
+    const refresh = await issueRefreshSession(user.id, req);
     res
       .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
       .json({ access, user: sanitizeUser(user) });
@@ -172,11 +203,15 @@ router.post('/refresh', async (req: Request, res: Response) => {
   const token = req.cookies?.refreshToken;
   if (!token) { res.status(401).json({ error: 'No refresh token' }); return; }
   try {
-    const payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET!) as { userId: string };
+    const payload = await rotateRefreshSession(token, req);
+    if (!payload) { res.status(401).json({ error: 'Invalid refresh token' }); return; }
     const user = await prisma.user.findUnique({ where: { id: payload.userId } });
     if (!user) { res.status(401).json({ error: 'User not found' }); return; }
     const access = issueAccessToken(user.id, user.userType);
-    res.json({ access });
+    const refresh = await issueRefreshSession(user.id, req);
+    res
+      .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
+      .json({ access });
   } catch {
     res.status(401).json({ error: 'Invalid refresh token' });
   }
@@ -192,7 +227,9 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
 
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
 
-router.post('/logout', (_req, res: Response) => {
+router.post('/logout', async (req: Request, res: Response) => {
+  const token = req.cookies?.refreshToken;
+  if (token) await revokeRefreshSessionByToken(token);
   res.clearCookie('refreshToken').json({ message: 'Logged out' });
 });
 
@@ -276,7 +313,7 @@ router.post('/firebase', async (req: Request, res: Response) => {
     });
 
     const access = issueAccessToken(user.id, user.userType);
-    const refresh = issueRefreshToken(user.id);
+    const refresh = await issueRefreshSession(user.id, req);
 
     console.log(`[AUTH] Firebase login for uid: ${fbUser.uid}, provider: ${provider}, user: ${user.id}`);
 
@@ -301,11 +338,11 @@ if (hasGoogle) {
   );
 } else {
   // Dev mock: create/find a social user and redirect with real token
-  router.get('/social/google', async (_req: Request, res: Response) => {
+  router.get('/social/google', async (req: Request, res: Response) => {
     try {
       const user = await upsertSocialUser({ provider: 'google', providerId: 'mock-google-001', name: 'Google Demo User', email: 'google-demo@oceanbazar.com', accessToken: 'mock' });
       const access = issueAccessToken(user.id, user.userType);
-      const refresh = issueRefreshToken(user.id);
+      const refresh = await issueRefreshSession(user.id, req);
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
       res.cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
          .redirect(`${clientUrl}/auth/callback?token=${access}`);
@@ -321,11 +358,11 @@ if (hasFacebook) {
     socialCallback
   );
 } else {
-  router.get('/social/facebook', async (_req: Request, res: Response) => {
+  router.get('/social/facebook', async (req: Request, res: Response) => {
     try {
       const user = await upsertSocialUser({ provider: 'facebook', providerId: 'mock-fb-001', name: 'Facebook Demo User', email: 'facebook-demo@oceanbazar.com', accessToken: 'mock' });
       const access = issueAccessToken(user.id, user.userType);
-      const refresh = issueRefreshToken(user.id);
+      const refresh = await issueRefreshSession(user.id, req);
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
       res.cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
          .redirect(`${clientUrl}/auth/callback?token=${access}`);
@@ -333,11 +370,11 @@ if (hasFacebook) {
   });
 }
 
-function socialCallback(req: Request, res: Response) {
+async function socialCallback(req: Request, res: Response) {
   const user = req.user as { id: string; userType: string } | undefined;
   if (!user) { res.redirect(`${process.env.CLIENT_URL}/auth/login?error=social`); return; }
   const access = issueAccessToken(user.id, user.userType);
-  const refresh = issueRefreshToken(user.id);
+  const refresh = await issueRefreshSession(user.id, req);
   res
     .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
     .redirect(`${process.env.CLIENT_URL}/auth/callback?token=${access}`);

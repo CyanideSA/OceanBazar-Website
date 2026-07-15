@@ -28,6 +28,12 @@ export interface ProductPricing {
   tier2Discount: number | null;
   tier3MinQty: number | null;
   tier3Discount: number | null;
+  tierBands?: Array<{
+    minQty: number;
+    maxQty?: number | null;
+    discountPct: number;
+    price?: number | null;
+  }> | null;
 }
 
 export interface ProductImage {
@@ -50,6 +56,7 @@ export interface Category {
   slug?: string;
   parentId: string | null;
   icon: string | null;
+  imageUrl?: string | null;
   isLeaf?: boolean;
   count?: number;
   children?: Category[];
@@ -62,6 +69,14 @@ export interface Product {
   categoryId: string;
   brand: string | null;
   sku: string | null;
+  /** Storefront badges / collections (from BFF formatProduct). */
+  isFeatured?: boolean;
+  isBestRated?: boolean;
+  isBestSeller?: boolean;
+  /** Set when product is shown in an active flash deal (storefront). */
+  flashDeal?: boolean;
+  flashFreeDelivery?: boolean;
+  flashSaleId?: string;
   status: ProductStatus;
   moq: number;
   stock: number;
@@ -71,6 +86,10 @@ export interface Product {
   retailPrice: number | null;
   wholesalePrice: number | null;
   pricing: { retail: ProductPricing | null; wholesale: ProductPricing | null };
+  price?: number | null;
+  comparePrice?: number | null;
+  stockQty?: number | null;
+  specifications?: Record<string, string> | string | null;
   ratingAvg?: number | null;
   reviewCount?: number;
 }
@@ -90,6 +109,14 @@ export interface ProductReviewItem {
   title: string | null;
   body: string | null;
   createdAt: string;
+}
+
+export interface ProductBanner {
+  id: number;
+  imageUrl: string;
+  linkUrl?: string | null;
+  title?: string | null;
+  sortOrder: number;
 }
 
 /** Full product payload from GET /products/:id (extends list product) */
@@ -113,6 +140,10 @@ export type ProductDetail = Product & {
   reviews?: ProductReviewItem[];
   /** Full image objects with colorKey for filtering */
   richImages?: ProductImage[];
+  /** If true, this product has free shipping (no shipping charge) */
+  hasFreeShipping?: boolean;
+  /** Product banners */
+  banners?: ProductBanner[];
 };
 
 export interface CartItem {
@@ -125,12 +156,13 @@ export interface CartItem {
   unitPrice: number;
   lineTotal: number;
   discountPct: number;
-  tierApplied: 0 | 1 | 2 | 3;
+  tierApplied: number;
 }
 
 export interface CartSummary {
   cartId: number;
   items: CartItem[];
+  retailQuantityOrder?: boolean;
   subtotal: number;
   discount: number;
   gst: number;
@@ -221,7 +253,7 @@ export interface OBPointsInfo {
   tier: OBTier;
   lifetimeSpend: number;
   options: Array<{
-    points: 1000 | 5000 | 10000;
+    points: number;
     bdtValue: number;
     canRedeem: boolean;
   }>;

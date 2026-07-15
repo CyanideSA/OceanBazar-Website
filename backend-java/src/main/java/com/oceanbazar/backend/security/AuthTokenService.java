@@ -39,7 +39,7 @@ public class AuthTokenService {
         }
         try {
             Claims claims = jwtService.parse(token.trim());
-            String userId = claims.get("user_id", String.class);
+            String userId = JwtService.userIdFromClaims(claims);
             if (userId == null || userId.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid authentication credentials");
             }

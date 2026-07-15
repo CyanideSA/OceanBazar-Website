@@ -82,15 +82,32 @@ export default function GlobalSettingsPage() {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!canEdit) return;
+
+    const safeJsonParse = (jsonStr, fieldLabel) => {
+      try {
+        return { ok: true, value: JSON.parse(jsonStr) };
+      } catch {
+        return { ok: false, error: `Invalid JSON in "${fieldLabel}". Fix it before saving.` };
+      }
+    };
+
+    const heroResult = safeJsonParse(sf.heroSlidesJson, "Hero Slides");
+    const testimonialsResult = safeJsonParse(sf.testimonialsJson, "Testimonials");
+    const trustResult = safeJsonParse(sf.trustBadgesJson, "Trust Badges");
+
+    if (!heroResult.ok) { toast.error(heroResult.error); return; }
+    if (!testimonialsResult.ok) { toast.error(testimonialsResult.error); return; }
+    if (!trustResult.ok) { toast.error(trustResult.error); return; }
+
     setSaving(true);
     try {
       const splitIds = (txt) => String(txt).split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       await adminApi.updateGlobalSettings({
         ...form,
         ...sf,
-        heroSlides: JSON.parse(sf.heroSlidesJson),
-        testimonials: JSON.parse(sf.testimonialsJson),
-        trustBadges: JSON.parse(sf.trustBadgesJson),
+        heroSlides: heroResult.value,
+        testimonials: testimonialsResult.value,
+        trustBadges: trustResult.value,
         featuredProductIds: splitIds(sf.featuredProductIds),
         bestDealsProductIds: splitIds(sf.bestDealsProductIds),
         newArrivalsProductIds: splitIds(sf.newArrivalsProductIds),
@@ -98,7 +115,8 @@ export default function GlobalSettingsPage() {
       });
       toast.success("Settings saved successfully");
     } catch (err) {
-      toast.error("Failed to save settings");
+      const msg = err?.response?.data?.error || err?.message || "Failed to save settings";
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -145,7 +163,7 @@ export default function GlobalSettingsPage() {
       </div>
 
       <div className="crm-card p-0 overflow-hidden border-b-0 rounded-b-none flex flex-wrap">
-        {TABS.map(tab => <TabButton key={tab.key} {...tab} id={tab.key} />)}
+        {TABS.map(({ key, ...tabProps }) => <TabButton key={key} {...tabProps} id={key} />)}
       </div>
 
       <div className="crm-card rounded-t-none border-t-0 p-8 min-h-[600px]">

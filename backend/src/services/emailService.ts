@@ -1,6 +1,8 @@
 import nodemailer from 'nodemailer';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
+import { isConfigured as graphConfigured, sendGraphMail, defaultSender } from './microsoftGraphService';
+import { logCommunication, resolveCustomerIdByEmail } from './communicationLogService';
 
 const prisma = new PrismaClient();
 
@@ -16,73 +18,192 @@ const transporter = nodemailer.createTransport({
 
 const FROM = process.env.EMAIL_FROM || 'Oceanbazar <noreply@oceanbazar.com>';
 
-async function logEmail(to: string, subject: string, template: string, status: string, error?: string) {
+async function logEmail(
+  to: string,
+  subject: string,
+  template: string,
+  status: string,
+  provider: string,
+  error?: string
+) {
+  // Legacy per-channel log (kept for backward compatibility / existing dashboards).
   try {
     await prisma.email_logs.create({
-      data: { id: uuidv4(), to_address: to, subject, template, status, error },
+      data: { id: uuidv4(), to_address: to, subject, template, status, error, metadata: { provider } },
     });
   } catch { /* non-fatal */ }
+
+  // Unified communication log (new CRM intelligence layer).
+  const customerId = await resolveCustomerIdByEmail(to);
+  await logCommunication({
+    customerId,
+    channel: 'email',
+    direction: 'outbound',
+    subject,
+    toAddress: to,
+    status,
+    provider,
+    refType: 'email_template',
+    refId: template,
+    metadata: error ? { error } : undefined,
+  });
 }
 
-async function sendMail(to: string, subject: string, html: string, template: string): Promise<boolean> {
-  if (process.env.OTP_TERMINAL_ONLY === 'true' || !process.env.SMTP_USER) {
+/**
+ * Sends a transactional email.
+ *
+ * Delivery preference:
+ *   1. Microsoft 365 Graph (enterprise) when configured
+ *   2. SMTP via nodemailer
+ *   3. Dev terminal log (no provider configured / OTP_TERMINAL_ONLY)
+ *
+ * Every attempt is recorded in both `email_logs` and the unified `communication_logs`.
+ */
+export async function sendMail(
+  to: string,
+  subject: string,
+  html: string,
+  template: string,
+  options?: { from?: string }
+): Promise<boolean> {
+  const devOnly = process.env.OTP_TERMINAL_ONLY === 'true';
+  const smtpAvailable = Boolean(process.env.SMTP_USER);
+
+  if (devOnly || (!graphConfigured() && !smtpAvailable)) {
     console.log(`[email] (DEV) To: ${to}, Subject: ${subject}`);
-    await logEmail(to, subject, template, 'dev_logged');
+    await logEmail(to, subject, template, 'dev_logged', 'dev');
     return true;
   }
-  try {
-    await transporter.sendMail({ from: FROM, to, subject, html });
-    await logEmail(to, subject, template, 'sent');
-    return true;
-  } catch (err: any) {
-    console.error('[email] Send failed:', err.message);
-    await logEmail(to, subject, template, 'failed', err.message);
-    return false;
+
+  // 1) Microsoft 365 Graph
+  if (graphConfigured()) {
+    const result = await sendGraphMail({
+      to,
+      subject,
+      html,
+      from: options?.from || defaultSender(),
+    });
+    if (result.ok) {
+      await logEmail(to, subject, template, 'sent', 'microsoft_graph');
+      return true;
+    }
+    console.warn('[email] Graph send failed, falling back to SMTP:', result.error);
   }
+
+  // 2) SMTP fallback
+  if (smtpAvailable) {
+    try {
+      await transporter.sendMail({ from: options?.from || FROM, to, subject, html });
+      await logEmail(to, subject, template, 'sent', 'smtp');
+      return true;
+    } catch (err: any) {
+      console.error('[email] SMTP send failed:', err.message);
+      await logEmail(to, subject, template, 'failed', 'smtp', err.message);
+      return false;
+    }
+  }
+
+  await logEmail(to, subject, template, 'failed', 'none', 'no_provider_available');
+  return false;
+}
+
+// ─── Shared layout helpers ──────────────────────────────────────────────────
+
+const CLIENT = process.env.CLIENT_URL || 'https://oceanbazar.com';
+const PRIMARY = '#0D7377';
+const DARK = '#0a5d61';
+
+export function emailWrapper(body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>OceanBazar</title></head>
+<body style="margin:0;padding:0;background:#f4f7f9;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7f9;padding:40px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.07);">
+      <!-- Header -->
+      <tr><td style="background:linear-gradient(135deg,${PRIMARY} 0%,${DARK} 100%);padding:28px 32px;text-align:center;">
+        <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:800;letter-spacing:-0.5px;">🌊 OceanBazar</h1>
+        <p style="margin:4px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">Bangladesh's Smart Shopping Platform</p>
+      </td></tr>
+      <!-- Body -->
+      <tr><td style="padding:36px 40px;">${body}</td></tr>
+      <!-- Footer -->
+      <tr><td style="background:#f8fafb;border-top:1px solid #e8ecef;padding:20px 40px;text-align:center;">
+        <p style="margin:0;color:#6b7280;font-size:12px;">© ${new Date().getFullYear()} OceanBazar. All rights reserved.</p>
+        <p style="margin:6px 0 0;color:#6b7280;font-size:12px;">
+          <a href="${CLIENT}" style="color:${PRIMARY};text-decoration:none;">oceanbazar.com</a> ·
+          <a href="mailto:support@oceanbazar.com" style="color:${PRIMARY};text-decoration:none;">support@oceanbazar.com</a>
+        </p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+}
+
+function btn(href: string, label: string): string {
+  return `<a href="${href}" style="display:inline-block;padding:14px 28px;background:${PRIMARY};color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;margin:16px 0;">${label}</a>`;
+}
+
+function stat(value: string, label: string): string {
+  return `<td style="text-align:center;padding:12px 16px;background:#f0fafa;border-radius:8px;">
+    <div style="font-size:20px;font-weight:800;color:${PRIMARY};">${value}</div>
+    <div style="font-size:12px;color:#6b7280;margin-top:2px;">${label}</div>
+  </td>`;
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────
 
 export async function sendOtpEmail(to: string, otp: string, type: string): Promise<boolean> {
-  const subject = `Your Oceanbazar OTP Code: ${otp}`;
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
-      <h2 style="color:#0D7377;">Oceanbazar</h2>
-      <p>Your verification code for <strong>${type}</strong> is:</p>
-      <div style="font-size:32px;font-weight:bold;letter-spacing:8px;text-align:center;padding:16px;background:#f3f4f6;border-radius:8px;margin:16px 0;">${otp}</div>
-      <p style="color:#6b7280;font-size:13px;">This code expires in ${process.env.OTP_EXPIRE_MINUTES || 10} minutes. Do not share it with anyone.</p>
+  const subject = `Your OceanBazar OTP: ${otp}`;
+  const body = `
+    <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Verification Code</h2>
+    <p style="color:#6b7280;margin:0 0 24px;">Your ${type} code for OceanBazar:</p>
+    <div style="background:linear-gradient(135deg,#f0fafa,#e8f7f7);border:2px dashed ${PRIMARY};border-radius:12px;padding:20px;text-align:center;margin:0 0 24px;">
+      <span style="font-size:40px;font-weight:900;letter-spacing:12px;color:${PRIMARY};font-family:monospace;">${otp}</span>
     </div>
-  `;
-  return sendMail(to, subject, html, 'otp');
+    <p style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;color:#92400e;font-size:13px;margin:0;">
+      ⏱️ Expires in <strong>${process.env.OTP_EXPIRE_MINUTES || 10} minutes</strong>. Never share this code with anyone.
+    </p>`;
+  return sendMail(to, subject, emailWrapper(body), 'otp');
 }
 
 export async function sendOrderConfirmation(
   to: string,
   order: { orderNumber: string; total: number; items: { productTitle: string; quantity: number; unitPrice: number }[] }
 ): Promise<boolean> {
-  const itemRows = order.items.map(i =>
-    `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;">${i.productTitle}</td>
-     <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
-     <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">৳${Number(i.unitPrice).toFixed(2)}</td></tr>`
-  ).join('');
+  const itemRows = order.items.map((i, idx) => `
+    <tr style="background:${idx % 2 === 0 ? '#f9fafb' : '#ffffff'};">
+      <td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#111827;font-size:14px;">${i.productTitle}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;text-align:center;color:#6b7280;font-size:14px;">${i.quantity}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:600;color:#111827;font-size:14px;">৳${Number(i.unitPrice).toLocaleString()}</td>
+    </tr>`).join('');
 
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
-      <h2 style="color:#0D7377;">Order Confirmed!</h2>
-      <p>Thank you for your order <strong>#${order.orderNumber}</strong>.</p>
-      <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-        <thead><tr style="background:#f3f4f6;">
-          <th style="padding:8px;text-align:left;">Item</th>
-          <th style="padding:8px;text-align:center;">Qty</th>
-          <th style="padding:8px;text-align:right;">Price</th>
-        </tr></thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-      <p style="text-align:right;font-size:18px;font-weight:bold;">Total: ৳${Number(order.total).toFixed(2)}</p>
-      <p style="color:#6b7280;font-size:13px;">You can track your order at oceanbazar.com</p>
+  const body = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+      <div style="width:48px;height:48px;background:#d1fae5;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;">✅</div>
+      <div>
+        <h2 style="margin:0;color:#111827;font-size:22px;">Order Confirmed!</h2>
+        <p style="margin:2px 0 0;color:#6b7280;font-size:14px;">Order #${order.orderNumber}</p>
+      </div>
     </div>
-  `;
-  return sendMail(to, `Order Confirmed - #${order.orderNumber}`, html, 'order_confirmation');
+    <p style="color:#374151;font-size:15px;margin:0 0 20px;">Thank you for shopping with OceanBazar! We've received your order and it's being processed.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;margin:0 0 20px;">
+      <thead><tr style="background:${PRIMARY};">
+        <th style="padding:10px 14px;text-align:left;color:#fff;font-size:13px;font-weight:600;">Item</th>
+        <th style="padding:10px 14px;text-align:center;color:#fff;font-size:13px;font-weight:600;">Qty</th>
+        <th style="padding:10px 14px;text-align:right;color:#fff;font-size:13px;font-weight:600;">Price</th>
+      </tr></thead>
+      <tbody>${itemRows}</tbody>
+      <tfoot><tr style="background:#f0fafa;">
+        <td colspan="2" style="padding:12px 14px;font-weight:700;color:#111827;">Total</td>
+        <td style="padding:12px 14px;text-align:right;font-weight:800;color:${PRIMARY};font-size:18px;">৳${Number(order.total).toLocaleString()}</td>
+      </tr></tfoot>
+    </table>
+    <div style="text-align:center;">${btn(`${CLIENT}/en/orders`, '📦 Track Your Order')}</div>
+    <p style="color:#9ca3af;font-size:12px;text-align:center;margin:16px 0 0;">Questions? Reply to this email or visit our support center.</p>`;
+  return sendMail(to, `✅ Order Confirmed — #${order.orderNumber}`, emailWrapper(body), 'order_confirmation');
 }
 
 export async function sendShippingUpdate(
@@ -92,54 +213,99 @@ export async function sendShippingUpdate(
   trackingNumber?: string,
   carrier?: string
 ): Promise<boolean> {
-  const statusLabel: Record<string, string> = {
-    processing: 'Being Processed',
-    shipped: 'Shipped',
-    in_transit: 'In Transit',
-    out_for_delivery: 'Out for Delivery',
-    delivered: 'Delivered',
-    returned: 'Returned',
+  const LABELS: Record<string, { label: string; emoji: string; color: string }> = {
+    processing:       { label: 'Being Processed',   emoji: '⚙️',  color: '#7c3aed' },
+    shipped:          { label: 'Shipped',            emoji: '🚚',  color: '#2563eb' },
+    in_transit:       { label: 'In Transit',         emoji: '🗺️',  color: '#0891b2' },
+    out_for_delivery: { label: 'Out for Delivery',   emoji: '🛵',  color: '#d97706' },
+    delivered:        { label: 'Delivered',          emoji: '🎉',  color: '#059669' },
+    returned:         { label: 'Returned',           emoji: '↩️',  color: '#dc2626' },
   };
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
-      <h2 style="color:#0D7377;">Shipping Update</h2>
-      <p>Your order <strong>#${orderNumber}</strong> is now: <strong>${statusLabel[status] || status}</strong></p>
-      ${trackingNumber ? `<p>Tracking: <code>${trackingNumber}</code> via ${carrier || 'courier'}</p>` : ''}
-      <p style="color:#6b7280;font-size:13px;">Track your delivery at oceanbazar.com/orders</p>
+  const s = LABELS[status] ?? { label: status, emoji: '📦', color: PRIMARY };
+
+  const body = `
+    <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Shipping Update</h2>
+    <div style="background:${s.color}1a;border:2px solid ${s.color}40;border-radius:12px;padding:20px;text-align:center;margin:20px 0;">
+      <div style="font-size:36px;margin-bottom:8px;">${s.emoji}</div>
+      <div style="font-size:20px;font-weight:800;color:${s.color};">${s.label}</div>
+      <div style="font-size:14px;color:#6b7280;margin-top:4px;">Order #${orderNumber}</div>
     </div>
-  `;
-  return sendMail(to, `Order #${orderNumber} - ${statusLabel[status] || status}`, html, 'shipping_update');
+    ${trackingNumber ? `
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:16px 0;">
+      <p style="margin:0;font-size:13px;color:#6b7280;">Tracking Number · ${carrier || 'Courier'}</p>
+      <code style="font-size:16px;font-weight:700;color:#111827;letter-spacing:1px;">${trackingNumber}</code>
+    </div>` : ''}
+    <div style="text-align:center;">${btn(`${CLIENT}/en/orders`, 'View Order Details')}</div>`;
+  return sendMail(to, `${s.emoji} Order #${orderNumber} — ${s.label}`, emailWrapper(body), 'shipping_update');
 }
 
-export async function sendCartAbandonmentReminder(
-  to: string,
-  userName: string,
-  itemCount: number
-): Promise<boolean> {
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
-      <h2 style="color:#0D7377;">You left something behind!</h2>
-      <p>Hi ${userName}, you have <strong>${itemCount} item${itemCount > 1 ? 's' : ''}</strong> waiting in your cart.</p>
-      <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/cart" 
-         style="display:inline-block;margin:16px 0;padding:12px 24px;background:#0D7377;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">
-        Complete Your Order
-      </a>
-      <p style="color:#6b7280;font-size:13px;">Don't miss out on great deals!</p>
+export async function sendCartAbandonmentReminder(to: string, userName: string, itemCount: number): Promise<boolean> {
+  const body = `
+    <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Your cart misses you! 🛒</h2>
+    <p style="color:#6b7280;margin:0 0 20px;">Hi <strong>${userName}</strong>, you left <strong>${itemCount} item${itemCount > 1 ? 's' : ''}</strong> in your cart. They're waiting for you!</p>
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:14px 16px;margin:0 0 24px;">
+      <p style="margin:0;color:#92400e;font-size:14px;">⚡ Items may sell out — complete your order now before they're gone.</p>
     </div>
-  `;
-  return sendMail(to, 'Your cart is waiting!', html, 'cart_abandonment');
+    <div style="text-align:center;">${btn(`${CLIENT}/en/cart`, '🛒 Return to My Cart')}</div>`;
+  return sendMail(to, '🛒 Your cart is waiting — OceanBazar', emailWrapper(body), 'cart_abandonment');
+}
+
+export async function sendSupportReply(
+  to: string,
+  ticketSubject: string,
+  ticketId: string,
+  replyMessage: string
+): Promise<boolean> {
+  const body = `
+    <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Reply from OceanBazar Support 💬</h2>
+    <p style="color:#6b7280;margin:0 0 4px;">Regarding ticket <strong>#${ticketId}</strong></p>
+    <p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${ticketSubject}</p>
+    <div style="background:#f9fafb;border-left:4px solid ${PRIMARY};border-radius:8px;padding:16px 18px;margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">
+      ${replyMessage}
+    </div>
+    <div style="text-align:center;">${btn(`${CLIENT}/en/tickets`, '💬 View Conversation')}</div>
+    <p style="color:#9ca3af;font-size:12px;text-align:center;margin:16px 0 0;">Reply to this email or open your support center to continue the conversation.</p>`;
+  return sendMail(
+    to,
+    `💬 Re: ${ticketSubject} — Ticket #${ticketId}`,
+    emailWrapper(body),
+    'support_reply',
+    { from: process.env.MS_SUPPORT_SENDER || undefined }
+  );
 }
 
 export async function sendPasswordResetEmail(to: string, resetLink: string): Promise<boolean> {
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
-      <h2 style="color:#0D7377;">Reset Your Password</h2>
-      <p>Click below to reset your Oceanbazar password:</p>
-      <a href="${resetLink}" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#0D7377;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">
-        Reset Password
-      </a>
-      <p style="color:#6b7280;font-size:13px;">This link expires in 30 minutes. If you didn't request this, ignore this email.</p>
-    </div>
-  `;
-  return sendMail(to, 'Reset Your Oceanbazar Password', html, 'password_reset');
+  const body = `
+    <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Reset Your Password 🔒</h2>
+    <p style="color:#6b7280;margin:0 0 20px;">We received a request to reset your OceanBazar password. Click the button below to create a new one.</p>
+    <div style="text-align:center;">${btn(resetLink, '🔒 Reset My Password')}</div>
+    <p style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;color:#92400e;font-size:13px;margin:20px 0 0;">
+      ⏱️ This link expires in <strong>30 minutes</strong>. If you didn't request this, you can safely ignore this email.
+    </p>`;
+  return sendMail(to, '🔒 Reset Your OceanBazar Password', emailWrapper(body), 'password_reset');
 }
+
+/** Render a DB email template with {{var}} substitution. */
+export async function renderEmailTemplate(
+  templateIdOrCategory: string,
+  vars: Record<string, string> = {},
+): Promise<{ subject: string; html: string } | null> {
+  let template = await prisma.emailTemplate.findUnique({ where: { id: templateIdOrCategory } });
+  if (!template) {
+    template = await prisma.emailTemplate.findFirst({
+      where: { category: templateIdOrCategory },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+  if (!template) return null;
+  let subject = template.subject;
+  let html = template.bodyHtml;
+  for (const [k, v] of Object.entries(vars)) {
+    const re = new RegExp(`\\{\\{${k}\\}\\}`, 'g');
+    subject = subject.replace(re, v);
+    html = html.replace(re, v);
+  }
+  return { subject, html: emailWrapper(html) };
+}
+
+

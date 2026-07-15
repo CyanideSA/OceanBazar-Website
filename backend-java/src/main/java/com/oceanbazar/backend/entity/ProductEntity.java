@@ -100,6 +100,9 @@ public class ProductEntity {
     @Column(name = "is_featured", nullable = false)
     private Boolean isFeatured;
 
+    @Column(name = "is_best_rated", nullable = false)
+    private Boolean isBestRated;
+
     @Column(name = "created_at", columnDefinition = "timestamptz", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -131,6 +134,7 @@ public class ProductEntity {
         if (stock == null) stock = 0;
         if (reviewCount == null) reviewCount = 0;
         if (isFeatured == null) isFeatured = false;
+        if (isBestRated == null) isBestRated = false;
     }
     @PreUpdate void preUpdate() { updatedAt = Instant.now(); }
 }

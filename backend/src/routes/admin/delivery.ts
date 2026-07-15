@@ -4,6 +4,13 @@ import { routeParam } from '../../utils/params';
 import * as courierService from '../../services/courierService';
 import * as pathaoService from '../../services/pathaoService';
 import * as steadfastService from '../../services/steadfastService';
+import { requireIdempotencyKey } from '../../middleware/idempotency';
+import {
+  assignCourierWithAudit,
+  cancelCourierWithAudit,
+  listCourierHealth,
+} from '../../services/courierAdminService';
+import type { AssignCourierInput } from '../../services/courierService';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -31,21 +38,10 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/admin/delivery/assign — assign courier to order
-router.post('/assign', async (req: Request, res: Response) => {
+router.post('/assign', requireIdempotencyKey(), async (req: Request, res: Response) => {
   try {
-    const result = await courierService.assignCourier(req.body);
+    const result = await assignCourierWithAudit(req, req.body as AssignCourierInput);
     if (!result.success) { res.status(400).json({ error: result.message }); return; }
-
-    await prisma.auditLog.create({
-      data: {
-        adminId: req.admin!.adminId,
-        action: 'ASSIGN_COURIER',
-        targetType: 'order',
-        targetId: req.body.orderId,
-        details: { courier: req.body.courier, consignmentId: result.consignmentId },
-      },
-    });
-
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -59,20 +55,13 @@ router.get('/track/:orderId', async (req: Request, res: Response) => {
 });
 
 // POST /api/admin/delivery/cancel/:orderId — cancel courier shipment
-router.post('/cancel/:orderId', async (req: Request, res: Response) => {
-  const result = await courierService.cancelShipment(routeParam(req.params.orderId));
-  if (result.success) {
-    await prisma.auditLog.create({
-      data: {
-        adminId: req.admin!.adminId,
-        action: 'CANCEL_COURIER_SHIPMENT',
-        targetType: 'order',
-        targetId: routeParam(req.params.orderId),
-        details: { message: result.message },
-      },
-    });
-  }
+router.post('/cancel/:orderId', requireIdempotencyKey(), async (req: Request, res: Response) => {
+  const result = await cancelCourierWithAudit(req, routeParam(req.params.orderId));
   res.json(result);
+});
+
+router.get('/health/summary', async (_req: Request, res: Response) => {
+  res.json(await listCourierHealth());
 });
 
 // GET /api/admin/delivery/couriers — list available couriers

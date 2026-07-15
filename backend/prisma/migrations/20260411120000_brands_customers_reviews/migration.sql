@@ -35,14 +35,18 @@ CREATE TABLE IF NOT EXISTS "customers" (
 
 DO $$ BEGIN
   ALTER TABLE "customers" ADD CONSTRAINT "customers_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL; END $$;
 
 -- AlterTable products — brand_id
-ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "brand_id" CHAR(8);
+DO $$ BEGIN
+  IF to_regclass('public.products') IS NOT NULL THEN
+    ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "brand_id" CHAR(8);
+  END IF;
+END $$;
 
 DO $$ BEGIN
   ALTER TABLE "products" ADD CONSTRAINT "products_brand_id_fkey" FOREIGN KEY ("brand_id") REFERENCES "brands"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL; END $$;
 
 -- CreateTable product_reviews
 CREATE TABLE IF NOT EXISTS "product_reviews" (
@@ -65,18 +69,22 @@ CREATE INDEX IF NOT EXISTS "product_reviews_product_id_status_idx" ON "product_r
 
 DO $$ BEGIN
   ALTER TABLE "product_reviews" ADD CONSTRAINT "product_reviews_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL; END $$;
 
 DO $$ BEGIN
   ALTER TABLE "product_reviews" ADD CONSTRAINT "product_reviews_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL; END $$;
 
 DO $$ BEGIN
   ALTER TABLE "product_reviews" ADD CONSTRAINT "product_reviews_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL; END $$;
 
 -- Backfill Customer rows for existing users
-INSERT INTO "customers" ("user_id", "created_at", "updated_at")
-SELECT u."id", CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-FROM "users" u
-WHERE NOT EXISTS (SELECT 1 FROM "customers" c WHERE c."user_id" = u."id");
+DO $$ BEGIN
+  IF to_regclass('public.users') IS NOT NULL THEN
+    INSERT INTO "customers" ("user_id", "created_at", "updated_at")
+    SELECT u."id", CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    FROM "users" u
+    WHERE NOT EXISTS (SELECT 1 FROM "customers" c WHERE c."user_id" = u."id");
+  END IF;
+END $$;

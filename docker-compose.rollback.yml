@@ -1,0 +1,66 @@
+# Rollback stack — pin to v1-stable images. Usage:
+#   docker compose -f docker-compose.rollback.yml up -d
+#
+# Set ROLLBACK_IMAGE_TAG=v1-stable (or a specific digest) in .env before starting.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oceanbazar_postgres_rollback
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oceanbazar}
+      POSTGRES_USER: ${POSTGRES_USER:-oceanbazar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+    ports:
+      - '${POSTGRES_HOST_PORT:-5433}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: oceanbazar_redis_rollback
+    ports:
+      - '${REDIS_HOST_PORT:-6399}:6379'
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  java_api:
+    image: ${ECR_JAVA_API_REPOSITORY:-oceanbazar/java-api}:${ROLLBACK_IMAGE_TAG:-v1-stable}
+    container_name: oceanbazar_java_api_rollback
+    ports:
+      - '8000:8000'
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/oceanbazar
+      DB_USER: ${POSTGRES_USER:-oceanbazar}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE:-false}
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  api:
+    image: ${ECR_BFF_REPOSITORY:-oceanbazar/bff}:${ROLLBACK_IMAGE_TAG:-v1-stable}
+    container_name: oceanbazar_bff_rollback
+    ports:
+      - '4000:4000'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar
+      REDIS_URL: redis://redis:6379
+      JAVA_API_URL: http://java_api:8000
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE:-false}
+    depends_on:
+      - postgres
+      - redis
+      - java_api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

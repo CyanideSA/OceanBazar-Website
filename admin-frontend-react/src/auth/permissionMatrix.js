@@ -5,7 +5,7 @@
  * - STAFF — read-only on sensitive areas; no Global Settings; cannot mutate admin team.
  */
 const PERMISSIONS = {
-  dashboard:    { view: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  dashboard:    { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
   products:     { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"], delete: ["SUPER_ADMIN", "ADMIN"] },
   catalog:      { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"], delete: ["SUPER_ADMIN", "ADMIN"] },
   customers:    { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"], delete: ["SUPER_ADMIN", "ADMIN"] },
@@ -19,22 +19,49 @@ const PERMISSIONS = {
   analytics:    { view: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
   chat:         { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], reply: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
   notifications:{ view: ["SUPER_ADMIN", "ADMIN", "STAFF"], send: ["SUPER_ADMIN", "ADMIN"] },
+  email:        { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], send: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  meta:         { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
+  customerTimeline: { view: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  integrations:   { view: ["SUPER_ADMIN", "ADMIN"], edit: ["SUPER_ADMIN", "ADMIN"] },
+  seo:          { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
+  crmIntelligence: { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
+  analyticsAi:  { view: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  aiMarketing:  { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
+  engagement:   { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
   disputes:     { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
   audit:        { view: ["SUPER_ADMIN", "ADMIN"] },
   adminUsers:   { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"], delete: ["SUPER_ADMIN"] },
   applications: { view: ["SUPER_ADMIN", "ADMIN"], edit: ["SUPER_ADMIN", "ADMIN"] },
-  /** Global Settings — Super Admin & Admin only (Staff cannot view or edit). */
   settings:     { view: ["SUPER_ADMIN", "ADMIN"], edit: ["SUPER_ADMIN", "ADMIN"] },
-  /** File Import — Super Admin & Admin only */
-  fileImport:   { view: ["SUPER_ADMIN", "ADMIN"], edit: ["SUPER_ADMIN", "ADMIN"] },
-  /** OB Points management */
+  security:     { view: ["SUPER_ADMIN", "ADMIN"], edit: ["SUPER_ADMIN", "ADMIN"] },
   obPoints:     { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
-  /** Support Tickets */
   tickets:      { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN", "STAFF"], reply: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  abTests:      { view: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  flashSales:   { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
+  pendingApprovals: { view: ["SUPER_ADMIN"], edit: ["SUPER_ADMIN"] },
+  searchAnalytics:  { view: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  rolePermissions:  { view: ["SUPER_ADMIN"], edit: ["SUPER_ADMIN"] },
 };
+
+/** Full catalog for Super Admin permission editor */
+export const PERMISSION_CATALOG = Object.entries(PERMISSIONS).map(([module, actions]) => ({
+  module,
+  actions: Object.keys(actions),
+}));
+
+let customRoleOverrides = {};
+
+export function setCustomRolePermissions(map) {
+  customRoleOverrides = map || {};
+}
 
 export function hasPermission(role, module, action = "view") {
   const normalizedRole = String(role || "").toUpperCase();
+  if (normalizedRole === "SUPER_ADMIN") return true;
+
+  const override = customRoleOverrides[normalizedRole.toLowerCase()]?.[module]?.[action];
+  if (override !== undefined) return Boolean(override);
+
   const modulePerms = PERMISSIONS[module];
   if (!modulePerms) return false;
   const allowed = modulePerms[action];
@@ -45,7 +72,7 @@ export function hasPermission(role, module, action = "view") {
 export function getAccessibleModules(role) {
   const normalizedRole = String(role || "").toUpperCase();
   return Object.entries(PERMISSIONS)
-    .filter(([, perms]) => (perms.view || []).includes(normalizedRole))
+    .filter(([key]) => hasPermission(normalizedRole, key, "view"))
     .map(([key]) => key);
 }
 

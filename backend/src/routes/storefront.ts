@@ -109,8 +109,6 @@ router.get('/settings', async (_req: Request, res: Response) => {
  */
 router.get('/coupons', async (_req: Request, res: Response) => {
   try {
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();
     const now = new Date();
     const coupons = await prisma.coupon.findMany({
       where: {
@@ -137,8 +135,6 @@ router.get('/notifications', async (req: Request, res: Response) => {
   if (!userId) { res.json({ notifications: [] }); return; }
 
   try {
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();
     const notifications = await prisma.notifications.findMany({
       where: {
         OR: [

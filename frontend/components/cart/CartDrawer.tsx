@@ -47,7 +47,9 @@ export default function CartDrawer() {
   const preview = useMemo(() => {
     if (!cart) return null;
     const ob = appliedObPoints?.bdtDiscount ?? 0;
-    return previewOrderTotals(cart.subtotal, appliedCoupon, ob);
+    return previewOrderTotals(cart.subtotal, appliedCoupon, ob, {
+      retailQuantityOrder: cart.retailQuantityOrder,
+    });
   }, [cart, appliedCoupon, appliedObPoints]);
 
   if (!isOpen) return null;
@@ -249,12 +251,20 @@ export default function CartDrawer() {
                 <span>{t('shipping')}</span>
                 <span className="font-medium text-foreground">
                   {(preview?.shippingFee ?? cart.shippingFee) === 0 ? (
-                    <span className="text-success">{t('freeShipping')}</span>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <span>👑</span>
+                      <span>{t('freeShipping')}</span>
+                    </span>
                   ) : (
                     `${tc('taka')}${preview?.shippingFee ?? cart.shippingFee}`
                   )}
                 </span>
               </div>
+              {(preview?.shippingFee ?? cart.shippingFee) === 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/30 dark:border-amber-800/30 dark:text-amber-300">
+                  🎖️ Gold Member benefit — free shipping on all orders over ৳500
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between border-t border-border/40 pt-3">

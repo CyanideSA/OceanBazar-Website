@@ -9,15 +9,14 @@ import {
   AlertCircle, Clock, CheckCircle2, XCircle, Hash,
   ShoppingBag, Package, Tag, Paperclip, RefreshCw, X as XIcon,
 } from 'lucide-react';
-import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
 import { ticketsApi, api } from '@/lib/api';
+import { connectSocket } from '@/lib/socket';
 import { getAccessToken } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { TicketRowSkeleton } from '@/components/shared/Skeleton';
 import { useToast } from '@/hooks/useToast';
 
-const BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'https://localhost:8000').replace(/\/$/, '');
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
 
 type TicketMessage = { id?: string; message: string; createdAt: string; senderType?: string; attachments?: string[] };
 
@@ -274,25 +273,26 @@ export default function TicketsPage() {
   const [error, setError]       = useState('');
 
   const qc = useQueryClient();
-  const stompRef = useRef<Client | null>(null);
 
-  /* STOMP: subscribe to /user/queue/tickets for real-time pushes */
   useEffect(() => {
     const token = getAccessToken();
     if (!token) return;
-    const client = new Client({
-      webSocketFactory: () => new SockJS(`${BASE_URL}/ws`),
-      connectHeaders: { Authorization: `Bearer ${token}` },
-      reconnectDelay: 12000,
-    });
-    client.onConnect = () => {
-      client.subscribe('/user/queue/tickets', () => {
-        qc.invalidateQueries({ queryKey: ['tickets'] });
-      });
+    const socket = connectSocket();
+    socket.auth = { token };
+    const userId = (() => {
+      try {
+        const p = JSON.parse(atob(token.split('.')[1] ?? ''));
+        return p.userId ?? p.sub;
+      } catch {
+        return null;
+      }
+    })();
+    if (userId) socket.emit('join:user', userId);
+    const onTicket = () => qc.invalidateQueries({ queryKey: ['tickets'] });
+    socket.on('ticket:updated', onTicket);
+    return () => {
+      socket.off('ticket:updated', onTicket);
     };
-    client.activate();
-    stompRef.current = client;
-    return () => { client.deactivate(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

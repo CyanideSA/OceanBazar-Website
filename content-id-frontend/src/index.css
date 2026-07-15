@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-inter: "Inter", system-ui, -apple-system, sans-serif;
+    --background: 0 0% 99%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --primary: 217 91% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 96%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 214 32% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 214 32% 93%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 217 91% 50%;
+    --radius: 0.625rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: var(--font-inter);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer components {
+  .ob-input {
+    @apply w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-foreground shadow-sm transition-all;
+    @apply focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
+  }
+
+  .ob-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .ob-btn-primary {
+    @apply bg-primary text-primary-foreground shadow-soft hover:shadow-glow-primary hover:brightness-110 active:scale-[0.98];
+  }
+
+  .ob-btn-secondary {
+    @apply border border-border bg-white text-foreground hover:bg-secondary active:scale-[0.98];
+  }
+
+  .ob-card {
+    @apply rounded-xl border border-border/60 bg-card text-card-foreground shadow-soft;
+  }
+
+  .glass {
+    @apply bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60;
+  }
+}

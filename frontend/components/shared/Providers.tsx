@@ -7,6 +7,10 @@ import ScrollToTop from '@/components/shared/ScrollToTop';
 import Toaster from '@/components/shared/Toaster';
 import CatalogSyncProvider from '@/components/shared/CatalogSyncProvider';
 import NotificationListener from '@/components/shared/NotificationListener';
+import WishlistSync from '@/components/shared/WishlistSync';
+import DynamicFavicon from '@/components/shared/DynamicFavicon';
+import PushNotificationInit from '@/components/shared/PushNotificationInit';
+import PwaAnalyticsInit from '@/components/shared/PwaAnalyticsInit';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -34,9 +38,13 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider>
+      <DynamicFavicon />
       <QueryClientProvider client={queryClient}>
         <CatalogSyncProvider />
         <NotificationListener />
+        <PushNotificationInit />
+        <PwaAnalyticsInit />
+        <WishlistSync />
         <ScrollToTop />
         {children}
         <Toaster />

@@ -1,9 +1,42 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { routeParam } from '../../utils/params';
+import { requireIdempotencyKey } from '../../middleware/idempotency';
+import { refundTransaction } from '../../services/paymentAdminService';
+import { requireAdminReauth } from '../../middleware/adminReauth';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// GET /api/admin/payments/reconciliation/mismatches — tx status vs order.payment_status drift
+router.get('/reconciliation/mismatches', async (_req: Request, res: Response) => {
+  const mismatches = await prisma.paymentTransaction.findMany({
+    where: {
+      OR: [
+        {
+          status: { in: ['pending', 'failed'] },
+          order: { paymentStatus: 'paid' },
+        },
+        {
+          status: 'success',
+          NOT: { order: { paymentStatus: 'paid' } },
+        },
+      ],
+    },
+    include: {
+      order: { select: { orderNumber: true, status: true, paymentStatus: true } },
+      user: { select: { name: true, email: true, phone: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+  });
+  res.json({
+    transactions: mismatches,
+    total: mismatches.length,
+    page: 1,
+    limit: mismatches.length,
+  });
+});
 
 // GET /api/admin/payments
 router.get('/', async (req: Request, res: Response) => {
@@ -50,26 +83,14 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/admin/payments/:id/refund
-router.post('/:id/refund', async (req: Request, res: Response) => {
+router.post('/:id/refund', requireIdempotencyKey(), requireAdminReauth(), async (req: Request, res: Response) => {
   const { amount, note } = req.body as { amount?: number; note?: string };
-  const tx = await prisma.paymentTransaction.findUnique({ where: { id: routeParam(req.params.id) } });
-  if (!tx) { res.status(404).json({ error: 'Transaction not found' }); return; }
-
-  const updated = await prisma.paymentTransaction.update({
-    where: { id: tx.id },
-    data: { status: 'refunded', metadata: { ...(tx.metadata as object || {}), refundNote: note, refundAmount: amount || Number(tx.amount), refundedAt: new Date().toISOString() } },
-  });
-
-  await prisma.order.update({
-    where: { id: tx.orderId },
-    data: { paymentStatus: 'refunded' },
-  });
-
-  await prisma.auditLog.create({
-    data: { adminId: req.admin!.adminId, action: 'REFUND_PAYMENT', targetType: 'payment_transaction', targetId: tx.id, details: { amount: amount || Number(tx.amount), note } },
-  });
-
-  res.json({ transaction: updated, message: 'Refund processed' });
+  try {
+    const updated = await refundTransaction(req, routeParam(req.params.id), amount, note);
+    res.json({ transaction: updated, message: 'Refund processed' });
+  } catch (err: any) {
+    res.status(err?.status || 500).json({ error: err?.message || 'Refund failed' });
+  }
 });
 
 // GET /api/admin/payments/invoice/:orderId — generate invoice data
@@ -104,6 +125,21 @@ router.get('/invoice/:orderId', async (req: Request, res: Response) => {
       transactions: order.paymentTxs,
     },
   });
+});
+
+// PATCH /api/admin/payments/:id — manually update transaction status/notes
+router.patch('/:id', async (req: Request, res: Response) => {
+  const { status, notes, providerTxId } = req.body as { status?: string; notes?: string; providerTxId?: string };
+  const prismaAny = prisma as any;
+  const tx = await prismaAny.paymentTransaction.update({
+    where: { id: routeParam(req.params.id) },
+    data: {
+      ...(status && { status }),
+      ...(notes !== undefined && { notes }),
+      ...(providerTxId !== undefined && { providerTxId }),
+    },
+  });
+  res.json({ transaction: tx });
 });
 
 export default router;

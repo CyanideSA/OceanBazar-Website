@@ -11,6 +11,7 @@ import { signInWithGoogle, signInWithFacebook } from '@/lib/firebase';
 import Logo from '@/components/shared/Logo';
 import { loadRecaptchaScript, executeRecaptcha } from '@/lib/recaptcha';
 import type { User } from '@/types';
+import { normalizePhoneTarget } from '@/lib/phoneNormalize';
 
 type Step = 'method' | 'otp' | 'password';
 type Method = 'email' | 'phone' | 'password';
@@ -34,10 +35,15 @@ export default function LoginPage() {
 
   useEffect(() => { loadRecaptchaScript(); }, []);
 
+  function resolveTarget(value: string) {
+    const v = value.trim();
+    return method === 'email' || v.includes('@') ? v : normalizePhoneTarget(v);
+  }
+
   async function handleSendOtp() {
     setLoading(true); setError('');
     try {
-      await authApi.sendOtp(target, 'login');
+      await authApi.sendOtp(resolveTarget(target), 'login');
       setStep('otp');
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } } };
@@ -53,7 +59,7 @@ export default function LoginPage() {
   async function handleVerifyOtp() {
     setLoading(true); setError('');
     try {
-      const { data } = await authApi.verifyOtp(target, otp);
+      const { data } = await authApi.verifyOtp(resolveTarget(target), otp);
       const token = data.token || data.access;
       setUser(data.user as User, token);
       if (data.user && !data.user.emailVerified) {
@@ -76,7 +82,7 @@ export default function LoginPage() {
     setLoading(true); setError('');
     try {
       const recaptchaToken = await executeRecaptcha('login');
-      const { data } = await authApi.login(target, password, recaptchaToken);
+      const { data } = await authApi.login(resolveTarget(target), password, recaptchaToken);
       const token = data.token || data.access;
       setUser(data.user as User, token);
       if (data.user && !data.user.emailVerified) {
@@ -127,7 +133,7 @@ export default function LoginPage() {
           {/* Logo */}
           <div className="text-center mb-8">
             <Link href={`/${locale}`} className="inline-flex items-center justify-center">
-              <Logo width={180} height={54} />
+              <Logo width={182} height={76} priority interaction="brand" />
             </Link>
             <p className="text-muted-foreground mt-2">{t('login')}</p>
           </div>
@@ -164,13 +170,23 @@ export default function LoginPage() {
               />
 
               {method === 'password' && (
-                <input
-                  type="password"
-                  placeholder={t('password')}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full border border-border bg-background text-foreground rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
-                />
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    placeholder={t('password')}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full border border-border bg-background text-foreground rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
+                  />
+                  <div className="text-right">
+                    <Link
+                      href={`/${locale}/auth/forgot-password`}
+                      className="text-xs text-primary font-medium hover:underline transition-colors"
+                    >
+                      {t('forgotPassword')}
+                    </Link>
+                  </div>
+                </div>
               )}
 
               <button

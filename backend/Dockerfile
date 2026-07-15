@@ -13,7 +13,8 @@ RUN npm ci
 COPY . .
 
 RUN npx prisma generate
-RUN npm run build
+# Skip prebuild schema check (script lives outside backend/ Docker context)
+RUN npx tsc
 RUN npm prune --omit=dev && npm cache clean --force
 
 ENV NODE_ENV=production

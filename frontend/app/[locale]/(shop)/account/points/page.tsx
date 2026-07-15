@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Award, ChevronLeft, Coins, Gift, ShoppingBag, Star, Truck,
+  Award, ChevronLeft, Coins, Gift, ShoppingBag, Star,
   Zap, Users, MessageSquare, Crown, Shield, Sparkles, TrendingUp,
 } from 'lucide-react';
 import { obPointsApi } from '@/lib/api';
@@ -18,9 +18,9 @@ const TIER_CONFIG = [
 ] as const;
 
 const PERKS_BY_TIER: Record<string, boolean[]> = {
-  bronze:  [true,  false, false, false],
-  silver:  [true,  true,  false, false],
-  gold:    [true,  true,  true,  true],
+  bronze:  [true,  false, false],
+  silver:  [true,  true,  false],
+  gold:    [true,  true,  true],
 };
 
 export default function AccountPointsPage() {
@@ -50,7 +50,7 @@ export default function AccountPointsPage() {
   const tier = (data?.tier ?? 'bronze').toLowerCase();
   const tierIdx = ['bronze', 'silver', 'gold'].indexOf(tier);
   const activeTier = TIER_CONFIG[Math.max(0, tierIdx)];
-  const perkKeys = ['perkDiscount', 'perkFreeShipping', 'perkEarlyAccess', 'perkPrioritySupport'] as const;
+  const perkKeys = ['perkDiscount', 'perkEarlyAccess', 'perkPrioritySupport'] as const;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12">

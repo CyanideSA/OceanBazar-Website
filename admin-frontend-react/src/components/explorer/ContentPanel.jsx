@@ -45,6 +45,27 @@ function FolderCard({ node, onOpen, onContextMenu }) {
   );
 }
 
+function BrandCard({ brand, categoryId, onOpenBrand, onContextMenu }) {
+  return (
+    <div
+      className="explorer-item folder-card"
+      onDoubleClick={() => onOpenBrand(brand.id, categoryId)}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, { type: "brand", node: brand }); }}
+      title={`${brand.nameEn} — double-click to open brand products`}
+    >
+      <div className="item-icon-wrap">
+        {brand.logoUrl
+          ? <img src={brand.logoUrl} alt={brand.nameEn} style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 6 }} />
+          : <IconFolder size={36} color="#8b949e" open={false} />}
+      </div>
+      <div className="item-name" title={brand.nameEn}>{brand.nameEn}</div>
+      <div className="item-meta">
+        <span>{brand.productCount ?? 0} products</span>
+      </div>
+    </div>
+  );
+}
+
 function ProductCard({ product, onOpen, onContextMenu, viewMode }) {
   const { selectedIds, selectItem } = useCatalogStore();
   const isSelected = selectedIds.has("prod_" + product.id);
@@ -153,7 +174,11 @@ function DetailsHeader() {
 }
 
 export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextMenu }) {
-  const { folderContents, loadingContents, viewMode, searchResults, clearSelection } = useCatalogStore();
+  const { folderContents, loadingContents, viewMode, searchResults, clearSelection, selectedBrandId, selectedBrandCategoryId, clearBrandSelection, categoryBrands, selectBrand, currentCategoryId } = useCatalogStore();
+
+  const activeBrand = selectedBrandId && selectedBrandCategoryId
+    ? (categoryBrands[selectedBrandCategoryId] ?? []).find((b) => b.id === selectedBrandId)
+    : null;
 
   const handleBgClick = useCallback(() => clearSelection(), [clearSelection]);
 
@@ -211,7 +236,7 @@ export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextM
     );
   }
 
-  if (!folderContents) {
+  if (!folderContents && !selectedBrandId) {
     return (
       <div className="content-panel custom-scrollbar content-empty-panel" onClick={handleBgClick}>
         <div className="empty-state">
@@ -223,12 +248,22 @@ export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextM
     );
   }
 
-  const { subfolders = [], products = [] } = folderContents;
+  const { subfolders = [], products = [], brands = [] } = folderContents ?? { subfolders: [], products: [], brands: [] };
 
   return (
     <div className="content-panel custom-scrollbar" onClick={handleBgClick}>
       <div className="content-inner">
-        {subfolders.length === 0 && products.length === 0 && (
+        {activeBrand && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", marginBottom: 8, background: "rgba(88,166,255,0.08)", borderRadius: 6, border: "1px solid rgba(88,166,255,0.25)", fontSize: 12 }}>
+            <span style={{ color: "#58a6ff", fontWeight: 600 }}>Brand: {activeBrand.nameEn}</span>
+            <span style={{ color: "#8b949e" }}>({activeBrand.productCount} products)</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); clearBrandSelection(); }}
+              style={{ marginLeft: "auto", color: "#8b949e", fontSize: 11, background: "none", border: "none", cursor: "pointer" }}
+            >✕ Clear filter</button>
+          </div>
+        )}
+        {subfolders.length === 0 && products.length === 0 && brands.length === 0 && (
           <div className="empty-state">
             <div className="empty-state-icon"><IconFolder size={44} color="#484f58" open /></div>
             <div className="empty-state-title">This folder is empty</div>
@@ -242,6 +277,27 @@ export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextM
             <div className="content-grid">
               {subfolders.map((node) => (
                 <FolderCard key={node.id} node={node} onOpen={onOpenCategory} onContextMenu={onContextMenu} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {brands.length > 0 && (
+          <>
+            <GroupLabel label="Brands" count={brands.length} />
+            <div className="content-grid">
+              {brands.map((brand) => (
+                <BrandCard
+                  key={brand.id}
+                  brand={brand}
+                  categoryId={selectedBrandCategoryId || currentCategoryId}
+                  onOpenBrand={(brandId, categoryId) => {
+                    const targetCategoryId = categoryId || selectedBrandCategoryId;
+                    if (!targetCategoryId) return;
+                    selectBrand(brandId, targetCategoryId);
+                  }}
+                  onContextMenu={onContextMenu}
+                />
               ))}
             </div>
           </>

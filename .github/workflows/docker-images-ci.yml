@@ -1,0 +1,180 @@
+# Builds Node BFF, Spring Boot API, and Python ML service Docker images on every PR and on main.
+#
+# Optional ECR push (main only): set repo variable ENABLE_DOCKER_ECR_PUSH = true
+# and configure secrets: AWS_ROLE_TO_ASSUME, ECR_BFF_REPOSITORY, ECR_JAVA_API_REPOSITORY,
+# ECR_ML_SERVICE_REPOSITORY (full registry URIs without tag, matching Terraform ECR outputs).
+name: Docker images (BFF + Java API + ML)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "backend-java/**"
+      - "ml-service/**"
+      - ".github/workflows/docker-images-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "backend-java/**"
+      - "ml-service/**"
+      - ".github/workflows/docker-images-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-southeast-1
+
+jobs:
+  bff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build BFF image (verify only)
+        if: >-
+          ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true') }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          load: true
+          tags: oceanbazar/bff:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configure AWS credentials (OIDC)
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push BFF image to ECR
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ECR_BFF_REPOSITORY }}:latest
+            ${{ secrets.ECR_BFF_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  java-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Java API image (verify only)
+        if: >-
+          ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true') }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend-java
+          file: ./backend-java/Dockerfile
+          push: false
+          load: true
+          tags: oceanbazar/java-api:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configure AWS credentials (OIDC)
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push Java API image to ECR
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend-java
+          file: ./backend-java/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ECR_JAVA_API_REPOSITORY }}:latest
+            ${{ secrets.ECR_JAVA_API_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  ml-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ML service image (verify only)
+        if: >-
+          ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true') }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ml-service
+          file: ./ml-service/Dockerfile
+          push: false
+          load: true
+          tags: oceanbazar/ml-service:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configure AWS credentials (OIDC)
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push ML service image to ECR
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && vars.ENABLE_DOCKER_ECR_PUSH == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ml-service
+          file: ./ml-service/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ECR_ML_SERVICE_REPOSITORY }}:latest
+            ${{ secrets.ECR_ML_SERVICE_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

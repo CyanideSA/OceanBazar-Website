@@ -2,8 +2,10 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { generateEntityId } from '../utils/hexId';
+import { normalizePhoneTarget } from '../utils/phoneNormalize';
 import { validatePassword } from '../utils/passwordRules';
 import { ensureCustomerForUser } from './customerService';
+import { env } from '../config/env';
 
 const prisma = new PrismaClient();
 
@@ -14,6 +16,7 @@ function generateOtp(): string {
 }
 
 export async function sendOtp(target: string, type: 'login' | 'forgot_password' | 'verify_email'): Promise<string> {
+  target = normalizePhoneTarget(target);
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + (Number(process.env.OTP_EXPIRE_MINUTES) || 10) * 60_000);
 
@@ -52,6 +55,7 @@ export async function verifyOtp(
   code: string,
   type: 'login' | 'forgot_password' | 'verify_email'
 ): Promise<boolean> {
+  target = normalizePhoneTarget(target);
   const record = await prisma.otpCode.findFirst({
     where: {
       target,
@@ -72,17 +76,17 @@ export async function verifyOtp(
 
 export function issueAccessToken(userId: string, userType: string): string {
   return jwt.sign(
-    { userId, userType },
-    process.env.JWT_ACCESS_SECRET!,
-    { expiresIn: process.env.JWT_ACCESS_EXPIRES || '15m' } as jwt.SignOptions
+    { userId, user_id: userId, userType },
+    env.JWT_ACCESS_SECRET,
+    { expiresIn: env.JWT_ACCESS_EXPIRES || '15m' } as jwt.SignOptions
   );
 }
 
 export function issueRefreshToken(userId: string): string {
   return jwt.sign(
     { userId },
-    process.env.JWT_REFRESH_SECRET!,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES || '7d' } as jwt.SignOptions
+    env.JWT_REFRESH_SECRET,
+    { expiresIn: env.JWT_REFRESH_EXPIRES || '7d' } as jwt.SignOptions
   );
 }
 
@@ -102,6 +106,7 @@ export async function findOrCreateUserByEmail(email: string) {
 }
 
 export async function findOrCreateUserByPhone(phone: string) {
+  phone = normalizePhoneTarget(phone);
   let user = await prisma.user.findUnique({ where: { phone } });
   if (!user) {
     user = await prisma.user.create({
@@ -135,6 +140,7 @@ export async function registerUser(data: {
     if (exists) throw Object.assign(new Error('Email already registered'), { status: 409 });
   }
   if (data.phone) {
+    data.phone = normalizePhoneTarget(data.phone);
     const exists = await prisma.user.findUnique({ where: { phone: data.phone } });
     if (exists) throw Object.assign(new Error('Phone already registered'), { status: 409 });
   }
@@ -158,9 +164,10 @@ export async function registerUser(data: {
 
 export async function loginWithPassword(identifier: string, password: string) {
   const isEmail = identifier.includes('@');
+  const lookup = isEmail ? identifier : normalizePhoneTarget(identifier);
   const user = isEmail
-    ? await prisma.user.findUnique({ where: { email: identifier } })
-    : await prisma.user.findUnique({ where: { phone: identifier } });
+    ? await prisma.user.findUnique({ where: { email: lookup } })
+    : await prisma.user.findUnique({ where: { phone: lookup } });
 
   if (!user || !user.passwordHash) {
     throw Object.assign(new Error('Invalid credentials'), { status: 401 });
@@ -203,9 +210,10 @@ export async function resetPassword(target: string, newPassword: string) {
   }
 
   const isEmail = target.includes('@');
+  const lookup = isEmail ? target : normalizePhoneTarget(target);
   const user = isEmail
-    ? await prisma.user.findUnique({ where: { email: target } })
-    : await prisma.user.findUnique({ where: { phone: target } });
+    ? await prisma.user.findUnique({ where: { email: lookup } })
+    : await prisma.user.findUnique({ where: { phone: lookup } });
 
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
 

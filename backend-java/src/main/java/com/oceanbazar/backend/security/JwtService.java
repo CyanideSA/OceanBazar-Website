@@ -18,8 +18,11 @@ public class JwtService {
     @Value("${jwt.secret}")
     private String jwtSecret;
 
-    private SecretKey key() {
-        byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
+    @Value("${jwt.access-secret:}")
+    private String jwtAccessSecret;
+
+    private SecretKey keyFor(String secret) {
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         // HS256 requires at least 32 bytes.
         if (keyBytes.length < 32) {
             byte[] padded = new byte[32];
@@ -29,21 +32,53 @@ public class JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
+    private SecretKey coreKey() {
+        return keyFor(jwtSecret);
+    }
+
+    private SecretKey bffKey() {
+        if (jwtAccessSecret == null || jwtAccessSecret.isBlank()) {
+            return null;
+        }
+        return keyFor(jwtAccessSecret);
+    }
+
     public String createToken(String userId, String email) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .claims(Map.of("user_id", userId, "email", email))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(30, ChronoUnit.DAYS)))
-                .signWith(key())
+                .signWith(coreKey())
                 .compact();
     }
 
     public Claims parse(String token) {
-        return Jwts.parser()
-                .verifyWith(key())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        try {
+            return Jwts.parser()
+                    .verifyWith(coreKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        } catch (Exception coreEx) {
+            SecretKey bff = bffKey();
+            if (bff == null) {
+                throw coreEx;
+            }
+            return Jwts.parser()
+                    .verifyWith(bff)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        }
+    }
+
+    public static String userIdFromClaims(Claims claims) {
+        if (claims == null) return null;
+        String userId = claims.get("user_id", String.class);
+        if (userId == null || userId.isBlank()) {
+            userId = claims.get("userId", String.class);
+        }
+        return userId;
     }
 }

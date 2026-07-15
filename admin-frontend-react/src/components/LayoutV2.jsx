@@ -7,22 +7,25 @@ import {
   FiBell, FiShield, FiSettings, FiMenu, FiX, FiChevronLeft, 
   FiChevronRight, FiSearch, FiVolume2, FiVolumeX, FiLogOut,
   FiActivity, FiStar, FiFileText, FiHelpCircle, FiImage,
-  FiChevronDown, FiCommand, FiClock, FiCheck
+  FiChevronDown, FiCommand, FiClock, FiCheck, FiSun, FiMoon, FiLock,
+  FiMail, FiTrendingUp, FiZap, FiTarget, FiCpu, FiLink
 } from "react-icons/fi";
 import { getAccessibleModules } from "../auth/permissionMatrix";
 import { adminApi } from "../lib/api";
+import AdminProfileAvatar from "./AdminProfileAvatar";
 
 /* ─── NAV definition ─── */
 const NAV_GROUPS = [
   { title: "Overview", items: [
     { key: "dashboard", label: "Dashboard", icon: FiHome },
     { key: "analytics", label: "Analytics", icon: FiBarChart2 },
+    { key: "abTests", label: "A/B Tests", icon: FiActivity },
   ]},
   { title: "Catalog", items: [
-    { key: "products", label: "Products", icon: FiBox },
+    { key: "products", label: "Products", icon: FiBox, badgeKey: "products" },
     { key: "catalog", label: "Explorer", icon: FiFolder },
     { key: "inventory", label: "Inventory", icon: FiPackage },
-    { key: "fileImport", label: "Import", icon: FiFilePlus },
+    { key: "searchAnalytics", label: "Search Analytics", icon: FiSearch },
   ]},
   { title: "Commerce", items: [
     { key: "orders", label: "Orders", icon: FiFileText, badgeKey: "orders" },
@@ -31,6 +34,7 @@ const NAV_GROUPS = [
     { key: "payments", label: "Payments", icon: FiCreditCard },
     { key: "coupons", label: "Coupons", icon: FiTag },
     { key: "obPoints", label: "OB Points", icon: FiStar },
+    { key: "flashSales", label: "Flash Sales", icon: FiActivity },
   ]},
   { title: "Customers", items: [
     { key: "customers", label: "Customers", icon: FiUsers },
@@ -40,14 +44,28 @@ const NAV_GROUPS = [
   { title: "Communications", items: [
     { key: "chat", label: "Live Chat", icon: FiMessageSquare, badgeKey: "messages" },
     { key: "tickets", label: "Tickets", icon: FiHelpCircle },
+    { key: "email", label: "Email (M365)", icon: FiMail },
+    { key: "meta", label: "Meta Suite", icon: FiImage },
+    { key: "integrations", label: "Integrations", icon: FiLink },
+    { key: "customerTimeline", label: "Customer Timeline", icon: FiUsers },
     { key: "notifications", label: "Alerts", icon: FiBell },
+    { key: "engagement", label: "Engagement", icon: FiImage },
+  ]},
+  { title: "Intelligence", items: [
+    { key: "crmIntelligence", label: "CRM Intelligence", icon: FiCpu },
+    { key: "analyticsAi", label: "AI Analytics", icon: FiTrendingUp },
+    { key: "aiMarketing", label: "AI Marketing", icon: FiZap },
+    { key: "seo", label: "SEO Center", icon: FiTarget },
   ]},
   { title: "Business", items: [
     { key: "applications", label: "Applications", icon: FiBriefcase },
   ]},
   { title: "Admin", items: [
     { key: "adminUsers", label: "Team", icon: FiShield },
+    { key: "pendingApprovals", label: "Verification", icon: FiCheck },
+    { key: "rolePermissions", label: "Permissions", icon: FiShield },
     { key: "audit", label: "Audit Logs", icon: FiActivity },
+    { key: "security", label: "Security Center", icon: FiLock },
     { key: "settings", label: "Settings", icon: FiSettings },
   ]},
 ];
@@ -178,11 +196,23 @@ function CommandPalette({ isOpen, onClose, onSelect, allItems }) {
 }
 
 /* ─── Main Layout ─── */
+const CONN_STATE_DOT = {
+  IDLE:         'bg-crm-text-muted',
+  CONNECTING:   'bg-crm-warning animate-pulse',
+  CONNECTED:    'bg-crm-success',
+  DISCONNECTED: 'bg-crm-warning animate-pulse',
+  RECONNECTING: 'bg-crm-warning animate-pulse',
+  FAILED:       'bg-crm-danger',
+};
+
 export default function Layout({
-  active, onSelect, admin, onLogout,
+  active, onSelect, admin, onLogout, onAdminUpdate,
   adminUnreadCount = 0, liveCounters = {},
   liveConnected = false, wsConnected = false,
-  soundEnabled = true, onToggleSound, children
+  connMeta = null,
+  soundEnabled = true, onToggleSound,
+  theme = "dark", onToggleTheme,
+  children
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -201,6 +231,30 @@ export default function Layout({
     NAV_GROUPS.forEach(g => g.items.forEach(i => { if (accessibleNavKeys.has(i.key)) items.push(i); }));
     return items;
   }, [accessibleNavKeys]);
+
+  useEffect(() => {
+    // #region agent log
+    fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
+      body: JSON.stringify({
+        sessionId: "9a9989",
+        runId: "crm-visibility-check",
+        hypothesisId: "H4",
+        location: "src/components/LayoutV2.jsx:visible-nav",
+        message: "Computed visible navigation",
+        data: {
+          role: String(admin?.role || ""),
+          active,
+          navKeys: allNavItems.map((i) => i.key),
+          hasSecurityNav: allNavItems.some((i) => i.key === "security"),
+          hasThemeToggle: typeof onToggleTheme === "function",
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [admin?.role, active, allNavItems, onToggleTheme]);
 
   const onSelectAndClose = useCallback((key) => {
     onSelect(key);
@@ -243,7 +297,7 @@ export default function Layout({
         <div className="flex items-center justify-between p-4 mb-1">
           {!collapsed && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 select-none">
-              <img src="/logo-dark.png" alt="OceanBazar" className="h-11 w-auto object-contain drop-shadow-md" />
+              <img src="/ob-brand-logo.png?v=5" alt="OceanBazar" className="h-12 w-auto object-contain drop-shadow-md" />
               <span className="text-[9px] font-semibold text-crm-text-muted align-top">CRM</span>
             </motion.div>
           )}
@@ -276,8 +330,10 @@ export default function Layout({
                     {!collapsed && (
                       <>
                         <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
-                        {badgeVal > 0 && !isActive && (
-                          <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-crm-danger px-1.5 text-[10px] font-bold text-white">{badgeVal > 99 ? "99+" : badgeVal}</span>
+                        {badgeVal > 0 && (
+                          <span className={`flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${isActive ? "bg-white/20 text-white" : "bg-crm-danger text-white"}`}>
+                            {badgeVal > 99 ? "99+" : badgeVal}
+                          </span>
                         )}
                       </>
                     )}
@@ -296,9 +352,7 @@ export default function Layout({
 
         <div className="p-3 border-t border-crm-border mt-auto">
           <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-crm-primary to-purple-500 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-md">
-              {admin?.name?.charAt(0)?.toUpperCase() || "A"}
-            </div>
+            <AdminProfileAvatar admin={admin} collapsed={collapsed} onUpdated={onAdminUpdate} />
             {!collapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate text-crm-text-bright">{admin?.name}</p>
@@ -323,7 +377,7 @@ export default function Layout({
               className="fixed left-0 top-0 bottom-0 w-[280px] z-50 lg:hidden bg-crm-bg-alt border-r border-crm-border flex flex-col overflow-y-auto"
             >
               <div className="flex items-center justify-between p-4">
-                <img src="/logo-dark.png" alt="OceanBazar" className="h-10 w-auto object-contain drop-shadow-md" />
+                <img src="/ob-brand-logo.png?v=5" alt="OceanBazar" className="h-11 w-auto object-contain drop-shadow-md" />
                 <button onClick={() => setMobileNavOpen(false)} className="p-1.5 text-crm-text-dim hover:text-crm-text-bright"><FiX size={20} /></button>
               </div>
               <nav className="flex-1 px-3 space-y-5 overflow-y-auto pb-4">
@@ -342,7 +396,7 @@ export default function Layout({
               </nav>
               <div className="p-4 border-t border-crm-border">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-crm-primary to-purple-500 flex items-center justify-center text-white font-bold text-xs shrink-0">{admin?.name?.charAt(0)?.toUpperCase() || "A"}</div>
+                  <AdminProfileAvatar admin={admin} onUpdated={onAdminUpdate} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate text-crm-text-bright">{admin?.name}</p>
                     <p className="text-[10px] text-crm-text-dim uppercase tracking-wider">{admin?.roleLabel || admin?.role}</p>
@@ -398,6 +452,31 @@ export default function Layout({
               {soundEnabled ? <FiVolume2 size={18} /> : <FiVolumeX size={18} />}
             </button>
 
+            <button
+              onClick={() => {
+                // #region agent log
+                fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
+                  body: JSON.stringify({
+                    sessionId: "9a9989",
+                    runId: "color-debug",
+                    hypothesisId: "H2",
+                    location: "src/components/LayoutV2.jsx:theme-toggle",
+                    message: "Theme toggle button clicked",
+                    data: { themeBefore: theme, hasHandler: typeof onToggleTheme === "function" },
+                    timestamp: Date.now(),
+                  }),
+                }).catch(() => {});
+                // #endregion
+                onToggleTheme?.();
+              }}
+              className="p-2 rounded-lg text-crm-text-dim hover:bg-crm-bg-hover transition-colors"
+              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === "dark" ? <FiSun size={18} /> : <FiMoon size={18} />}
+            </button>
+
             {/* Notification bell + dropdown */}
             <div className="relative" ref={notifRef}>
               <button onClick={() => setNotifOpen(o => !o)} className="p-2 rounded-lg text-crm-text-dim hover:bg-crm-bg-hover transition-colors relative">
@@ -412,10 +491,14 @@ export default function Layout({
             </div>
 
             {/* Connection status */}
-            <div className="hidden sm:flex flex-col items-end gap-0.5 ml-1">
+            <div className="hidden sm:flex flex-col items-end gap-0.5 ml-1" title={
+              connMeta
+                ? `SSE: ${connMeta.state}${connMeta.retries > 0 ? ` (retry ${connMeta.retries})` : ''} | WS: ${wsConnected ? 'connected' : 'disconnected'}`
+                : undefined
+            }>
               <div className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${liveConnected ? "bg-crm-success" : "bg-crm-warning animate-pulse"}`} />
-                <span className="text-[9px] font-semibold text-crm-text-dim uppercase tracking-tight">API</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${connMeta ? (CONN_STATE_DOT[connMeta.state] ?? 'bg-crm-text-muted') : liveConnected ? 'bg-crm-success' : 'bg-crm-warning animate-pulse'}`} />
+                <span className="text-[9px] font-semibold text-crm-text-dim uppercase tracking-tight">SSE</span>
               </div>
               <div className="flex items-center gap-1">
                 <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? "bg-crm-success" : "bg-crm-danger animate-pulse"}`} />

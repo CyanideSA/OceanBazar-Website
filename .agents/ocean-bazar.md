@@ -1,0 +1,10 @@
+# OceanBazar Product Marketing Context
+## Business Model
+- **What we do:** We import genuine, authentic international brands like skincare, beauty, health, and personal care products directly from manufacturers, bulk catalogs like amazon, no seller, only sold by oceanbazar, both for retail and wholesale customer. Has OB POINTS loyalty program system, different pricing criteria. Storefront and admin crm both are wired together and has all facilities across all over meta, microsoft, whatsapp, facebook, courier services like pathao, steadfast, redx, paperfly etc, payment gateway service like sslcommerz for payment access through bkash, nagad, rocket, upay, debit card, credit card, multiple banks. Customer also have otp verification system through email or authenticator app, phone call or sms or whatsapp. Can contact with oceanbazar team directly on whatsapp or on website support chat (preferred). Have flash sales on oceanbazar system which includes all category of product and stays limited time.
+- **Distribution:** We ship and distribute all products all over Bangladesh. Have free shipping opportunity all over dhaka city and with delivery fee across bangladesh outside dhaka and naryanganj.
+## Brand Identity & Voice
+- **Tone:** Premium, sophisticated, clean, authentic, and trustworthy.
+- **Style:** Minimal luxury. We do not use loud, spammy, or cheap sales slogans. We focus on international connectivity and certified product authenticity.
+## Target Audience
+- Skincare enthusiasts and beauty consumers in Bangladesh. Also an target system based on audience level of Amazon with all categories of products founded in bangladesh.
+- Customers who are deeply concerned about counterfeit cosmetics and are willing to pay for guaranteed authentic, high-quality International products  (e.g., Cetaphil, MAC, etc.). And other categories as well.

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { adminApi } from "../../lib/api";
 import { useCatalogStore } from "../../stores/catalogStore";
 import {
@@ -26,6 +26,9 @@ function ModalWrapper({ title, icon, onClose, children }) {
 export function CreateCategoryModal({ data, onClose, onSuccess }) {
   const [nameEn, setNameEn] = useState("");
   const [nameBn, setNameBn] = useState("");
+  const [icon, setIcon] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,7 +37,13 @@ export function CreateCategoryModal({ data, onClose, onSuccess }) {
     if (!nameEn.trim()) { setError("Name is required"); return; }
     setLoading(true); setError("");
     try {
-      await adminApi.createCategory({ name: nameEn.trim(), nameBn: nameBn.trim() || nameEn.trim(), parentId: data?.parentId || null });
+      await adminApi.createCategory({
+        nameEn: nameEn.trim(),
+        nameBn: nameBn.trim() || nameEn.trim(),
+        parentId: data?.parentId || null,
+        icon: icon.trim() || null,
+        imageUrl: imageUrl.trim() || null,
+      });
       onSuccess(); onClose();
     } catch (err) { setError(err?.response?.data?.message || "Failed to create category"); }
     finally { setLoading(false); }
@@ -51,6 +60,40 @@ export function CreateCategoryModal({ data, onClose, onSuccess }) {
         <div className="form-group">
           <span className="form-label">Name (বাংলা)</span>
           <input className="form-input" value={nameBn} onChange={(e) => setNameBn(e.target.value)} placeholder="e.g. ইলেকট্রনিক্স" />
+        </div>
+        <div className="form-group">
+          <span className="form-label">Label — emoji icon</span>
+          <input className="form-input" value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="e.g. 📱 (optional)" />
+        </div>
+        <div className="form-group">
+          <span className="form-label">Label — custom image</span>
+          <div className="flex items-center gap-2">
+            <label className="btn-ghost cursor-pointer text-xs">
+              <IconImage size={12} /> {imageUploading ? "Uploading…" : imageUrl ? "Change image" : "Upload image"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={imageUploading}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setImageUploading(true);
+                  try {
+                    const r = await adminApi.uploadMedia(file, "categories/labels");
+                    setImageUrl(r.secureUrl || r.url || "");
+                    setIcon("");
+                  } catch {
+                    setError("Image upload failed");
+                  } finally {
+                    setImageUploading(false);
+                    e.target.value = "";
+                  }
+                }}
+              />
+            </label>
+            {imageUrl && <img src={imageUrl} alt="" className="h-10 w-10 rounded object-cover border border-gray-600" />}
+          </div>
         </div>
         <div className="form-actions">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
@@ -338,43 +381,86 @@ export function BulkUploadModal({ onClose, onSuccess }) {
 }
 
 // ─── Banner Manager Modal ─────────────────────────────────────
+const PLACEMENT_MAP = { hero: "ALL", sidebar: "ALL", grid: "ALL" };
+
 export function BannerManagerModal({ data, onClose, onSuccess }) {
   const [activeTab, setActiveTab] = useState("current");
   const [loading, setLoading] = useState(false);
-  const [banners, setBanners] = useState([
-    { id: 1, imageUrl: "https://via.placeholder.com/800x200", type: "Hero", active: true },
-    { id: 2, imageUrl: "https://via.placeholder.com/400x150", type: "Sidebar", active: false },
-  ]);
-  const [newBanner, setNewBanner] = useState({ file: null, type: "hero", weight: 5 });
+  const [fetching, setFetching] = useState(true);
+  const [banners, setBanners] = useState([]);
+  const [newBanner, setNewBanner] = useState({ file: null, type: "hero", weight: 5, title: "" });
   const [error, setError] = useState("");
+
+  const scope = data?.type === "product"
+    ? { productId: data?.node?.id }
+    : { categoryId: data?.node?.id };
+
+  const loadBanners = useCallback(async () => {
+    setFetching(true);
+    try {
+      const res = await adminApi.banners(scope);
+      const rows = Array.isArray(res) ? res : res?.banners || [];
+      setBanners(rows);
+    } catch {
+      setBanners([]);
+    } finally {
+      setFetching(false);
+    }
+  }, [scope.productId, scope.categoryId]);
+
+  useEffect(() => { loadBanners(); }, [loadBanners]);
 
   const handleUpload = async () => {
     if (!newBanner.file) { setError("Select an image first"); return; }
+    if (!scope.productId && !scope.categoryId) { setError("No product or category selected"); return; }
     setLoading(true); setError("");
     try {
-      // Mock upload
-      setTimeout(() => {
-        setBanners(prev => [...prev, { 
-          id: Date.now(), 
-          imageUrl: URL.createObjectURL(newBanner.file), 
-          type: newBanner.type, 
-          active: true 
-        }]);
-        setNewBanner({ file: null, type: "hero", weight: 5 });
-        setActiveTab("current");
-        setLoading(false);
-        onSuccess?.();
-      }, 1000);
-    } catch (err) { setError("Upload failed"); setLoading(false); }
+      const uploaded = await adminApi.uploadMedia(newBanner.file, "banners");
+      const imageUrl = uploaded?.url || uploaded?.secure_url;
+      if (!imageUrl) throw new Error("Upload did not return a URL");
+      await adminApi.createBanner({
+        ...scope,
+        imageUrl,
+        title: newBanner.title || undefined,
+        placement: PLACEMENT_MAP[newBanner.type] || "ALL",
+        sortOrder: Number(newBanner.weight) || 0,
+        enabled: true,
+      });
+      setNewBanner({ file: null, type: "hero", weight: 5, title: "" });
+      setActiveTab("current");
+      await loadBanners();
+      onSuccess?.();
+    } catch (err) {
+      setError(err?.response?.data?.error || err?.message || "Upload failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const deleteBanner = (id) => {
-    setBanners(prev => prev.filter(b => b.id !== id));
+  const deleteBanner = async (id) => {
+    try {
+      await adminApi.deleteBanner(id);
+      setBanners((prev) => prev.filter((b) => b.id !== id));
+      onSuccess?.();
+    } catch (err) {
+      setError(err?.response?.data?.error || "Delete failed");
+    }
+  };
+
+  const toggleBanner = async (banner) => {
+    try {
+      const updated = await adminApi.updateBanner(banner.id, { enabled: !banner.enabled });
+      const row = updated?.banner || updated;
+      setBanners((prev) => prev.map((b) => (b.id === banner.id ? { ...b, enabled: row.enabled } : b)));
+    } catch (err) {
+      setError(err?.response?.data?.error || "Update failed");
+    }
   };
 
   return (
-    <ModalWrapper title={`Manage Banners — ${data?.node?.nameEn || data?.node?.titleEn}`} icon={<IconBanner size={14} color="#39c5cf" />} onClose={onClose}>
+    <ModalWrapper title={`Manage Banners — ${data?.node?.nameEn || data?.node?.titleEn || "Catalog"}`} icon={<IconBanner size={14} color="#39c5cf" />} onClose={onClose}>
       <div className="banner-manager">
+        {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
         <div className="tab-nav" style={{ display: "flex", gap: 10, marginBottom: 16, borderBottom: "1px solid var(--crm-border)" }}>
           <button onClick={() => setActiveTab("current")} className={`tab-btn ${activeTab === "current" ? "active" : ""}`} style={{ padding: "8px 12px", background: "none", border: "none", borderBottom: activeTab === "current" ? "2px solid var(--crm-primary)" : "none", color: activeTab === "current" ? "var(--crm-text-bright)" : "var(--crm-text-dim)", cursor: "pointer" }}>Current Banners</button>
           <button onClick={() => setActiveTab("upload")} className={`tab-btn ${activeTab === "upload" ? "active" : ""}`} style={{ padding: "8px 12px", background: "none", border: "none", borderBottom: activeTab === "upload" ? "2px solid var(--crm-primary)" : "none", color: activeTab === "upload" ? "var(--crm-text-bright)" : "var(--crm-text-dim)", cursor: "pointer" }}>Upload New</button>
@@ -382,18 +468,25 @@ export function BannerManagerModal({ data, onClose, onSuccess }) {
 
         {activeTab === "current" ? (
           <div className="banners-grid" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, maxHeight: 400, overflowY: "auto", paddingRight: 4 }}>
-            {banners.length === 0 ? (
+            {fetching ? (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--crm-text-dim)" }}>Loading banners…</div>
+            ) : banners.length === 0 ? (
               <div style={{ padding: 40, textAlign: "center", color: "var(--crm-text-dim)" }}>No banners assigned yet</div>
             ) : (
-              banners.map(b => (
+              banners.map((b) => (
                 <div key={b.id} className="banner-card" style={{ border: "1px solid var(--crm-border)", borderRadius: 8, overflow: "hidden", position: "relative" }}>
-                  <img src={b.imageUrl} alt="Banner" style={{ width: "100%", height: 100, objectFit: "cover" }} />
+                  <img src={b.imageUrl} alt={b.title || "Banner"} style={{ width: "100%", height: 100, objectFit: "cover" }} />
                   <div style={{ padding: 8, display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--crm-bg-alt)" }}>
                     <div className="flex items-center gap-2">
-                      <span className="crm-badge">{b.type}</span>
-                      {b.active && <span className="crm-badge crm-badge-success">Active</span>}
+                      <span className="crm-badge">{b.placement || "ALL"}</span>
+                      {b.enabled !== false ? <span className="crm-badge crm-badge-success">Active</span> : <span className="crm-badge">Disabled</span>}
                     </div>
-                    <button onClick={() => deleteBanner(b.id)} className="text-crm-danger hover:underline text-xs">Delete</button>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => toggleBanner(b)} className="text-crm-primary hover:underline text-xs">
+                        {b.enabled !== false ? "Disable" : "Enable"}
+                      </button>
+                      <button type="button" onClick={() => deleteBanner(b.id)} className="text-crm-danger hover:underline text-xs">Delete</button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -401,26 +494,29 @@ export function BannerManagerModal({ data, onClose, onSuccess }) {
           </div>
         ) : (
           <div className="modal-form">
-            {error && <div className="form-error">{error}</div>}
             <div className="form-group">
               <span className="form-label">Banner Image</span>
-              <input type="file" className="form-input" accept="image/*" onChange={(e) => setNewBanner(prev => ({ ...prev, file: e.target.files[0] }))} />
+              <input type="file" className="form-input" accept="image/*" onChange={(e) => setNewBanner((prev) => ({ ...prev, file: e.target.files?.[0] || null }))} />
+            </div>
+            <div className="form-group">
+              <span className="form-label">Title (optional)</span>
+              <input type="text" className="form-input" value={newBanner.title} onChange={(e) => setNewBanner((prev) => ({ ...prev, title: e.target.value }))} />
             </div>
             <div className="form-group">
               <span className="form-label">Display Slot</span>
-              <select className="form-select" value={newBanner.type} onChange={(e) => setNewBanner(prev => ({ ...prev, type: e.target.value }))}>
+              <select className="form-select" value={newBanner.type} onChange={(e) => setNewBanner((prev) => ({ ...prev, type: e.target.value }))}>
                 <option value="hero">Hero Banner (Full Width)</option>
                 <option value="sidebar">Sidebar (Vertical)</option>
                 <option value="grid">Grid In-fill (Square)</option>
               </select>
             </div>
             <div className="form-group">
-              <span className="form-label">Random Weight (1-10)</span>
-              <input type="number" className="form-input" min="1" max="10" value={newBanner.weight} onChange={(e) => setNewBanner(prev => ({ ...prev, weight: e.target.value }))} />
+              <span className="form-label">Sort Order (0–10)</span>
+              <input type="number" className="form-input" min="0" max="10" value={newBanner.weight} onChange={(e) => setNewBanner((prev) => ({ ...prev, weight: e.target.value }))} />
             </div>
             <div className="form-actions">
               <button type="button" onClick={() => setActiveTab("current")} className="btn-ghost">Cancel</button>
-              <button onClick={handleUpload} className="btn-primary" disabled={loading || !newBanner.file}>
+              <button type="button" onClick={handleUpload} className="btn-primary" disabled={loading || !newBanner.file}>
                 <IconImage size={12} />{loading ? "Uploading…" : "Upload & Assign"}
               </button>
             </div>

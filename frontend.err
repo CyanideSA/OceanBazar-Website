@@ -1,25 +1,8 @@
 
-The `locale` parameter in `getRequestConfig` is deprecated, please switch to `await requestLocale`. See https://next-intl.dev/blog/next-intl-3-22#await-request-locale
-
-
-A `locale` is expected to be returned from `getRequestConfig`, but none was returned. This will be an error in the next major version of next-intl.
-
-See: https://next-intl.dev/blog/next-intl-3-22#await-request-locale
-
- ⨯ Error: Cannot find module './favicon.ico.json'
-    at C:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website\frontend\.next\server\app\[locale]\(shop)\page.js:34:12
-    at async eval (./i18n/request.ts:8:20)
-    at async Module.generateMetadata (page.tsx:14:15)
-digest: "22975340"
-
 [1m[33mwarn[39m[22m - The class `duration-[900ms]` is ambiguous and matches multiple utilities.
 [1m[33mwarn[39m[22m - If this is content and not a class, replace it with `duration-&lsqb;900ms&rsqb;` to silence this warning.
 
 [1m[33mwarn[39m[22m - The class `ease-[cubic-bezier(0.33,1,0.68,1)]` is ambiguous and matches multiple utilities.
 [1m[33mwarn[39m[22m - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.33,1,0.68,1)&rsqb;` to silence this warning.
-
-[1m[33mwarn[39m[22m - The class `duration-[900ms]` is ambiguous and matches multiple utilities.
-[1m[33mwarn[39m[22m - If this is content and not a class, replace it with `duration-&lsqb;900ms&rsqb;` to silence this warning.
-
-[1m[33mwarn[39m[22m - The class `ease-[cubic-bezier(0.33,1,0.68,1)]` is ambiguous and matches multiple utilities.
-[1m[33mwarn[39m[22m - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.33,1,0.68,1)&rsqb;` to silence this warning.
+ ⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins

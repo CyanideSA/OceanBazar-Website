@@ -10,6 +10,7 @@ import { returnService } from "../services/returnService";
 import { useToast } from "../components/ToastProvider";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
+import useStepUpReauth from "../hooks/useStepUpReauth";
 
 const STATUS_MAP = {
   pending: { label: "Pending", class: "crm-badge-warning" },
@@ -22,6 +23,7 @@ const STATUS_MAP = {
 };
 
 export default function ReturnsPage({ returnsInboundRef, returnLiveTick = 0, wsConnected = false }) {
+  const { requestToken, modal: reauthModal } = useStepUpReauth();
   const toast = useToast();
   const adminRole = useMemo(() => String(getAdminUser()?.role || "STAFF").toUpperCase(), []);
   const canRefund = hasPermission(adminRole, "returns", "refund");
@@ -32,6 +34,8 @@ export default function ReturnsPage({ returnsInboundRef, returnLiveTick = 0, wsC
   const [statusFilter, setStatusFilter] = useState("");
   const [detailId, setDetailId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [actionNote, setActionNote] = useState("");
+  const [acting, setActing] = useState(false);
 
   const fetchReturns = useCallback(async () => {
     setLoading(true);
@@ -59,6 +63,84 @@ export default function ReturnsPage({ returnsInboundRef, returnLiveTick = 0, wsC
     );
   }, [returns, search]);
 
+  const downloadCSV = (filename, headers, rows) => {
+    const csv = [headers, ...rows]
+      .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${filename}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
+  const exportLogs = () => {
+    downloadCSV('returns-log',
+      ['Return ID', 'Order ID', 'Status', 'Reason', 'Refund Amount (BDT)', 'Created'],
+      filteredReturns.map(r => [
+        r.id,
+        r.orderId || r.order_id || 'N/A',
+        r.status,
+        r.reasonCategory || r.reason || '',
+        Number(r.refundAmount || 0).toFixed(2),
+        r.createdAt ? format(new Date(r.createdAt), 'yyyy-MM-dd') : '',
+      ])
+    );
+    toast.success(`Exported ${filteredReturns.length} return logs`);
+  };
+
+  const openDetail = async (ret) => {
+    setDetailId(ret.id);
+    setDetail(ret);
+    setActionNote("");
+    try {
+      const full = await returnService.getById(ret.id);
+      setDetail(full);
+    } catch {
+      /* keep list row data */
+    }
+  };
+
+  const updateReturnStatus = async (status) => {
+    if (!detail?.id) return;
+    setActing(true);
+    try {
+      const updated = await returnService.updateStatus(detail.id, status, actionNote.trim() || undefined);
+      toast.success(`Return ${status}`);
+      setDetail(updated);
+      setDetailId(null);
+      fetchReturns();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to update return");
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!detail?.id) return;
+    setActing(true);
+    try {
+      const reauthToken = await requestToken();
+      const updated = await returnService.processRefund(
+        detail.id,
+        Number(detail.refundAmount || 0),
+        "original_payment",
+        actionNote.trim() || undefined,
+        reauthToken
+      );
+      toast.success("Refund processed");
+      setDetail(updated);
+      setDetailId(null);
+      fetchReturns();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Refund failed");
+    } finally {
+      setActing(false);
+    }
+  };
+
   const getStatusBadge = (status) => {
     const s = (status || "pending").toLowerCase();
     const config = STATUS_MAP[s] || STATUS_MAP.closed;
@@ -73,7 +155,7 @@ export default function ReturnsPage({ returnsInboundRef, returnLiveTick = 0, wsC
           <p className="text-crm-text-dim text-sm">Manage product returns and refund processing</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="crm-btn">
+          <button className="crm-btn" onClick={exportLogs}>
             <FiDownload /> Export Logs
           </button>
         </div>
@@ -186,7 +268,7 @@ export default function ReturnsPage({ returnsInboundRef, returnLiveTick = 0, wsC
                     </td>
                     <td>
                       <button 
-                        onClick={() => { setDetail(ret); setDetailId(ret.id); }}
+                        onClick={() => openDetail(ret)}
                         className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-primary transition-colors"
                       >
                         <FiArrowRight size={16} />
@@ -288,13 +370,40 @@ export default function ReturnsPage({ returnsInboundRef, returnLiveTick = 0, wsC
 
                   <div className="pt-8 border-t border-crm-border space-y-4">
                     <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Administrative Actions</h4>
-                    {detail.status === "pending" ? (
+                    <textarea
+                      className="crm-input min-h-[80px] bg-crm-bg"
+                      placeholder="Optional note for this action…"
+                      value={actionNote}
+                      onChange={(e) => setActionNote(e.target.value)}
+                    />
+                    {(detail.status || "pending").toLowerCase() === "pending" ? (
                       <div className="flex flex-wrap gap-2">
-                        <button className="crm-btn crm-btn-primary flex-1 py-2">Approve Return</button>
-                        <button className="crm-btn border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex-1 py-2">Reject Request</button>
+                        <button
+                          type="button"
+                          disabled={acting}
+                          onClick={() => updateReturnStatus("approved")}
+                          className="crm-btn crm-btn-primary flex-1 py-2"
+                        >
+                          Approve Return
+                        </button>
+                        <button
+                          type="button"
+                          disabled={acting}
+                          onClick={() => updateReturnStatus("rejected")}
+                          className="crm-btn border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex-1 py-2"
+                        >
+                          Reject Request
+                        </button>
                       </div>
                     ) : detail.status === "approved" && canRefund ? (
-                      <button className="crm-btn crm-btn-primary w-full py-2"><FiDollarSign /> Process Refund</button>
+                      <button
+                        type="button"
+                        disabled={acting}
+                        onClick={handleRefund}
+                        className="crm-btn crm-btn-primary w-full py-2"
+                      >
+                        <FiDollarSign /> Process Refund
+                      </button>
                     ) : (
                       <div className="p-4 rounded-lg bg-crm-bg flex items-center gap-3 text-crm-text-dim border border-crm-border">
                         <FiInfo />
@@ -308,6 +417,7 @@ export default function ReturnsPage({ returnsInboundRef, returnLiveTick = 0, wsC
           </>
         )}
       </AnimatePresence>
+      {reauthModal}
     </div>
   );
 }

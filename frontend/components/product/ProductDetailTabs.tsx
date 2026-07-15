@@ -2,16 +2,16 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { ChevronDown, Star, ThumbsUp, Send, Tag } from 'lucide-react';
+import { ChevronDown, Star, ThumbsUp, Send, Tag, MessageCircleQuestion, Filter, SortAsc } from 'lucide-react';
 import Image from 'next/image';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ProductDetail, ProductReviewItem } from '@/types';
 import ProductStarRating from './ProductStarRating';
-import { reviewsApi } from '@/lib/api';
+import { reviewsApi, qaApi } from '@/lib/api';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { cn } from '@/lib/utils';
 
-type Tab = 'description' | 'specs' | 'attributes' | 'tags' | 'reviews';
+type Tab = 'description' | 'specs' | 'attributes' | 'tags' | 'reviews' | 'qa';
 
 interface Props {
   product: ProductDetail;
@@ -55,14 +55,48 @@ export default function ProductDetailTabs({ product, tab, onTab, reviews }: Prop
   const [rating, setRating]     = useState(0);
   const [reviewTitle, setReviewTitle] = useState('');
   const [reviewBody, setReviewBody]   = useState('');
+  const [reviewLang, setReviewLang]   = useState<'en' | 'bn'>('en');
   const [submitted, setSubmitted]     = useState(false);
   const [submitErr, setSubmitErr]     = useState('');
+  /* Review sort/filter */
+  const [reviewSort, setReviewSort] = useState<'newest' | 'helpful' | 'highest' | 'lowest'>('newest');
+  const [reviewRating, setReviewRating] = useState<number>(0);
+  /* Q&A state */
+  const [qaQuestion, setQaQuestion] = useState('');
+  const [qaName, setQaName] = useState('');
+  const [qaEmail, setQaEmail] = useState('');
+  const [qaSubmitted, setQaSubmitted] = useState(false);
+  const [qaErr, setQaErr] = useState('');
 
   const submitMutation = useMutation({
     mutationFn: () =>
-      reviewsApi.submit({ productId: product.id, rating, title: reviewTitle, body: reviewBody }),
+      reviewsApi.submit({ productId: product.id, rating, title: reviewTitle, body: reviewBody, lang: reviewLang }),
     onSuccess: () => { setSubmitted(true); setSubmitErr(''); },
     onError: (err: any) => setSubmitErr(err?.response?.data?.message ?? t('reviewSubmitError')),
+  });
+
+  /* Filtered/sorted reviews */
+  const { data: filteredReviewsData } = useQuery({
+    queryKey: ['reviews', product.id, reviewSort, reviewRating],
+    queryFn: () => reviewsApi.product(product.id, { sort: reviewSort, rating: reviewRating || undefined }).then((r) => r.data),
+    enabled: tab === 'reviews',
+    staleTime: 60_000,
+  });
+  const displayReviews: ProductReviewItem[] = filteredReviewsData?.reviews ?? reviews;
+
+  /* Q&A data */
+  const { data: qaData, refetch: refetchQa } = useQuery({
+    queryKey: ['qa', product.id],
+    queryFn: () => qaApi.list(product.id).then((r) => r.data),
+    enabled: tab === 'qa',
+    staleTime: 120_000,
+  });
+  const qaItems: Array<{ id: string; question: string; answer?: string; asker_name?: string; asked_at: string; answered_at?: string }> = qaData?.qa ?? [];
+
+  const qaSubmitMutation = useMutation({
+    mutationFn: () => qaApi.ask(product.id, { question: qaQuestion, askerName: qaName || undefined, askerEmail: qaEmail || undefined }),
+    onSuccess: () => { setQaSubmitted(true); setQaErr(''); setQaQuestion(''); setQaName(''); setQaEmail(''); refetchQa(); },
+    onError: (err: any) => setQaErr(err?.response?.data?.error ?? 'Failed to submit question'),
   });
 
   const togglePanel = (id: Tab) => {
@@ -92,6 +126,7 @@ export default function ProductDetailTabs({ product, tab, onTab, reviews }: Prop
     { id: 'attributes',  label: t('tabAttributes'), count: attrEntries.length || undefined },
     { id: 'tags',        label: t('tabTags'),       count: (product.tags?.length) || undefined },
     { id: 'reviews',     label: t('tabReviews'),    count: (product.ratingCount ?? product.reviewCount ?? 0) || undefined },
+    { id: 'qa',          label: 'Q&A' },
   ];
 
   function SpecTable({ entries, emptyKey }: { entries: [string,string][]; emptyKey: string }) {
@@ -131,9 +166,9 @@ export default function ProductDetailTabs({ product, tab, onTab, reviews }: Prop
               )}
             </div>
           )}
-          <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground">
+          <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-3 [&_a]:text-primary [&_a]:underline">
             {product.description ? (
-              <p className="whitespace-pre-wrap leading-relaxed">{product.description}</p>
+              <div dangerouslySetInnerHTML={{ __html: product.description }} />
             ) : (
               <p className="text-muted-foreground">{t('noDescription')}</p>
             )}
@@ -165,6 +200,70 @@ export default function ProductDetailTabs({ product, tab, onTab, reviews }: Prop
       );
     }
 
+    /* Q&A tab */
+    if (id === 'qa') {
+      return (
+        <div className="space-y-5">
+          <div className="flex items-center gap-2 mb-2">
+            <MessageCircleQuestion className="h-5 w-5 text-primary" />
+            <h3 className="font-semibold text-foreground">Customer Questions &amp; Answers</h3>
+          </div>
+          {qaItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No questions yet. Be the first to ask!</p>
+          ) : (
+            <ul className="space-y-3">
+              {qaItems.map((q) => (
+                <li key={q.id} className="rounded-xl border border-border p-4">
+                  <p className="text-sm font-semibold text-foreground mb-1">
+                    Q: {q.question}
+                  </p>
+                  {q.answer ? (
+                    <p className="text-sm text-muted-foreground">A: {q.answer}</p>
+                  ) : (
+                    <p className="text-xs italic text-muted-foreground">Awaiting answer from OceanBazar</p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Asked by {q.asker_name || 'Customer'} · {new Date(q.asked_at).toLocaleDateString()}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!qaSubmitted ? (
+            <div className="rounded-xl border border-border bg-muted/20 p-4">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Ask a Question</h4>
+              <div className="space-y-2">
+                <input
+                  type="text" placeholder="Your name (optional)" value={qaName}
+                  onChange={(e) => setQaName(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <input
+                  type="email" placeholder="Your email (optional)" value={qaEmail}
+                  onChange={(e) => setQaEmail(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <textarea rows={2} placeholder="What would you like to know about this product?"
+                  value={qaQuestion} onChange={(e) => setQaQuestion(e.target.value)}
+                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                {qaErr && <p className="text-xs text-destructive">{qaErr}</p>}
+                <button type="button"
+                  disabled={qaQuestion.trim().length < 5 || qaSubmitMutation.isPending}
+                  onClick={() => qaSubmitMutation.mutate()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+                  <Send className="h-4 w-4" />
+                  {qaSubmitMutation.isPending ? 'Submitting…' : 'Submit Question'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">✅ Question submitted! We'll answer it soon.</p>
+          )}
+        </div>
+      );
+    }
+
     /* Reviews tab */
     return (
       <div className="space-y-6">
@@ -179,12 +278,40 @@ export default function ProductDetailTabs({ product, tab, onTab, reviews }: Prop
           </span>
         </div>
 
+        {/* Sort + Filter controls */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            <SortAsc className="h-3.5 w-3.5" /> Sort:
+          </div>
+          {(['newest', 'helpful', 'highest', 'lowest'] as const).map((s) => (
+            <button key={s} type="button"
+              onClick={() => setReviewSort(s)}
+              className={cn('rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors border',
+                reviewSort === s ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-background text-muted-foreground hover:bg-muted'
+              )}>
+              {s === 'newest' ? 'Newest' : s === 'helpful' ? 'Most Helpful' : s === 'highest' ? '⭐ Highest' : '⭐ Lowest'}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Filter className="h-3.5 w-3.5" /> Rating:
+          </div>
+          {[0, 5, 4, 3, 2, 1].map((r) => (
+            <button key={r} type="button"
+              onClick={() => setReviewRating(r)}
+              className={cn('rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors border',
+                reviewRating === r ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-background text-muted-foreground hover:bg-muted'
+              )}>
+              {r === 0 ? 'All' : `${r}★`}
+            </button>
+          ))}
+        </div>
+
         {/* Review list */}
-        {reviews.length === 0 ? (
+        {displayReviews.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('noReviews')}</p>
         ) : (
           <ul className="space-y-3">
-            {reviews.map((r, i) => (
+            {displayReviews.map((r, i) => (
               <li key={i} className="rounded-xl border border-border p-4">
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -225,16 +352,38 @@ export default function ProductDetailTabs({ product, tab, onTab, reviews }: Prop
               className="space-y-3"
             >
               <StarPicker value={rating} onChange={setRating} />
+              {/* Language selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Write in:</span>
+                {(['en', 'bn'] as const).map((lang) => (
+                  <button
+                    key={lang}
+                    type="button"
+                    onClick={() => setReviewLang(lang)}
+                    className={cn(
+                      'rounded-lg px-3 py-1 text-xs font-semibold transition-colors',
+                      reviewLang === lang
+                        ? 'bg-primary text-primary-foreground'
+                        : 'border border-border bg-background text-muted-foreground hover:bg-muted'
+                    )}
+                  >
+                    {lang === 'en' ? '🇬🇧 English' : '🇧🇩 বাংলা'}
+                  </button>
+                ))}
+              </div>
               <input
                 type="text"
-                placeholder={t('reviewTitlePlaceholder')}
+                placeholder={reviewLang === 'bn' ? 'শিরোনাম (ঐচ্ছিক)' : t('reviewTitlePlaceholder')}
                 value={reviewTitle}
                 onChange={(e) => setReviewTitle(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                className={cn(
+                  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40',
+                  reviewLang === 'bn' && 'font-[Noto_Serif_Bengali,sans-serif]'
+                )}
               />
               <textarea
                 rows={3}
-                placeholder={t('reviewBodyPlaceholder')}
+                placeholder={reviewLang === 'bn' ? 'আপনার মতামত লিখুন...' : t('reviewBodyPlaceholder')}
                 value={reviewBody}
                 onChange={(e) => setReviewBody(e.target.value)}
                 required

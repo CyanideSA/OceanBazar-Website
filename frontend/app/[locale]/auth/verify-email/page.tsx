@@ -14,7 +14,7 @@ export default function VerifyEmailPage() {
   const locale = params.locale as string;
   const router = useRouter();
 
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, updateUser } = useAuthStore();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,11 +34,12 @@ export default function VerifyEmailPage() {
     setLoading(true);
     setError('');
     try {
-      const { data } = await authApi.verifyOtp(user.email, otp);
-      const token = data.token || data.access;
-      const u = data.user;
-      if (u && token) {
-        setUser(u, token);
+      const { data } = await authApi.verifyOtp(user.email, otp, 'verify_email');
+      // verify_email returns { verified: true } — update local user state
+      if (data.verified) {
+        updateUser({ emailVerified: true } as any);
+      } else if (data.user && (data.token || data.access)) {
+        setUser(data.user, data.token || data.access);
       }
       setSuccess(true);
       setTimeout(() => router.push(`/${locale}`), 2000);

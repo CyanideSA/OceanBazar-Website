@@ -1,0 +1,97 @@
+# Sync static builds to Terraform-created buckets and invalidate CloudFront.
+# Requires: OIDC role from infra/terraform (enable_github_oidc + enable_github_static_deploy).
+#
+# Repo variables: ENABLE_STATIC_S3_DEPLOY = true, optional AWS_REGION
+# Secrets: AWS_ROLE_TO_ASSUME, S3_BUCKET_STOREFRONT, S3_BUCKET_ADMIN,
+#          CLOUDFRONT_STOREFRONT_ID, CLOUDFRONT_ADMIN_ID (copy from terraform output).
+name: Deploy static sites (S3 + CloudFront)
+
+on:
+  workflow_dispatch:
+    inputs:
+      maintenance_only:
+        description: "Deploy maintenance page only (all HTML → maintenance)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "admin-frontend-react/**"
+      - ".github/workflows/deploy-static-s3.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-southeast-1
+
+jobs:
+  storefront:
+    if: ${{ vars.ENABLE_STATIC_S3_DEPLOY == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+
+      - name: Build storefront (static export)
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_SITE_URL: https://oceanbazar.com.bd
+        run: |
+          npm ci
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.maintenance_only }}" = "true" ]; then
+            npm run build:s3:maintenance
+          else
+            npm run build:s3
+          fi
+
+      - name: Upload to S3
+        working-directory: frontend
+        run: aws s3 sync ./out "s3://${{ secrets.S3_BUCKET_STOREFRONT }}/" --delete
+
+      - name: Invalidate CloudFront
+        run: aws cloudfront create-invalidation --distribution-id "${{ secrets.CLOUDFRONT_STOREFRONT_ID }}" --paths "/*"
+
+  admin:
+    if: ${{ vars.ENABLE_STATIC_S3_DEPLOY == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: admin-frontend-react/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+
+      - name: Build admin (Vite)
+        working-directory: admin-frontend-react
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload to S3
+        working-directory: admin-frontend-react
+        run: aws s3 sync ./dist "s3://${{ secrets.S3_BUCKET_ADMIN }}/" --delete
+
+      - name: Invalidate CloudFront
+        run: aws cloudfront create-invalidation --distribution-id "${{ secrets.CLOUDFRONT_ADMIN_ID }}" --paths "/*"

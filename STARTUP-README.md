@@ -1,5 +1,21 @@
 # OceanBazar Quick Start Guide
 
+## No Docker? (Virtualization not detected)
+
+If Docker Desktop will not start, use the **native Windows** path instead of Docker:
+
+```powershell
+# Once (Admin PowerShell recommended):
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-native-windows.ps1
+
+# Then daily:
+npm run stack:start
+```
+
+Full details: **[NO-DOCKER-WINDOWS.md](./NO-DOCKER-WINDOWS.md)**
+
+---
+
 ## Fast Startup Scripts (Use These!)
 
 ### 1. Quick Start (Recommended for daily use)

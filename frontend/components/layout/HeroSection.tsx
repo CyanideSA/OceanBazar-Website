@@ -45,7 +45,7 @@ export default function HeroSection() {
   if (hasSlides) {
     const slide = slides[current];
     return (
-      <section className="relative isolate overflow-hidden bg-slate-900">
+      <section className="relative isolate overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-900">
         {/* Slide images */}
         {slides.map((s, i) => (
           <div
@@ -61,6 +61,7 @@ export default function HeroSection() {
               alt={s.title || `Banner ${i + 1}`}
               className="h-full w-full object-cover"
               loading={i === 0 ? 'eager' : 'lazy'}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
           </div>

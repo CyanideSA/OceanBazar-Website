@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { ChevronLeft, ChevronRight, Play } from 'lucide-react';
-import { getMediaUrl } from '@/lib/mediaUrl';
+import { cloudinaryVideoPosterUrl, getMediaUrl } from '@/lib/mediaUrl';
 import type { ProductImage } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -58,6 +58,7 @@ export default function ProductZoomGallery({ images, title, activeIndex, onSelec
   const current = images[activeIndex];
   const isVideo = current?.mediaType === 'video';
   const src = current?.url ? getMediaUrl(current.url) : '';
+  const activePoster = isVideo ? cloudinaryVideoPosterUrl(current?.url, { width: 1200, height: 1200, crop: 'fill' }) : '';
 
   /* Recalculate image bounding rect */
   const measureImg = useCallback(() => {
@@ -143,7 +144,7 @@ export default function ProductZoomGallery({ images, title, activeIndex, onSelec
         {!src ? (
           <div className="flex h-full w-full items-center justify-center text-6xl text-muted-foreground/30">📦</div>
         ) : isVideo ? (
-          <video src={src} controls className="h-full w-full object-cover" playsInline />
+          <video src={src} poster={activePoster || undefined} controls className="h-full w-full object-cover" playsInline />
         ) : (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -243,8 +244,20 @@ export default function ProductZoomGallery({ images, title, activeIndex, onSelec
                 )}
               >
                 {img.mediaType === 'video' ? (
-                  <div className="flex h-full w-full items-center justify-center bg-muted">
-                    <Play className="h-5 w-5 text-muted-foreground" />
+                  <div className="relative h-full w-full">
+                    {cloudinaryVideoPosterUrl(img.url, { width: 144, height: 144, crop: 'fill' }) ? (
+                      <Image
+                        src={cloudinaryVideoPosterUrl(img.url, { width: 144, height: 144, crop: 'fill' })}
+                        alt=""
+                        width={72}
+                        height={72}
+                        className="h-full w-full object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-muted" />
+                    )}
+                    <Play className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 text-white drop-shadow" />
                   </div>
                 ) : (
                   <Image src={u} alt="" width={64} height={64} className="h-full w-full object-cover" unoptimized={u.startsWith('http')} />

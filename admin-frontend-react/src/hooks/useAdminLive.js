@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { adminApi } from "../lib/api";
-import { getToken } from "../lib/auth";
+import { getAdminRealtimeToken, clearAdminRealtimeTokenCache } from "../lib/realtimeAuth";
+import { createConnectionFsm, CONN_EVENT, CONN_STATE } from "../lib/connectionFsm";
 
 const POLL_MS = 15000;
 const ES_BASE_DELAY_MS = 2000;
@@ -10,15 +11,29 @@ export default function useAdminLive(enabled = true) {
   const [snapshot, setSnapshot] = useState(null);
   const [connected, setConnected] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  const [connMeta, setConnMeta] = useState({ state: CONN_STATE.IDLE, retries: 0, totalConnections: 0 });
   const eventSourceRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const esAttemptRef = useRef(0);
+  const fsmRef = useRef(null);
 
   useEffect(() => {
     if (!enabled) return undefined;
 
     let mounted = true;
     let pollTimer = null;
+
+    const fsm = createConnectionFsm({
+      label: 'sse-live',
+      maxRetries: 8,
+      onStateChange: (_prev, next, ctx) => {
+        if (!mounted) return;
+        setConnected(next === CONN_STATE.CONNECTED);
+        setConnMeta({ state: next, retries: ctx.retries, totalConnections: ctx.totalConnections });
+      },
+    });
+    fsmRef.current = fsm;
+    fsm.send(CONN_EVENT.CONNECT_START);
 
     const clearReconnectTimer = () => {
       if (reconnectTimerRef.current) {
@@ -64,16 +79,23 @@ export default function useAdminLive(enabled = true) {
       clearReconnectTimer();
       const attempt = esAttemptRef.current;
       const delay = Math.min(ES_MAX_DELAY_MS, ES_BASE_DELAY_MS * 2 ** Math.min(attempt, 8));
+
+      // Advance FSM to RECONNECTING so retries are counted
+      fsm.send(CONN_EVENT.RETRY);
+
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
         if (!mounted) return;
-        openEventSource();
+        // Advance FSM to CONNECTING before the next open attempt
+        fsm.send(CONN_EVENT.CONNECT_START);
+        openEventSource(true);
       }, delay);
       esAttemptRef.current = attempt + 1;
     };
 
-    const openEventSource = () => {
-      const token = getToken();
+    const openEventSource = async (forceRefresh = false) => {
+      const token = await getAdminRealtimeToken(forceRefresh);
+      if (!mounted) return;
       if (!token) {
         startPolling();
         void pollSnapshot();
@@ -91,7 +113,7 @@ export default function useAdminLive(enabled = true) {
         es.onopen = () => {
           if (!mounted) return;
           esAttemptRef.current = 0;
-          setConnected(true);
+          fsm.send(CONN_EVENT.CONNECT_OK);
           stopPolling();
         };
 
@@ -112,32 +134,21 @@ export default function useAdminLive(enabled = true) {
          */
         es.onerror = () => {
           if (!mounted) return;
-          setConnected(false);
+          clearAdminRealtimeTokenCache();
+          fsm.send(CONN_EVENT.CONNECTION_LOST);
           closeEventSource();
           startPolling();
           scheduleEventSourceReconnect();
         };
       } catch {
         if (!mounted) return;
-        setConnected(false);
+        fsm.send(CONN_EVENT.CONNECT_FAIL);
         startPolling();
         scheduleEventSourceReconnect();
       }
     };
 
-    const token = getToken();
-    if (!token) {
-      startPolling();
-      void pollSnapshot();
-      return () => {
-        mounted = false;
-        stopPolling();
-        clearReconnectTimer();
-        closeEventSource();
-      };
-    }
-
-    openEventSource();
+    void openEventSource();
     void pollSnapshot();
 
     return () => {
@@ -148,12 +159,21 @@ export default function useAdminLive(enabled = true) {
     };
   }, [enabled]);
 
-  const counters = useMemo(() => snapshot?.counters || {}, [snapshot]);
+  const counters = useMemo(() => ({
+    orders:    snapshot?.totalOrders ?? 0,
+    customers: snapshot?.totalUsers ?? 0,
+    chats:     snapshot?.activeChats ?? 0,
+    messages:  snapshot?.activeChats ?? 0,
+    tickets:   snapshot?.openTickets ?? 0,
+    returns:   snapshot?.pendingReturns ?? 0,
+    revenue:   snapshot?.totalRevenue ?? 0,
+  }), [snapshot]);
 
   return {
     snapshot,
     counters,
     connected,
-    lastUpdatedAt
+    lastUpdatedAt,
+    connMeta,
   };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
@@ -22,6 +22,7 @@ type CollectionKey =
   | 'featured'
   | 'top-trending'
   | 'latest'
+  | 'best-rated'
   | 'best-seller'
   | 'most-sold'
   | 'beauty'
@@ -35,7 +36,8 @@ function getCollectionConfig(key: string): { titleKey: string; sort?: string } {
     case 'featured':     return { titleKey: 'featured' };
     case 'top-trending': return { titleKey: 'topTrending' };
     case 'latest':       return { titleKey: 'latest', sort: 'createdAt_desc' };
-    case 'best-seller':  return { titleKey: 'bestSeller' };
+    case 'best-rated':
+    case 'best-seller':  return { titleKey: 'bestRated' };
     case 'most-sold':    return { titleKey: 'mostSold' };
     case 'beauty':       return { titleKey: 'beauty' };
     case 'gadgets':      return { titleKey: 'gadgets' };
@@ -46,7 +48,7 @@ function getCollectionConfig(key: string): { titleKey: string; sort?: string } {
   }
 }
 
-export default function ProductCollectionPage() {
+function ProductCollectionPageInner() {
   const tc = useTranslations('common');
   const tp = useTranslations('product');
   const locale = useLocale();
@@ -183,5 +185,13 @@ export default function ProductCollectionPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProductCollectionPage() {
+  return (
+    <Suspense fallback={<ProductGridSkeleton />}>
+      <ProductCollectionPageInner />
+    </Suspense>
   );
 }

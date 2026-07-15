@@ -9,6 +9,7 @@ import {
   FiActivity, FiDownload, FiFilter, FiCalendar 
 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
+import { useToast } from "../components/ToastProvider";
 import { format, subDays, eachDayOfInterval } from "date-fns";
 
 const COLORS = ["#1f6feb", "#238636", "#d29922", "#da3633", "#8957e5", "#39c5cf"];
@@ -21,21 +22,36 @@ const TABS = [
   { id: "conversion", label: "Conversion", icon: FiActivity },
 ];
 
-export default function AnalyticsPage() {
+export default function AnalyticsPage({ liveTick = 0 }) {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState("sales");
   const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [data, setData] = useState({
     sales: [],
     categories: [],
     customers: [],
-    products: []
+    products: [],
+    funnel: {},
+    totalRevenue: 0,
+    totalOrders: 0,
+    totalUsers: 0,
   });
+  const [googleInsights, setGoogleInsights] = useState(null);
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await adminApi.salesAnalytics();
-      
+      const [salesRes, customerRes, topProductsRes, catRes, funnelRes, googleRes] = await Promise.all([
+        adminApi.salesAnalytics(),
+        adminApi.customerGrowth(),
+        adminApi.topProducts({ limit: 10 }),
+        adminApi.categoryRevenue(),
+        adminApi.orderFunnel(),
+        adminApi.googleAnalyticsInsights({ days: 7 }).catch(() => null),
+      ]);
+      setGoogleInsights(googleRes);
+
       const last30Days = eachDayOfInterval({
         start: subDays(new Date(), 29),
         end: new Date()
@@ -43,47 +59,89 @@ export default function AnalyticsPage() {
 
       const processedSales = last30Days.map(date => {
         const dateStr = format(date, "yyyy-MM-dd");
-        const found = (res?.daily || []).find(d => d.date === dateStr);
+        const found = (salesRes?.sales || []).find(d => d.date === dateStr);
         return {
           date: format(date, "MMM dd"),
-          revenue: found ? Number(found.total) : 0,
-          orders: found ? Number(found.count) : 0,
-          profit: found ? Number(found.total) * 0.2 : 0 // Mock profit
+          revenue: found ? Number(found.revenue) : 0,
+          orders: found ? Number(found.orders) : 0,
+          profit: found ? Number(found.revenue) * 0.2 : 0
         };
       });
 
+      const processedCustomers = last30Days.map(date => {
+        const dateStr = format(date, "yyyy-MM-dd");
+        const found = (customerRes?.growth || []).find(d => d.date === dateStr);
+        return {
+          date: format(date, "MMM dd"),
+          new: found ? Number(found.newUsers) : 0,
+          returning: 0
+        };
+      });
+
+      const processedProducts = (topProductsRes?.topProducts || []).map(tp => ({
+        name: tp.product?.titleEn || tp.productId,
+        sales: tp.totalSold || 0,
+        revenue: Number(tp.totalRevenue || 0),
+        stock: tp.product?.stock ?? 0,
+      }));
+
+      const rawCategories = catRes?.categories || [];
+      const processedCategories = rawCategories.length > 0
+        ? rawCategories
+        : [{ name: 'No orders yet', value: 1 }];
+
       setData({
         sales: processedSales,
-        categories: [
-          { name: "Electronics", value: 45000 },
-          { name: "Fashion", value: 32000 },
-          { name: "Home & Kitchen", value: 28000 },
-          { name: "Beauty", value: 15000 },
-          { name: "Sports", value: 12000 },
-        ],
-        customers: processedSales.map(s => ({
-          date: s.date,
-          new: Math.floor(Math.random() * 50) + 10,
-          returning: Math.floor(Math.random() * 30) + 5
-        })),
-        products: [
-          { name: "Gaming Mouse", sales: 120, revenue: 24000 },
-          { name: "Mechanical Keyboard", sales: 85, revenue: 42500 },
-          { name: "USB-C Hub", sales: 210, revenue: 10500 },
-          { name: "Wireless Headphones", sales: 64, revenue: 32000 },
-          { name: "Laptop Stand", sales: 45, revenue: 9000 },
-        ]
+        categories: processedCategories,
+        customers: processedCustomers,
+        products: processedProducts,
+        funnel: funnelRes?.funnel || {},
+        totalRevenue: salesRes?.totalRevenue || 0,
+        totalOrders: salesRes?.totalOrders || 0,
+        totalUsers: customerRes?.totalUsers || 0,
       });
     } catch (err) {
       console.error("Analytics fetch error:", err);
+      toast.error("Failed to load analytics data");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
+  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+
+  // Auto-refresh when live events arrive (orders/payments)
   useEffect(() => {
-    fetchAnalytics();
-  }, [fetchAnalytics]);
+    if (liveTick > 0) {
+      fetchAnalytics();
+      setLastRefreshed(new Date());
+    }
+  }, [liveTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const downloadCSV = (filename, headers, csvRows) => {
+    const csv = [headers, ...csvRows]
+      .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${filename}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
+  const exportAnalytics = () => {
+    const tabMap = {
+      sales:      { headers: ['Date', 'Revenue (BDT)', 'Orders', 'Profit (BDT)'], rows: data.sales.map(r => [r.date, r.revenue, r.orders, r.profit]) },
+      customers:  { headers: ['Date', 'New Customers', 'Returning'], rows: data.customers.map(r => [r.date, r.new, r.returning]) },
+      products:   { headers: ['Product', 'Units Sold', 'Revenue (BDT)'], rows: data.products.map(r => [r.name, r.sales, r.revenue]) },
+      categories: { headers: ['Category', 'Revenue (BDT)', 'Share (%)'], rows: data.categories.map(r => [r.name, r.value, r.percent ?? '']) },
+      conversion: { headers: ['Date', 'Revenue (BDT)', 'Orders', 'Profit (BDT)'], rows: data.sales.map(r => [r.date, r.revenue, r.orders, r.profit]) },
+    };
+    const { headers, rows } = tabMap[activeTab] || tabMap.sales;
+    downloadCSV(`analytics-${activeTab}`, headers, rows);
+    toast.success(`Analytics data exported`);
+  };
 
   const TabButton = ({ id, label, icon: Icon }) => (
     <button
@@ -110,8 +168,12 @@ export default function AnalyticsPage() {
           <button className="crm-btn">
             <FiCalendar /> Last 30 Days
           </button>
-          <button className="crm-btn">
+          <button className="crm-btn" onClick={exportAnalytics}>
             <FiDownload /> Export
+          </button>
+          <button className="crm-btn" onClick={() => { fetchAnalytics(); setLastRefreshed(new Date()); }} title="Refresh now">
+            <FiActivity size={14} className={loading ? 'animate-pulse' : ''} />
+            {lastRefreshed ? `Updated ${format(lastRefreshed, 'HH:mm:ss')}` : 'Refresh'}
           </button>
         </div>
       </div>
@@ -162,11 +224,11 @@ export default function AnalyticsPage() {
                   <div className="space-y-4">
                     <div className="crm-card bg-crm-bg-hover border-none">
                       <p className="text-xs text-crm-text-dim uppercase font-bold mb-1">Total Revenue</p>
-                      <p className="text-2xl font-bold text-crm-text-bright">৳{data.sales.reduce((a, b) => a + b.revenue, 0).toLocaleString()}</p>
+                      <p className="text-2xl font-bold text-crm-text-bright">৳{Number(data.totalRevenue || 0).toLocaleString()}</p>
                     </div>
                     <div className="crm-card bg-crm-bg-hover border-none">
-                      <p className="text-xs text-crm-text-dim uppercase font-bold mb-1">Total Profit (est)</p>
-                      <p className="text-2xl font-bold text-crm-success">৳{data.sales.reduce((a, b) => a + b.profit, 0).toLocaleString()}</p>
+                      <p className="text-xs text-crm-text-dim uppercase font-bold mb-1">Total Orders</p>
+                      <p className="text-2xl font-bold text-crm-success">{Number(data.totalOrders || 0).toLocaleString()}</p>
                     </div>
                     <div className="crm-card bg-crm-bg-hover border-none">
                       <p className="text-xs text-crm-text-dim uppercase font-bold mb-1">Avg. Order Value</p>
@@ -210,18 +272,18 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
                 <div className="crm-card bg-crm-bg border-none">
-                  <h3 className="font-bold text-crm-text-bright mb-6">Retention Rate</h3>
+                  <h3 className="font-bold text-crm-text-bright mb-6">Customer Overview</h3>
                   <div className="flex flex-col justify-center h-80 text-center">
-                    <div className="text-6xl font-bold text-crm-purple mb-2">72%</div>
-                    <p className="text-crm-text-dim">Customer retention rate this month</p>
+                    <div className="text-6xl font-bold text-crm-purple mb-2">{Number(data.totalUsers || 0).toLocaleString()}</div>
+                    <p className="text-crm-text-dim">Total registered customers</p>
                     <div className="mt-8 grid grid-cols-2 gap-4">
                       <div className="p-4 bg-crm-bg-hover rounded-lg">
-                        <p className="text-xs font-bold text-crm-text-dim uppercase">Churn Rate</p>
-                        <p className="text-xl font-bold text-crm-danger">5.2%</p>
+                        <p className="text-xs font-bold text-crm-text-dim uppercase">New (30d)</p>
+                        <p className="text-xl font-bold text-crm-success">{data.customers.reduce((s, d) => s + d.new, 0).toLocaleString()}</p>
                       </div>
                       <div className="p-4 bg-crm-bg-hover rounded-lg">
-                        <p className="text-xs font-bold text-crm-text-dim uppercase">LTV (Avg)</p>
-                        <p className="text-xl font-bold text-crm-success">৳12,450</p>
+                        <p className="text-xs font-bold text-crm-text-dim uppercase">Total Orders</p>
+                        <p className="text-xl font-bold text-crm-primary">{Number(data.totalOrders || 0).toLocaleString()}</p>
                       </div>
                     </div>
                   </div>
@@ -256,12 +318,14 @@ export default function AnalyticsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.products.map((p, i) => (
+                      {data.products.length === 0 ? (
+                        <tr><td colSpan="4" className="text-center py-8 text-crm-text-dim">No sales data yet</td></tr>
+                      ) : data.products.map((p, i) => (
                         <tr key={i}>
                           <td className="font-medium text-crm-text-bright">{p.name}</td>
-                          <td>{p.sales}</td>
-                          <td className="font-bold">৳{p.revenue.toLocaleString()}</td>
-                          <td><span className="crm-badge crm-badge-success">In Stock</span></td>
+                          <td>{p.sales.toLocaleString()}</td>
+                          <td className="font-bold">৳{Number(p.revenue).toLocaleString()}</td>
+                          <td><span className={`crm-badge ${p.stock > 0 ? 'crm-badge-success' : 'crm-badge-danger'}`}>{p.stock > 0 ? 'In Stock' : 'Out of Stock'}</span></td>
                         </tr>
                       ))}
                     </tbody>
@@ -309,30 +373,74 @@ export default function AnalyticsPage() {
             )}
 
             {activeTab === "conversion" && (
-              <div className="max-w-2xl mx-auto space-y-12">
-                <h3 className="font-bold text-crm-text-bright text-center mb-8">Sales Funnel</h3>
-                {[
-                  { label: "Website Visits", value: "45,200", percent: "100%", color: "bg-crm-primary" },
-                  { label: "Product Views", value: "12,400", percent: "27.4%", color: "bg-crm-purple" },
-                  { label: "Add to Cart", value: "3,120", percent: "6.9%", color: "bg-crm-cyan" },
-                  { label: "Checkout Start", value: "1,850", percent: "4.1%", color: "bg-crm-warning" },
-                  { label: "Successful Orders", value: "1,482", percent: "3.2%", color: "bg-crm-success" },
-                ].map((step, i) => (
-                  <div key={i} className="relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-bold text-crm-text-bright">{step.label}</span>
-                      <span className="text-sm font-bold text-crm-text-dim">{step.value} ({step.percent})</span>
-                    </div>
-                    <div className="h-4 bg-crm-bg-hover rounded-full overflow-hidden">
-                      <div className={`h-full ${step.color}`} style={{ width: step.percent }}></div>
-                    </div>
-                  </div>
-                ))}
+              <div className="max-w-2xl mx-auto space-y-8">
+                <h3 className="font-bold text-crm-text-bright text-center mb-8">Order Status Funnel (Live DB)</h3>
+                {(() => {
+                  const f = data.funnel;
+                  const total = Math.max(1, Object.values(f).reduce((s, v) => s + Number(v), 0));
+                  const steps = [
+                    { label: 'Pending', key: 'pending', color: 'bg-crm-warning' },
+                    { label: 'Confirmed', key: 'confirmed', color: 'bg-crm-primary' },
+                    { label: 'Processing', key: 'processing', color: 'bg-crm-purple' },
+                    { label: 'Shipped', key: 'shipped', color: 'bg-crm-cyan' },
+                    { label: 'Delivered', key: 'delivered', color: 'bg-crm-success' },
+                    { label: 'Cancelled', key: 'cancelled', color: 'bg-crm-danger' },
+                    { label: 'Returned', key: 'returned', color: 'bg-crm-text-dim' },
+                  ];
+                  return steps.map((step) => {
+                    const count = Number(f[step.key] || 0);
+                    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+                    return (
+                      <div key={step.key} className="relative">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-crm-text-bright">{step.label}</span>
+                          <span className="text-sm font-bold text-crm-text-dim">{count.toLocaleString()} ({pct}%)</span>
+                        </div>
+                        <div className="h-4 bg-crm-bg-hover rounded-full overflow-hidden">
+                          <div className={`h-full ${step.color} transition-all`} style={{ width: `${pct}%` }}></div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
         )}
       </div>
+
+      {googleInsights?.configured && (
+        <div className="crm-card p-6 border-crm-border space-y-4 mt-6">
+          <h3 className="text-lg font-bold text-crm-text-bright">Website Analytics (Google GA4 + Search Console)</h3>
+          <div className="grid md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl bg-crm-bg-alt border border-crm-border">
+              <p className="text-xs text-crm-text-dim uppercase">Sessions (7d)</p>
+              <p className="text-2xl font-bold text-crm-text-bright">{googleInsights?.overview?.sessions?.toLocaleString() || 0}</p>
+            </div>
+            <div className="p-4 rounded-xl bg-crm-bg-alt border border-crm-border">
+              <p className="text-xs text-crm-text-dim uppercase">Users (7d)</p>
+              <p className="text-2xl font-bold text-crm-text-bright">{googleInsights?.overview?.users?.toLocaleString() || 0}</p>
+            </div>
+            <div className="p-4 rounded-xl bg-crm-bg-alt border border-crm-border">
+              <p className="text-xs text-crm-text-dim uppercase">Page views (7d)</p>
+              <p className="text-2xl font-bold text-crm-text-bright">{googleInsights?.overview?.pageViews?.toLocaleString() || 0}</p>
+            </div>
+          </div>
+          {googleInsights?.searchQueries?.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-crm-text-bright mb-2">Top search queries</p>
+              <ul className="text-sm space-y-1 text-crm-text-dim">
+                {googleInsights.searchQueries.slice(0, 8).map((q) => (
+                  <li key={q.query} className="flex justify-between border-b border-crm-border/50 py-1">
+                    <span>{q.query}</span>
+                    <span>{q.clicks} clicks</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

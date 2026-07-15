@@ -11,17 +11,23 @@ const METHODS = [
   { id: 'mastercard', label: 'Mastercard', className: 'bg-[#EB001B] text-white' },
 ] as const;
 
-export default function PaymentLogos() {
+interface PaymentLogosProps {
+  showLabel?: boolean;
+}
+
+export default function PaymentLogos({ showLabel = true }: PaymentLogosProps) {
   const t = useTranslations('footer');
 
   return (
     <div>
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('payWith')}</p>
-      <div className="flex flex-wrap items-center gap-2">
+      {showLabel && (
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-200/70">{t('payWith')}</p>
+      )}
+      <div className="flex max-w-full flex-wrap items-center gap-1.5">
         {METHODS.map((m) => (
           <span
             key={m.id}
-            className={`inline-flex min-h-[32px] min-w-[72px] items-center justify-center rounded-md px-3 py-1.5 text-xs font-bold shadow-sm ${m.className}`}
+            className={`inline-flex h-7 min-w-[56px] items-center justify-center rounded px-2 text-[10px] font-bold shadow-sm ${m.className}`}
           >
             {m.label}
           </span>

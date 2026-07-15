@@ -22,9 +22,25 @@ import { generateEntityId, generateSlug } from '../../utils/hexId';
 
 const router = Router();
 const prisma = new PrismaClient();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const prismaAny = prisma as any;
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif']);
 const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mov', '.avi', '.mkv']);
+
+// GET /api/admin/file-import/status — lightweight health/status endpoint
+router.get('/status', async (_req: Request, res: Response) => {
+  const [categoryCount, productCount] = await Promise.all([
+    prisma.category.count(),
+    prisma.product.count(),
+  ]);
+  res.json({
+    ok: true,
+    categoryCount,
+    productCount,
+    ts: new Date().toISOString(),
+  });
+});
 
 interface ProductNode {
   name: string;
@@ -217,15 +233,15 @@ router.post('/execute', async (req: Request, res: Response) => {
                 sortOrder++;
               }
 
-              await prisma.product.create({
+              await prismaAny.product.create({
                 data: {
                   id: productId,
                   titleEn: prod.name,
                   titleBn: prod.name,
-                  categoryId: subRecord.id,
                   status: 'draft',
                   importSource: prod.folderPath,
                   productAssets: { create: productImages },
+                  productCategories: { create: [{ categoryId: subRecord.id, isPrimary: true, sortOrder: 0 }] },
                   pricing: {
                     create: [
                       { customerType: 'retail', price: 0, tier1MinQty: 2, tier1Discount: 5, tier2MinQty: 6, tier2Discount: 10, tier3MinQty: 11, tier3Discount: 15 },

@@ -1,254 +1,148 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
-import { calculatePrice, calculateOrderTotals, isCodAllowed, RETAIL_MAX_UNITS, type PricingRow } from '../utils/pricing';
-import { toPricingRow, applyVariantOverride } from '../utils/lineItemPricing';
-import { validateCoupon, applyCoupon, type CouponData } from '../utils/couponRules';
-import { validateRedemption, getTier } from '../utils/obPoints';
+import { proxyCartToCore, validateCheckoutWithCore, toNumber } from '../clients/commerce-client';
 import { getBalance } from '../services/obPointsService';
+import { getTier, validateRedemption } from '../utils/obPoints';
 import { routeParam } from '../utils/params';
+import { appLog } from '../lib/appLog';
 
 const router = Router();
 const prisma = new PrismaClient();
 
 router.use(requireAuth);
 
-async function getOrCreateCart(userId: string) {
-  const include = {
-    items: {
-      include: {
-        product: { include: { pricing: true, productAssets: { where: { isPrimary: true }, take: 1 } } },
-        variant: true,
-      },
-    },
-  } as const;
-
-  let cart = await prisma.cart.findUnique({ where: { userId }, include });
-  if (!cart) {
-    cart = await prisma.cart.create({ data: { userId }, include });
+function jwtPayloadClaims(authHeader?: string): { hasUserId?: boolean; hasUser_id?: boolean } {
+  try {
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const payload = token.split('.')[1];
+    if (!payload) return {};
+    const json = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;
+    return { hasUserId: json.userId != null, hasUser_id: json.user_id != null };
+  } catch {
+    return {};
   }
-  return cart;
 }
 
-function buildCartSummary(cart: Awaited<ReturnType<typeof getOrCreateCart>>, userType: 'retail' | 'wholesale') {
-  const items = cart.items.map((item) => {
-    const retail = item.product.pricing.find((p) => p.customerType === 'retail');
-    const wholesale = item.product.pricing.find((p) => p.customerType === 'wholesale');
-    const ov = item.variant?.price_override;
-    const retailRow = applyVariantOverride(toPricingRow(retail), ov);
-    const wholesaleRow = applyVariantOverride(toPricingRow(wholesale), ov);
-    const pr = calculatePrice(
-      userType,
-      { retail: retailRow ?? { price: 0 }, wholesale: wholesaleRow },
-      item.quantity,
-      item.product.moq,
-    );
-
-    return {
-      id: item.id,
-      productId: item.productId,
-      variantId: item.variantId,
-      title: item.product.titleEn,
-      image: item.product.productAssets[0]?.url ?? null,
-      quantity: item.quantity,
-      unitPrice: pr.unitPrice,
-      lineTotal: pr.lineTotal,
-      discountPct: pr.discountPct,
-      tierApplied: pr.tierApplied,
-    };
-  });
-
-  const subtotal = items.reduce((s, i) => s + i.lineTotal, 0);
-  const totals = calculateOrderTotals(subtotal);
-
-  return {
-    cartId: cart.id,
-    items,
-    ...totals,
-    codAllowed: isCodAllowed(totals.total),
-    installmentAllowed: false,
-    itemCount: items.reduce((s, i) => s + i.quantity, 0),
-  };
+function handleCoreProxyError(err: unknown, res: Response, req?: Request): void {
+  const ax = err as { response?: { status?: number; data?: unknown }; message?: string };
+  // #region agent log
+  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'A',location:'cart.ts:handleCoreProxyError',message:'cart java proxy error',data:{bffUserId:req?.user?.userId,javaStatus:ax.response?.status,claims:jwtPayloadClaims(req?.headers.authorization as string|undefined),detail:typeof ax.response?.data==='object'?ax.response?.data:ax.message},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  if (ax.response) {
+    res.status(ax.response.status || 502).json(ax.response.data ?? { error: 'Core API error' });
+    return;
+  }
+  appLog('error', 'cart_core_proxy_failed', { detail: ax.message });
+  res.status(502).json({ error: 'Commerce core unavailable', detail: ax.message });
 }
 
-// GET /api/cart
+// GET /api/cart — pricing/stock/MOQ from Java CartService (single source of truth)
 router.get('/', async (req: Request, res: Response) => {
-  const cart = await getOrCreateCart(req.user!.userId);
-  res.json(buildCartSummary(cart, req.user!.userType));
+  try {
+    const data = await proxyCartToCore(req, 'GET', '');
+    res.json(data);
+  } catch (e) {
+    handleCoreProxyError(e, res);
+  }
 });
 
 // POST /api/cart/add
 router.post('/add', async (req: Request, res: Response) => {
-  const { productId, variantId, quantity = 1 } = req.body as {
-    productId: string;
-    variantId?: string;
-    quantity: number;
-  };
-
-  const product = await prisma.product.findUnique({
-    where: { id: productId, status: 'active' },
-    include: { pricing: true },
-  });
-  if (!product) { res.status(404).json({ error: 'Product not found' }); return; }
-
-  if (quantity < 1) { res.status(400).json({ error: 'Quantity must be at least 1' }); return; }
-  if (quantity > product.stock) {
-    res.status(400).json({ error: `Only ${product.stock} available in stock` }); return;
+  // #region agent log
+  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'A',location:'cart.ts:POST/add',message:'cart add attempt',data:{bffUserId:req.user?.userId,productId:(req.body as {productId?:string})?.productId,claims:jwtPayloadClaims(req.headers.authorization as string|undefined)},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  try {
+    const data = await proxyCartToCore(req, 'POST', '/add', req.body);
+    res.json(data);
+  } catch (e) {
+    handleCoreProxyError(e, res, req);
   }
-
-  const hasWholesale = product.pricing.some((p) => p.customerType === 'wholesale');
-  const wholesaleThreshold = product.moq ?? 1;
-  const isWholesaleQty = hasWholesale && quantity >= wholesaleThreshold;
-  if (req.user!.userType === 'retail' && !isWholesaleQty && quantity > RETAIL_MAX_UNITS) {
-    res.status(400).json({ error: `Retail orders are limited to ${RETAIL_MAX_UNITS} units. Add ${wholesaleThreshold}+ units for wholesale pricing.` }); return;
-  }
-
-  let variant: { id: string; priceOverride: unknown } | null = null;
-  if (variantId) {
-    const v = await prisma.productVariant.findFirst({
-      where: { id: variantId, productId, isActive: true },
-    });
-    if (!v) { res.status(400).json({ error: 'Invalid variant' }); return; }
-    variant = v;
-  }
-
-  const cart = await prisma.cart.upsert({
-    where: { userId: req.user!.userId },
-    create: { userId: req.user!.userId },
-    update: {},
-  });
-
-  const existing = await prisma.cartItem.findFirst({
-    where: { cartId: cart.id, productId, variantId: variantId ?? null },
-  });
-
-  if (existing) {
-    const newQty = existing.quantity + quantity;
-    if (newQty > product.stock) {
-      res.status(400).json({ error: `Cannot add more — only ${product.stock} available` }); return;
-    }
-    const isNewQtyWholesale = hasWholesale && newQty >= wholesaleThreshold;
-    if (req.user!.userType === 'retail' && !isNewQtyWholesale && newQty > RETAIL_MAX_UNITS) {
-      res.status(400).json({ error: `Retail orders are limited to ${RETAIL_MAX_UNITS} units per item.` }); return;
-    }
-    await prisma.cartItem.update({
-      where: { id: existing.id },
-      data: { quantity: { increment: quantity } },
-    });
-  } else {
-    const retail = product.pricing.find((p) => p.customerType === 'retail');
-    const wholesale = product.pricing.find((p) => p.customerType === 'wholesale');
-    const ov = variant?.priceOverride;
-    const retailRow = applyVariantOverride(toPricingRow(retail), ov);
-    const wholesaleRow = applyVariantOverride(toPricingRow(wholesale), ov);
-    const pr = calculatePrice(
-      req.user!.userType,
-      { retail: retailRow ?? { price: 0 }, wholesale: wholesaleRow },
-      quantity,
-      product.moq,
-    );
-    await prisma.cartItem.create({
-      data: {
-        cartId: cart.id,
-        productId,
-        variantId: variantId ?? null,
-        quantity,
-        unitPrice: pr.unitPrice,
-        customerType: req.user!.userType,
-      },
-    });
-  }
-
-  const updatedCart = await getOrCreateCart(req.user!.userId);
-  res.json(buildCartSummary(updatedCart, req.user!.userType));
 });
 
 // PUT /api/cart/update
 router.put('/update', async (req: Request, res: Response) => {
-  const { itemId, quantity } = req.body as { itemId: number; quantity: number };
-  if (quantity < 1) {
-    await prisma.cartItem.delete({ where: { id: itemId } });
-  } else {
-    const existingItem = await prisma.cartItem.findUnique({
-      where: { id: itemId },
-      include: { product: { include: { pricing: true } } },
-    });
-    if (existingItem) {
-      const itemHasWholesale = existingItem.product.pricing.some((p) => p.customerType === 'wholesale');
-      const itemMoq = existingItem.product.moq ?? 1;
-      const isWholesaleQty = itemHasWholesale && quantity >= itemMoq;
-      if (req.user!.userType === 'retail' && !isWholesaleQty && quantity > RETAIL_MAX_UNITS) {
-        res.status(400).json({ error: `Retail orders are limited to ${RETAIL_MAX_UNITS} units per item.` }); return;
-      }
-      if (quantity > existingItem.product.stock) {
-        res.status(400).json({ error: `Only ${existingItem.product.stock} available in stock` }); return;
-      }
+  const body = req.body as { itemId?: number; productId?: string; quantity?: number };
+  try {
+    if (body.productId != null) {
+      const data = await proxyCartToCore(req, 'PUT', '/update', {
+        productId: body.productId,
+        quantity: body.quantity ?? 0,
+      });
+      res.json(data);
+      return;
     }
-    await prisma.cartItem.update({ where: { id: itemId }, data: { quantity } });
+    res.status(400).json({ error: 'productId required for cart update via core API' });
+  } catch (e) {
+    handleCoreProxyError(e, res);
   }
-  const cart = await getOrCreateCart(req.user!.userId);
-  res.json(buildCartSummary(cart, req.user!.userType));
 });
 
 // DELETE /api/cart/remove/:productId
 router.delete('/remove/:productId', async (req: Request, res: Response) => {
-  const cart = await prisma.cart.findUnique({ where: { userId: req.user!.userId } });
-  if (cart) {
-    await prisma.cartItem.deleteMany({
-      where: { cartId: cart.id, productId: routeParam(req.params.productId) },
-    });
+  try {
+    const data = await proxyCartToCore(req, 'DELETE', `/remove/${routeParam(req.params.productId)}`);
+    res.json(data);
+  } catch (e) {
+    handleCoreProxyError(e, res);
   }
-  const updatedCart = await getOrCreateCart(req.user!.userId);
-  res.json(buildCartSummary(updatedCart, req.user!.userType));
 });
 
-// POST /api/cart/apply-coupon — validate + preview
+// POST /api/cart/apply-coupon — preview uses Java checkout validator for authoritative subtotal
 router.post('/apply-coupon', async (req: Request, res: Response) => {
   const { code } = req.body as { code: string };
-  if (!code?.trim()) { res.status(400).json({ error: 'Coupon code required' }); return; }
+  if (!code?.trim()) {
+    res.status(400).json({ error: 'Coupon code required' });
+    return;
+  }
 
-  const coupon = await prisma.coupon.findUnique({ where: { code: code.trim().toUpperCase() } });
-  if (!coupon) { res.status(404).json({ error: 'Invalid coupon code' }); return; }
-
-  const cart = await getOrCreateCart(req.user!.userId);
-  const summary = buildCartSummary(cart, req.user!.userType);
-
-  const couponData: CouponData = {
-    id: coupon.id,
-    code: coupon.code,
-    type: coupon.type as 'percent' | 'fixed' | 'free_shipping',
-    value: Number(coupon.value),
-    minOrder: Number(coupon.minOrder),
-    maxUses: coupon.maxUses,
-    usedCount: coupon.usedCount,
-    startsAt: coupon.startsAt,
-    expiresAt: coupon.expiresAt,
-    active: coupon.active,
-  };
-
-  const v = validateCoupon({ coupon: couponData, subtotal: summary.subtotal });
-  if (!v.valid) { res.status(400).json({ error: v.error }); return; }
-
-  const applied = applyCoupon(couponData, summary.subtotal);
-  res.json({
-    coupon: { id: coupon.id, code: coupon.code, type: coupon.type, value: Number(coupon.value) },
-    discountAmount: applied.discountAmount,
-    freeShipping: applied.freeShipping,
-  });
+  try {
+    const validation = await validateCheckoutWithCore(req, {
+      paymentMethod: 'cod',
+      couponCode: code.trim().toUpperCase(),
+      obPointsToRedeem: 0,
+      obBalance: await getBalance(req.user!.userId),
+      shippingAddressId: undefined,
+    });
+    if (!validation.valid) {
+      res.status(400).json({ error: validation.errors[0] || 'Coupon not applicable' });
+      return;
+    }
+    const coupon = await prisma.coupon.findUnique({ where: { code: code.trim().toUpperCase() } });
+    res.json({
+      coupon: coupon
+        ? { id: coupon.id, code: coupon.code, type: coupon.type, value: Number(coupon.value) }
+        : { code: code.trim().toUpperCase() },
+      discountAmount: toNumber(validation.couponDiscount ?? 0),
+      freeShipping: Boolean(validation.freeShipping),
+      subtotal: validation.totals ? toNumber(validation.totals.subtotal) : 0,
+    });
+  } catch (e) {
+    handleCoreProxyError(e, res);
+  }
 });
 
-// POST /api/cart/apply-ob-points — validate + preview
+// POST /api/cart/apply-ob-points
 router.post('/apply-ob-points', async (req: Request, res: Response) => {
   const { points } = req.body as { points: number };
-  if (!points || points < 0) { res.status(400).json({ error: 'Invalid points amount' }); return; }
+  if (!points || points < 0) {
+    res.status(400).json({ error: 'Invalid points amount' });
+    return;
+  }
 
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
-  if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
 
   const balance = await getBalance(req.user!.userId);
   const tier = getTier(Number(user.lifetimeSpend));
   const result = validateRedemption(tier, balance, points);
-  if (!result.valid) { res.status(400).json({ error: result.error }); return; }
+  if (!result.valid) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
 
   res.json({ points, bdtDiscount: result.bdtValue, tier, balance });
 });

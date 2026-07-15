@@ -49,6 +49,7 @@ public final class WholesalePricingUtil {
         row.tier2Discount = pr.getTier2Discount();
         row.tier3MinQty = pr.getTier3MinQty();
         row.tier3Discount = pr.getTier3Discount();
+        row.tierBands = pr.getTierBands();
         return row;
     }
 

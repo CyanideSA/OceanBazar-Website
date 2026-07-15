@@ -7,7 +7,7 @@
  *   free_shipping — removes shipping fee
  */
 
-import { round2, SHIPPING_FEE } from './pricing';
+import { round2 } from './pricing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

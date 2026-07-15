@@ -1,18 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useShopRouter } from '@/lib/shopNavigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import {
-  X, Mail, Phone, Lock, ArrowRight, Loader2, ShieldCheck,
+  X, Mail, Phone, Lock, ArrowRight, Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { cn } from '@/lib/utils';
+import Logo from '@/components/shared/Logo';
 import type { User } from '@/types';
+import { normalizePhoneTarget } from '@/lib/phoneNormalize';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -24,7 +27,7 @@ const METHOD_ICONS = { email: Mail, phone: Phone, password: Lock } as const;
 export default function LoginDialog() {
   const t = useTranslations('auth');
   const tc = useTranslations('common');
-  const router = useRouter();
+  const router = useShopRouter();
   const params = useParams();
   const locale = (params.locale as string) || 'en';
   const { setUser } = useAuthStore();
@@ -78,10 +81,15 @@ export default function LoginDialog() {
     }
   }
 
+  function resolveTarget(value: string) {
+    const v = value.trim();
+    return method === 'email' || v.includes('@') ? v : normalizePhoneTarget(v);
+  }
+
   async function handleSendOtp() {
     setLoading(true); setError('');
     try {
-      await authApi.sendOtp(target, 'login');
+      await authApi.sendOtp(resolveTarget(target), 'login');
       setStep('otp');
     } catch (e) { setError(extractError(e)); }
     finally { setLoading(false); }
@@ -90,7 +98,7 @@ export default function LoginDialog() {
   async function handleVerifyOtp() {
     setLoading(true); setError('');
     try {
-      const { data } = await authApi.verifyOtp(target, otp);
+      const { data } = await authApi.verifyOtp(resolveTarget(target), otp);
       onSuccess(data);
     } catch (e) { setError(extractError(e)); }
     finally { setLoading(false); }
@@ -99,7 +107,7 @@ export default function LoginDialog() {
   async function handlePasswordLogin() {
     setLoading(true); setError('');
     try {
-      const { data } = await authApi.login(target, password);
+      const { data } = await authApi.login(resolveTarget(target), password);
       onSuccess(data);
     } catch (e) { setError(extractError(e)); }
     finally { setLoading(false); }
@@ -138,23 +146,16 @@ export default function LoginDialog() {
               <X className="h-4 w-4" />
             </button>
 
-            {/* Header with gradient accent */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-primary/90 to-primary px-6 pb-6 pt-8 text-center text-primary-foreground">
-              <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
-              <div className="absolute -left-6 bottom-0 h-20 w-20 rounded-full bg-white/5 blur-xl" />
+            {/* Header — theme-aware logo */}
+            <div className="relative overflow-hidden border-b border-border bg-card px-6 pb-5 pt-7 text-center">
               <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
+                initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.1 }}
-                className="relative"
+                className="relative flex flex-col items-center gap-2"
               >
-                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 shadow-lg backdrop-blur-sm">
-                  <ShieldCheck className="h-7 w-7" />
-                </div>
-                <h2 className="text-lg font-bold tracking-tight">
-                  <span className="opacity-90">Ocean</span>Bazar
-                </h2>
-                <p className="mt-1 text-xs font-medium opacity-75">{t('login')}</p>
+                <Logo width={156} height={72} interaction="brand" />
+                <p className="text-xs font-medium text-muted-foreground">{t('login')}</p>
               </motion.div>
             </div>
 

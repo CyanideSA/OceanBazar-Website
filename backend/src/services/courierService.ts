@@ -3,10 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import * as paperflyService from './paperflyService';
 import * as pathaoService from './pathaoService';
 import * as steadfastService from './steadfastService';
+import * as redxService from './redxService';
 
 const prisma = new PrismaClient();
 
-export type CourierProvider = 'paperfly' | 'pathao' | 'steadfast';
+export type CourierProvider = 'paperfly' | 'pathao' | 'steadfast' | 'redx';
 
 export interface AssignCourierInput {
   orderId: string;
@@ -35,6 +36,11 @@ export interface AssignCourierInput {
   pickphnNumber?: string;
   customerThana?: string;
   customerDistrict?: string;
+  // RedX-specific
+  redxDeliveryAreaId?: number;
+  redxDeliveryArea?: string;
+  redxPickupStoreId?: number;
+  redxParcelValue?: number;
 }
 
 export interface AssignCourierResult {
@@ -63,26 +69,18 @@ export async function assignCourier(input: AssignCourierInput): Promise<AssignCo
     switch (input.courier) {
       case 'paperfly': {
         const result = await paperflyService.createOrder({
-          merOrderRef: order.orderNumber,
-          pickMerchantName: input.pickMerchantName || 'Oceanbazar',
-          pickMerchantAddress: input.pickMerchantAddress || 'Dhaka',
-          pickMerchantThana: input.pickMerchantThana || 'Mirpur',
-          pickMerchantDistrict: input.pickMerchantDistrict || 'Dhaka',
-          pickphnNumber: input.pickphnNumber || process.env.MERCHANT_PHONE || '01700000000',
-          productSizeWeight: 'standard',
+          merchantOrderReference: order.orderNumber,
+          storeName: input.pickMerchantName || process.env.STORE_NAME || 'Oceanbazar',
           productBrief: order.items.map(i => i.productTitle).join(', ').slice(0, 200),
-          packagePrice: input.codAmount,
-          paymentMethod: input.codAmount > 0 ? 'COD' : 'PREPAID',
-          custname: input.recipientName,
-          custaddress: input.recipientAddress,
-          customerThana: input.customerThana || '',
-          customerDistrict: input.customerDistrict || '',
-          custPhone: input.recipientPhone,
+          packagePrice: String(input.codAmount),
           max_weight: input.weight ? String(input.weight) : '0.5',
+          customerName: input.recipientName,
+          customerAddress: input.recipientAddress,
+          customerPhone: input.recipientPhone,
         });
         if (!result.success) return { success: false, message: result.message };
-        consignmentId = result.referenceNumber;
-        trackingCode = result.referenceNumber;
+        consignmentId = result.trackingNumber;
+        trackingCode = result.trackingBarcode || result.trackingNumber;
         courierResponse = result.raw;
         break;
       }
@@ -126,6 +124,27 @@ export async function assignCourier(input: AssignCourierInput): Promise<AssignCo
         consignmentId = result.consignment_id;
         trackingCode = result.tracking_code;
         deliveryFee = result.delivery_fee;
+        courierResponse = result.raw;
+        break;
+      }
+
+      case 'redx': {
+        const result = await redxService.createParcel({
+          customer_name: input.recipientName,
+          customer_phone: input.recipientPhone,
+          delivery_area: input.redxDeliveryArea || input.recipientArea || 'Dhaka',
+          delivery_area_id: input.redxDeliveryAreaId || 1,
+          customer_address: input.recipientAddress,
+          merchant_invoice_id: order.orderNumber,
+          cash_collection_amount: input.codAmount,
+          parcel_weight: input.weight || 500, // grams
+          instruction: input.note,
+          value: input.redxParcelValue || input.codAmount,
+          pickup_store_id: input.redxPickupStoreId,
+        });
+        if (!result.success) return { success: false, message: result.message };
+        consignmentId = result.tracking_id;
+        trackingCode = result.tracking_id;
         courierResponse = result.raw;
         break;
       }
@@ -215,7 +234,7 @@ export async function trackShipment(orderId: string): Promise<{
       case 'paperfly': {
         if (!cs.consignment_id) return { success: false };
         const result = await paperflyService.trackOrder(cs.consignment_id);
-        return { success: result.success, status: result.status, events: result.events, courierData: result.raw };
+        return { success: result.success, status: (result as any).status, events: (result as any).events, courierData: result.raw };
       }
       case 'pathao': {
         if (!cs.consignment_id) return { success: false };
@@ -226,6 +245,11 @@ export async function trackShipment(orderId: string): Promise<{
         if (!cs.consignment_id) return { success: false };
         const info = await steadfastService.getStatusByCid(cs.consignment_id);
         return { success: true, status: info?.status || info?.delivery_status, courierData: info };
+      }
+      case 'redx': {
+        if (!cs.consignment_id) return { success: false };
+        const result = await redxService.trackParcel(cs.consignment_id);
+        return { success: result.success, status: (result.tracking as any)?.status, courierData: result.tracking };
       }
       default:
         return { success: false };
@@ -259,6 +283,10 @@ export async function cancelShipment(orderId: string): Promise<{ success: boolea
       case 'pathao':
         // Pathao doesn't expose a cancel API; mark internally
         result = { success: true, message: 'Marked as cancelled (Pathao has no cancel API)' };
+        break;
+      case 'redx':
+        // RedX doesn't expose a direct cancel API; mark internally
+        result = { success: true, message: 'Marked as cancelled (RedX has no cancel API)' };
         break;
     }
 
@@ -299,6 +327,8 @@ export async function getDeliveryPrice(courier: CourierProvider, params: any): P
         return { success: true, price: 60 }; // Steadfast standard rate inside Dhaka
       case 'paperfly':
         return { success: true, price: 55 }; // Paperfly standard rate
+      case 'redx':
+        return { success: true, price: 70 }; // RedX standard rate
       default:
         return { success: false, message: 'Unknown courier' };
     }

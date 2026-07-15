@@ -1,7 +1,7 @@
 # OceanBazar Dependency Setup - Run once to cache all dependencies
 $ErrorActionPreference = "Stop"
 
-$base = "c:\Users\akand\Desktop\Antigravity\OCEANBAZAR Website"
+$base = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 
 Write-Host "=== OceanBazar Dependency Setup ===" -ForegroundColor Cyan
 Write-Host "This will download all dependencies once for fast future startups`n" -ForegroundColor Gray

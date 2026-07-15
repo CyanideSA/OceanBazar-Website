@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -36,14 +37,16 @@ model User {
 }
 
 model Customer {
-  userId      String   @id @map("user_id") @db.Char(8)
-  companyName String?  @map("company_name") @db.VarChar(255)
-  taxId       String?  @map("tax_id") @db.VarChar(100)
-  segment     String?  @db.VarChar(64)
-  notes       String?
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String   @id @map("user_id") @db.Char(8)
+  companyName    String?  @map("company_name") @db.VarChar(255)
+  taxId          String?  @map("tax_id") @db.VarChar(100)
+  segment        String?  @db.VarChar(64)
+  notes          String?
+  churnRiskScore Decimal? @map("churn_risk_score") @db.Decimal(5, 4)
+  predictedLtv   Decimal? @map("predicted_ltv") @db.Decimal(12, 2)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("customers")
 }
@@ -91,38 +94,80 @@ model SavedAddress {
 }
 
 model AdminUser {
-  id           Int        @id @default(autoincrement())
-  name         String     @db.VarChar(255)
-  username     String     @unique @db.VarChar(100)
-  email        String     @unique @db.VarChar(255)
-  passwordHash String     @map("password_hash")
-  role         AdminRole  @default(staff)
-  active       Boolean    @default(true)
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  auditLogs    AuditLog[]
-  tickets      Ticket[]
+  id                 Int            @id @default(autoincrement())
+  name               String         @db.VarChar(255)
+  username           String         @unique @db.VarChar(100)
+  email              String         @unique @db.VarChar(255)
+  passwordHash       String         @map("password_hash")
+  role               AdminRole      @default(staff)
+  active             Boolean        @default(true)
+  chatGreeting       String?        @map("chat_greeting") @db.VarChar(500)
+  mustChangePassword Boolean        @default(false) @map("must_change_password")
+  twoFaEnabled       Boolean        @default(false) @map("two_fa_enabled")
+  twoFaSecret        String?        @map("two_fa_secret") @db.VarChar(128)
+  twoFaLastCounter   Int?           @map("two_fa_last_counter")
+  microsoftOid       String?        @unique @map("microsoft_oid") @db.VarChar(128)
+  googleSub          String?        @unique @map("google_sub") @db.VarChar(128)
+  authProvider       String         @default("local") @map("auth_provider") @db.VarChar(30)
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  auditLogs          AuditLog[]
+  tickets            Ticket[]
+  sessions           AdminSession[]
 
   @@map("admin_users")
 }
 
+model AdminSession {
+  id         Int       @id @default(autoincrement())
+  adminId    Int       @map("admin_id")
+  deviceId   String    @map("device_id") @db.VarChar(128)
+  userAgent  String?   @map("user_agent")
+  ipAddress  String?   @map("ip_address") @db.VarChar(64)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, deviceId])
+  @@index([adminId, lastSeenAt])
+  @@map("admin_sessions")
+}
+
+model FailedEvent {
+  id           Int       @id @default(autoincrement())
+  eventId      String    @unique @map("event_id") @db.VarChar(64)
+  eventType    String    @map("event_type") @db.VarChar(64)
+  payload      Json
+  errorMessage String    @map("error_message")
+  errorStack   String?   @map("error_stack")
+  attempts     Int       @default(1)
+  nextRetryAt  DateTime  @map("next_retry_at") @db.Timestamptz(6)
+  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([resolvedAt, nextRetryAt])
+  @@map("failed_events")
+}
+
 model Category {
-  id              String            @id(map: "categories_pkey1") @db.Char(8)
-  parentId        String?           @map("parent_id") @db.Char(8)
-  nameEn          String            @map("name_en") @db.VarChar(255)
-  nameBn          String            @map("name_bn") @db.VarChar(255)
-  slug            String            @unique @db.VarChar(255)
-  icon            String?           @db.VarChar(120)
-  description     String?
-  sortOrder       Int               @default(0) @map("sort_order")
-  depth           Int               @default(0)
-  path            String            @default("")
-  is_leaf         Boolean           @default(true)
-  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
-  parent          Category?         @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_categories_parent")
-  children        Category[]        @relation("CategoryTree")
-  productBanners  ProductBanner[]
-  products        Product[]
+  id                String               @id(map: "categories_pkey1") @db.Char(8)
+  parentId          String?              @map("parent_id") @db.Char(8)
+  nameEn            String               @map("name_en") @db.VarChar(255)
+  nameBn            String               @map("name_bn") @db.VarChar(255)
+  slug              String               @unique @db.VarChar(255)
+  icon              String?              @db.VarChar(120)
+  imageUrl          String?              @map("image_url") @db.VarChar(500)
+  description       String?
+  sortOrder         Int                  @default(0) @map("sort_order")
+  depth             Int                  @default(0)
+  path              String               @default("")
+  is_leaf           Boolean              @default(true)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updated_at        DateTime             @default(now()) @db.Timestamptz(6)
+  parent            Category?            @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_categories_parent")
+  children          Category[]           @relation("CategoryTree")
+  productBanners    ProductBanner[]
+  productCategories ProductCategoryMap[]
 
   @@index([parentId], map: "idx_categories_parent")
   @@index([path(ops: raw("gin_trgm_ops"))], map: "idx_categories_path", type: Gin)
@@ -145,37 +190,60 @@ model Brand {
   @@map("brands")
 }
 
+model ContentDraft {
+  id               String   @id @db.Char(8)
+  productName      String   @map("product_name") @db.VarChar(500)
+  brandName        String   @map("brand_name") @db.VarChar(255)
+  categoryName     String   @map("category_name") @db.VarChar(255)
+  subcategoryName  String   @map("subcategory_name") @db.VarChar(255)
+  categoryId       String?  @map("category_id") @db.Char(8)
+  subcategoryId    String?  @map("subcategory_id") @db.Char(8)
+  brandId          String?  @map("brand_id") @db.Char(8)
+  createdByEmail   String   @map("created_by_email") @db.VarChar(255)
+  createdByOid     String   @map("created_by_oid") @db.VarChar(128)
+  createdByName    String?  @map("created_by_name") @db.VarChar(255)
+  status           String   @default("reserved") @db.VarChar(20)
+  socialRef        String?  @map("social_ref") @db.VarChar(500)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdByEmail], map: "idx_content_drafts_created_by_email")
+  @@index([status], map: "idx_content_drafts_status")
+  @@map("content_drafts")
+}
+
 model Product {
-  id                 String               @id(map: "products_pkey1") @db.Char(8)
-  categoryId         String               @map("category_id") @db.Char(8)
-  brandId            String?              @map("brand_id") @db.Char(8)
-  sellerId           String?              @map("seller_id") @db.Char(8)
-  titleEn            String               @map("title_en") @db.VarChar(500)
-  titleBn            String               @map("title_bn") @db.VarChar(500)
-  descriptionEn      String?              @map("description_en")
-  descriptionBn      String?              @map("description_bn")
-  brand              String?              @db.VarChar(255)
-  sku                String?              @db.VarChar(100)
-  status             String               @default("active") @db.VarChar(20)
-  weight             Decimal?             @db.Decimal(8, 3)
-  weightUnit         String?              @map("weight_unit") @db.VarChar(10)
-  moq                Int                  @default(1)
-  stock              Int                  @default(0)
-  seoTitle           String?              @map("seo_title") @db.VarChar(255)
-  seoDescription     String?              @map("seo_description")
-  importSource       String?              @map("import_source")
-  specifications     Json?
-  attributesExtra    Json?                @map("attributes_extra")
-  ratingAvg          Decimal?             @map("rating_avg") @db.Decimal(3, 2)
-  reviewCount        Int                  @default(0) @map("review_count")
-  brandLogoUrl       String?              @map("brand_logo_url") @db.VarChar(500)
-  popularityRank     Int?                 @map("popularity_rank")
-  popularityLabelEn  String?              @map("popularity_label_en") @db.VarChar(255)
-  popularityLabelBn  String?              @map("popularity_label_bn") @db.VarChar(255)
-  reviewsSnapshot    Json?                @map("reviews_snapshot")
-  isFeatured         Boolean              @default(false) @map("is_featured")
-  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String               @id(map: "products_pkey1") @db.Char(8)
+  brandId           String?              @map("brand_id") @db.Char(8)
+  sellerId          String?              @map("seller_id") @db.Char(8)
+  titleEn           String               @map("title_en") @db.VarChar(500)
+  titleBn           String               @map("title_bn") @db.VarChar(500)
+  descriptionEn     String?              @map("description_en")
+  descriptionBn     String?              @map("description_bn")
+  brand             String?              @db.VarChar(255)
+  sku               String?              @db.VarChar(100)
+  status            String               @default("active") @db.VarChar(20)
+  weight            Decimal?             @db.Decimal(8, 3)
+  weightUnit        String?              @map("weight_unit") @db.VarChar(10)
+  pricingMode       String               @default("tiered") @map("pricing_mode") @db.VarChar(20)
+  moq               Int                  @default(1)
+  stock             Int                  @default(0)
+  seoTitle          String?              @map("seo_title") @db.VarChar(255)
+  seoDescription    String?              @map("seo_description")
+  importSource      String?              @map("import_source")
+  specifications    Json?
+  attributesExtra   Json?                @map("attributes_extra")
+  ratingAvg         Decimal?             @map("rating_avg") @db.Decimal(3, 2)
+  reviewCount       Int                  @default(0) @map("review_count")
+  brandLogoUrl      String?              @map("brand_logo_url") @db.VarChar(500)
+  popularityRank    Int?                 @map("popularity_rank")
+  popularityLabelEn String?              @map("popularity_label_en") @db.VarChar(255)
+  popularityLabelBn String?              @map("popularity_label_bn") @db.VarChar(255)
+  reviewsSnapshot   Json?                @map("reviews_snapshot")
+  isFeatured        Boolean              @default(false) @map("is_featured")
+  isBestSeller      Boolean              @default(false) @map("is_best_seller")
+  isBestRated       Boolean              @default(false) @map("is_best_rated")
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   productAssets     ProductAsset[]
   productAttributes ProductAttribute[]
   productBanners    ProductBanner[]
@@ -186,30 +254,57 @@ model Product {
   orderItems        OrderItem[]
   cartItems         CartItem[]
   tickets           Ticket[]
-  brandRelation      Brand?               @relation(fields: [brandId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  category           Category             @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  brandRelation     Brand?               @relation(fields: [brandId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productCategories ProductCategoryMap[]
+  metrics           ProductMetrics?
 
   @@index([brandId], map: "idx_products_brand")
-  @@index([categoryId], map: "idx_products_category")
   @@index([status], map: "idx_products_status")
   @@index([titleEn(ops: raw("gin_trgm_ops"))], map: "idx_products_title", type: Gin)
   @@map("products")
 }
 
+model ProductCategoryMap {
+  productId  String   @map("product_id") @db.Char(8)
+  categoryId String   @map("category_id") @db.Char(8)
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId], map: "product_category_map_pkey")
+  @@index([categoryId], map: "idx_pcm_category")
+  @@index([productId], map: "idx_pcm_product")
+  @@map("product_category_map")
+}
+
+model ProductMetrics {
+  productId         String   @id @map("product_id") @db.Char(8)
+  totalClicks       BigInt   @default(0) @map("total_clicks")
+  totalOrders       Int      @default(0) @map("total_orders")
+  totalQuantitySold BigInt   @default(0) @map("total_quantity_sold")
+  lastUpdated       DateTime @default(now()) @map("last_updated") @db.Timestamptz(6)
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_metrics")
+}
+
 model ProductPricing {
-  id            Int          @id(map: "product_pricing_pkey1") @default(autoincrement())
-  productId     String       @map("product_id") @db.Char(8)
-  customerType  String       @map("customer_type") @db.VarChar(20)
-  price         Decimal      @db.Decimal(12, 2)
-  compareAt     Decimal?     @map("compare_at") @db.Decimal(12, 2)
-  tier1MinQty   Int?         @map("tier1_min_qty")
-  tier1Discount Decimal?     @map("tier1_discount") @db.Decimal(5, 2)
-  tier2MinQty   Int?         @map("tier2_min_qty")
-  tier2Discount Decimal?     @map("tier2_discount") @db.Decimal(5, 2)
-  tier3MinQty   Int?         @map("tier3_min_qty")
-  tier3Discount Decimal?     @map("tier3_discount") @db.Decimal(5, 2)
-  sortOrder     Int?         @default(0) @map("sort_order")
-  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id            Int      @id(map: "product_pricing_pkey1") @default(autoincrement())
+  productId     String   @map("product_id") @db.Char(8)
+  customerType  String   @map("customer_type") @db.VarChar(20)
+  price         Decimal  @db.Decimal(12, 2)
+  compareAt     Decimal? @map("compare_at") @db.Decimal(12, 2)
+  tier1MinQty   Int?     @map("tier1_min_qty")
+  tier1Discount Decimal? @map("tier1_discount") @db.Decimal(5, 2)
+  tier2MinQty   Int?     @map("tier2_min_qty")
+  tier2Discount Decimal? @map("tier2_discount") @db.Decimal(5, 2)
+  tier3MinQty   Int?     @map("tier3_min_qty")
+  tier3Discount Decimal? @map("tier3_discount") @db.Decimal(5, 2)
+  tierBands     Json?    @map("tier_bands")
+  sortOrder     Int?     @default(0) @map("sort_order")
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([productId, customerType], map: "product_pricing_product_id_customer_type_key1")
   @@map("product_pricing")
@@ -387,19 +482,19 @@ model Shipment {
 }
 
 model ProductReview {
-  id        String          @id @db.Char(8)
-  userId    String          @map("user_id") @db.Char(8)
-  productId String          @map("product_id") @db.Char(8)
-  orderId   String?         @map("order_id") @db.Char(8)
+  id        String       @id @db.Char(8)
+  userId    String       @map("user_id") @db.Char(8)
+  productId String       @map("product_id") @db.Char(8)
+  orderId   String?      @map("order_id") @db.Char(8)
   rating    Int
-  title     String?         @db.VarChar(255)
+  title     String?      @db.VarChar(255)
   body      String?
-  status    ReviewStatus    @default(pending)
-  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  order     Order?          @relation(fields: [orderId], references: [id])
-  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    ReviewStatus @default(pending)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order     Order?       @relation(fields: [orderId], references: [id])
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
   @@index([productId, status])
@@ -472,7 +567,7 @@ model brands_legacy {
   id         String   @id(map: "brands_pkey") @db.Char(8)
   name_en    String   @db.VarChar(255)
   name_bn    String   @db.VarChar(255)
-  slug       String   @unique(map: "brands_slug_key") @db.VarChar(255)
+  slug       String   @unique(map: "brands_legacy_slug_key") @db.VarChar(255)
   logo_url   String?  @db.VarChar(500)
   sort_order Int      @default(0)
   active     Boolean  @default(true)
@@ -518,8 +613,25 @@ model chat_sessions {
   closed_by_agent_at DateTime? @db.Timestamptz(6)
   last_message_at    DateTime  @default(now()) @db.Timestamptz(6)
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  status             String    @default("bot") @db.VarChar(50)
+  agent_id           String?   @db.VarChar(255)
+  agent_name         String?   @db.VarChar(255)
+  agent_claimed_at   DateTime? @db.Timestamptz(6)
+  resolved_at        DateTime? @db.Timestamptz(6)
+  customer_name      String?   @db.VarChar(255)
+  customer_issue     String?   @db.VarChar(500)
+  customer_email     String?   @db.VarChar(255)
+  customer_phone     String?   @db.VarChar(50)
+  customer_form      Json?
+  visitor_id         String?   @db.VarChar(255)
+  channel            String    @default("web") @db.VarChar(20)
+  bot_context        Json?
+
+  meta_threads meta_threads[]
 
   @@index([user_id], map: "idx_chat_sessions_user_id")
+  @@index([status], map: "idx_chat_sessions_status")
+  @@index([channel], map: "idx_chat_sessions_channel")
 }
 
 model disputes {
@@ -645,19 +757,19 @@ model order_feedback {
 }
 
 model ProductAsset {
-  id         Int      @id @default(autoincrement())
-  productId  String   @map("product_id") @db.Char(8)
-  assetType  String   @default("image") @map("asset_type") @db.VarChar(10)
-  url        String
-  altEn      String?  @map("alt_en") @db.VarChar(255)
-  altBn      String?  @map("alt_bn") @db.VarChar(255)
-  sortOrder  Int      @default(0) @map("sort_order")
-  isPrimary  Boolean  @default(false) @map("is_primary")
-  colorKey   String?  @map("color_key") @db.VarChar(64)
-  fileSize   BigInt?  @map("file_size")
-  mimeType   String?  @map("mime_type") @db.VarChar(100)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  products   Product  @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id        Int      @id @default(autoincrement())
+  productId String   @map("product_id") @db.Char(8)
+  assetType String   @default("image") @map("asset_type") @db.VarChar(10)
+  url       String
+  altEn     String?  @map("alt_en") @db.VarChar(255)
+  altBn     String?  @map("alt_bn") @db.VarChar(255)
+  sortOrder Int      @default(0) @map("sort_order")
+  isPrimary Boolean  @default(false) @map("is_primary")
+  colorKey  String?  @map("color_key") @db.VarChar(64)
+  fileSize  BigInt?  @map("file_size")
+  mimeType  String?  @map("mime_type") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  products  Product  @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([productId], map: "idx_product_assets_product")
   @@map("product_assets")
@@ -747,40 +859,6 @@ model product_variants_legacy {
   sort_order     Int         @default(0)
   cartItems      CartItem[]
   orderItems     OrderItem[]
-}
-
-model products_legacy {
-  id                  String          @id(map: "products_pkey") @db.Char(8)
-  title_en            String          @db.VarChar(500)
-  title_bn            String          @db.VarChar(500)
-  description_en      String?
-  description_bn      String?
-  category_id         String          @db.Char(8)
-  seller_id           String?         @db.Char(8)
-  brand_id            String?         @db.Char(8)
-  brand               String?         @db.VarChar(255)
-  sku                 String?         @db.VarChar(100)
-  status              ProductStatus   @default(draft)
-  weight              Decimal?        @db.Decimal(8, 3)
-  weight_unit         String?         @db.VarChar(10)
-  moq                 Int             @default(1)
-  stock               Int             @default(0)
-  tags                String[]
-  seo_title           String?         @db.VarChar(255)
-  seo_description     String?
-  import_source       String?
-  specifications      Json?
-  attributes_extra    Json?
-  rating_avg          Decimal?        @db.Decimal(3, 2)
-  review_count        Int             @default(0)
-  brand_logo_url      String?         @db.VarChar(500)
-  popularity_rank     Int?
-  popularity_label_en String?         @db.VarChar(255)
-  popularity_label_bn String?         @db.VarChar(255)
-  reviews_snapshot    Json?
-  is_featured         Boolean         @default(false)
-  created_at          DateTime        @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime        @db.Timestamptz(6)
 }
 
 model return_requests {
@@ -919,14 +997,14 @@ model tag_groups {
 }
 
 model tags {
-  id           Int            @id @default(autoincrement())
-  group_id     Int?
-  name_en      String         @db.VarChar(100)
-  name_bn      String         @db.VarChar(100)
-  slug         String         @unique @db.VarChar(100)
-  sortOrder   Int            @default(0) @map("sort_order")
-  productTags  ProductTag[]
-  tag_groups   tag_groups?    @relation(fields: [group_id], references: [id], onUpdate: NoAction)
+  id          Int          @id @default(autoincrement())
+  group_id    Int?
+  name_en     String       @db.VarChar(100)
+  name_bn     String       @db.VarChar(100)
+  slug        String       @unique @db.VarChar(100)
+  sortOrder   Int          @default(0) @map("sort_order")
+  productTags ProductTag[]
+  tag_groups  tag_groups?  @relation(fields: [group_id], references: [id], onUpdate: NoAction)
 }
 
 model warehouses {
@@ -991,12 +1069,6 @@ enum SocialProvider {
   google
   facebook
   instagram
-}
-
-enum ProductStatus {
-  active
-  draft
-  archived
 }
 
 enum MediaType {
@@ -1094,6 +1166,10 @@ enum ActorType {
 enum AdminRole {
   super_admin
   admin
+  warehouse
+  support
+  finance
+  viewer
   staff
 }
 
@@ -1124,27 +1200,27 @@ model courier_tokens {
 }
 
 model courier_shipments {
-  id                 String   @id @db.VarChar(255)
-  order_id           String   @db.Char(8)
-  courier_provider   String   @db.VarChar(50)
-  consignment_id     String?  @db.VarChar(255)
-  tracking_code      String?  @db.VarChar(255)
-  courier_status     String?  @db.VarChar(100)
-  internal_status    String   @default("pending") @db.VarChar(30)
-  delivery_fee       Decimal? @db.Decimal(10, 2)
-  cod_amount         Decimal? @db.Decimal(12, 2)
-  recipient_name     String?  @db.VarChar(255)
-  recipient_phone    String?  @db.VarChar(50)
-  recipient_address  String?
-  recipient_city     String?  @db.VarChar(100)
-  recipient_zone     String?  @db.VarChar(100)
-  recipient_area     String?  @db.VarChar(100)
-  weight             Decimal? @db.Decimal(8, 3)
-  note               String?
-  courier_response   Json?
-  webhook_events     Json?
-  created_at         DateTime @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+  id                String   @id @db.VarChar(255)
+  order_id          String   @db.Char(8)
+  courier_provider  String   @db.VarChar(50)
+  consignment_id    String?  @db.VarChar(255)
+  tracking_code     String?  @db.VarChar(255)
+  courier_status    String?  @db.VarChar(100)
+  internal_status   String   @default("pending") @db.VarChar(30)
+  delivery_fee      Decimal? @db.Decimal(10, 2)
+  cod_amount        Decimal? @db.Decimal(12, 2)
+  recipient_name    String?  @db.VarChar(255)
+  recipient_phone   String?  @db.VarChar(50)
+  recipient_address String?
+  recipient_city    String?  @db.VarChar(100)
+  recipient_zone    String?  @db.VarChar(100)
+  recipient_area    String?  @db.VarChar(100)
+  weight            Decimal? @db.Decimal(8, 3)
+  note              String?
+  courier_response  Json?
+  webhook_events    Json?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([order_id], map: "idx_courier_shipments_order")
   @@index([consignment_id], map: "idx_courier_shipments_consignment")
@@ -1154,20 +1230,132 @@ model courier_shipments {
 // ─── Communication Logs ──────────────────────────────────────────────────────
 
 model email_logs {
+  id         String   @id @db.VarChar(255)
+  to_address String   @db.VarChar(255)
+  subject    String   @db.VarChar(500)
+  template   String?  @db.VarChar(100)
+  status     String   @default("sent") @db.VarChar(20)
+  error      String?
+  metadata   Json?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+// ─── M365 CRM — reusable email templates + local drafts ─────────────────────
+
+model EmailTemplate {
+  id         String   @id @db.VarChar(255)
+  name       String   @db.VarChar(255)
+  subject    String   @db.VarChar(500)
+  bodyHtml   String   @map("body_html")
+  category   String   @db.VarChar(50)
+  variables  Json?
+  updatedBy  String?  @map("updated_by") @db.VarChar(100)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([category], map: "idx_email_templates_category")
+  @@map("email_templates")
+}
+
+model email_drafts {
   id          String   @id @db.VarChar(255)
-  to_address  String   @db.VarChar(255)
-  subject     String   @db.VarChar(500)
-  template    String?  @db.VarChar(100)
-  status      String   @default("sent") @db.VarChar(20)
-  error       String?
-  metadata    Json?
+  mailbox     String   @db.VarChar(255)
+  to_address  String   @db.VarChar(500)
+  cc          String?  @db.VarChar(500)
+  bcc         String?  @db.VarChar(500)
+  subject     String?  @db.VarChar(500)
+  body_html   String?
+  attachments Json?
+  created_by  String?  @db.VarChar(100)
   created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([mailbox], map: "idx_email_drafts_mailbox")
+  @@index([created_by], map: "idx_email_drafts_created_by")
+}
+
+// ─── Meta Business Suite ────────────────────────────────────────────────────
+
+model meta_accounts {
+  id                String   @id @db.VarChar(255)
+  page_id           String   @db.VarChar(100)
+  ig_id             String?  @db.VarChar(100)
+  waba_id           String?  @db.VarChar(100)
+  wa_phone_number_id String? @map("wa_phone_number_id") @db.VarChar(100)
+  page_access_token String?
+  ad_account_id     String?  @db.VarChar(100)
+  catalog_id        String?  @db.VarChar(100)
+  verify_token      String?  @db.VarChar(255)
+  status            String   @default("disconnected") @db.VarChar(30)
+  connected_by      String?  @db.VarChar(100)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([page_id], map: "idx_meta_accounts_page_id")
+  @@index([status], map: "idx_meta_accounts_status")
+}
+
+model meta_threads {
+  id              String        @id @db.VarChar(255)
+  platform        String        @db.VarChar(20)
+  platform_user_id String       @map("platform_user_id") @db.VarChar(255)
+  chat_session_id String        @map("chat_session_id") @db.VarChar(255)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  chat_session    chat_sessions @relation(fields: [chat_session_id], references: [id], onDelete: Cascade)
+
+  @@unique([platform, platform_user_id], map: "uq_meta_threads_platform_user")
+  @@index([chat_session_id], map: "idx_meta_threads_session")
+}
+
+model meta_webhook_events {
+  id         String   @id @db.VarChar(255)
+  event_type String   @db.VarChar(100)
+  payload    Json
+  processed  Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([event_type], map: "idx_meta_webhook_events_type")
+  @@index([processed], map: "idx_meta_webhook_events_processed")
+}
+
+model meta_posts {
+  id               String    @id @db.VarChar(255)
+  account_id       String?   @db.VarChar(255)
+  post_type        String    @db.VarChar(20)
+  caption          String?
+  media_urls       Json?
+  scheduled_at     DateTime? @db.Timestamptz(6)
+  status           String    @default("draft") @db.VarChar(30)
+  external_post_id String?   @db.VarChar(255)
+  error            String?
+  created_by       String?   @db.VarChar(100)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([status], map: "idx_meta_posts_status")
+  @@index([scheduled_at], map: "idx_meta_posts_scheduled")
+}
+
+model meta_ad_campaigns {
+  id                   String   @id @db.VarChar(255)
+  account_id           String?  @db.VarChar(255)
+  name                 String   @db.VarChar(255)
+  objective            String   @db.VarChar(100)
+  budget               Decimal? @db.Decimal(12, 2)
+  status               String   @default("draft") @db.VarChar(30)
+  external_campaign_id String?  @map("external_campaign_id") @db.VarChar(255)
+  created_by           String?  @db.VarChar(100)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([status], map: "idx_meta_ad_campaigns_status")
 }
 
 model sms_logs {
   id           String   @id @db.VarChar(255)
   to_phone     String   @db.VarChar(50)
   message_type String   @db.VarChar(50)
+  channel      String   @default("sms") @db.VarChar(20)
   status       String   @default("sent") @db.VarChar(20)
   error        String?
   metadata     Json?
@@ -1175,11 +1363,281 @@ model sms_logs {
 }
 
 model cart_abandonment_reminders {
-  id         String   @id @db.VarChar(255)
-  user_id    String   @db.Char(8)
-  cart_id    Int
-  reminder_type String @db.VarChar(30)
-  sent_at    DateTime @default(now()) @db.Timestamptz(6)
+  id            String   @id @db.VarChar(255)
+  user_id       String   @db.Char(8)
+  cart_id       Int
+  reminder_type String   @db.VarChar(30)
+  sent_at       DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([user_id], map: "idx_cart_abandon_user")
+}
+
+// ─── Push Notifications ───────────────────────────────────────────────────────
+
+model push_subscriptions {
+  id        String   @id @db.VarChar(255)
+  userId    String   @map("user_id") @db.Char(8)
+  endpoint  String   @unique @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId], map: "idx_push_subscriptions_user")
+}
+
+// ─── Referral / Affiliate ─────────────────────────────────────────────────────
+
+model referral_codes {
+  id           String   @id @db.Char(8)
+  userId       String   @unique @map("user_id") @db.Char(8)
+  code         String   @unique @db.Char(10)
+  clickCount   Int      @default(0) @map("click_count")
+  signupCount  Int      @default(0) @map("signup_count")
+  earnedPoints Int      @default(0) @map("earned_points")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([code], map: "idx_referral_codes_code")
+}
+
+model referral_events {
+  id            String   @id @db.VarChar(255)
+  referrerId    String   @map("referrer_id") @db.Char(8)
+  referredId    String   @map("referred_id") @db.Char(8)
+  code          String   @db.Char(10)
+  event         String   @db.VarChar(50)
+  pointsAwarded Int      @default(0) @map("points_awarded")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([referrerId], map: "idx_referral_events_referrer")
+}
+
+// ─── A/B Test Impressions ─────────────────────────────────────────────────────
+
+model ab_impressions {
+  id        String   @id @db.VarChar(255)
+  testId    String   @map("test_id") @db.VarChar(100)
+  variant   String   @db.Char(1)
+  userId    String?  @map("user_id") @db.Char(8)
+  sessionId String?  @map("session_id") @db.VarChar(255)
+  converted Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([testId, variant], map: "idx_ab_impressions_test")
+  @@index([testId, userId], map: "idx_ab_impressions_user")
+}
+
+// ─── OceanBazar OS v1.0 — Enterprise Intelligence Layer ───────────────────────
+// Tables below are owned by the Node BFF (Prisma is the source of truth).
+// They are mirrored idempotently in Flyway V8 for Java-only deploy paths.
+
+// SEO automation: per-entity (product/category/brand/page) metadata + structured data.
+model SeoMetadata {
+  id              String    @id @db.VarChar(255)
+  entityType      String    @map("entity_type") @db.VarChar(32)
+  entityId        String    @map("entity_id") @db.VarChar(64)
+  locale          String    @default("en") @db.VarChar(8)
+  metaTitle       String?   @map("meta_title") @db.VarChar(255)
+  metaDescription String?   @map("meta_description") @db.VarChar(500)
+  keywords        String[]
+  canonicalUrl    String?   @map("canonical_url") @db.VarChar(500)
+  ogTitle         String?   @map("og_title") @db.VarChar(255)
+  ogDescription   String?   @map("og_description") @db.VarChar(500)
+  ogImage         String?   @map("og_image") @db.VarChar(500)
+  schemaJson      Json?     @map("schema_json")
+  faq             Json?
+  contentBlocks   Json?     @map("content_blocks")
+  internalLinks   Json?     @map("internal_links")
+  seoScore        Int?      @map("seo_score")
+  source          String    @default("manual") @db.VarChar(20)
+  generatedAt     DateTime? @map("generated_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([entityType, entityId, locale])
+  @@index([entityType, entityId])
+  @@map("seo_metadata")
+}
+
+// ML predictions: churn / LTV / demand per subject (customer or product).
+model MlPrediction {
+  id           String   @id @db.VarChar(255)
+  subjectType  String   @map("subject_type") @db.VarChar(32)
+  subjectId    String   @map("subject_id") @db.VarChar(64)
+  churnScore   Decimal? @map("churn_score") @db.Decimal(5, 4)
+  predictedLtv Decimal? @map("predicted_ltv") @db.Decimal(12, 2)
+  demandScore  Decimal? @map("demand_score") @db.Decimal(10, 4)
+  segment      String?  @db.VarChar(64)
+  features     Json?
+  modelVersion String   @map("model_version") @db.VarChar(40)
+  computedAt   DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@unique([subjectType, subjectId])
+  @@index([subjectType, churnScore])
+  @@index([subjectType, predictedLtv])
+  @@index([subjectType, demandScore])
+  @@index([segment])
+  @@map("ml_predictions")
+}
+
+// Sales pipeline CRM.
+model SalesPipeline {
+  id          String          @id @db.VarChar(255)
+  name        String          @db.VarChar(120)
+  description String?
+  isDefault   Boolean         @default(false) @map("is_default")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  stages      PipelineStage[]
+  deals       Deal[]
+
+  @@map("sales_pipelines")
+}
+
+model PipelineStage {
+  id             String        @id @db.VarChar(255)
+  pipelineId     String        @map("pipeline_id") @db.VarChar(255)
+  name           String        @db.VarChar(120)
+  position       Int           @default(0)
+  winProbability Int           @default(0) @map("win_probability")
+  isWon          Boolean       @default(false) @map("is_won")
+  isLost         Boolean       @default(false) @map("is_lost")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  pipeline       SalesPipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals          Deal[]
+
+  @@index([pipelineId, position])
+  @@map("pipeline_stages")
+}
+
+model Deal {
+  id              String        @id @db.VarChar(255)
+  pipelineId      String        @map("pipeline_id") @db.VarChar(255)
+  stageId         String        @map("stage_id") @db.VarChar(255)
+  customerId      String?       @map("customer_id") @db.Char(8)
+  title           String        @db.VarChar(255)
+  value           Decimal       @default(0) @db.Decimal(12, 2)
+  currency        String        @default("BDT") @db.VarChar(8)
+  status          DealStatus    @default(open)
+  ownerAdminId    Int?          @map("owner_admin_id")
+  expectedCloseAt DateTime?     @map("expected_close_at") @db.Timestamptz(6)
+  notes           String?
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  pipeline        SalesPipeline @relation(fields: [pipelineId], references: [id])
+  stage           PipelineStage @relation(fields: [stageId], references: [id])
+
+  @@index([pipelineId, stageId])
+  @@index([customerId])
+  @@map("deals")
+}
+
+// Unified customer communication log (email / sms / chat / call / note).
+model CommunicationLog {
+  id          String        @id @db.VarChar(255)
+  customerId  String?       @map("customer_id") @db.Char(8)
+  channel     CommChannel
+  direction   CommDirection @default(outbound)
+  subject     String?       @db.VarChar(500)
+  body        String?
+  fromAddress String?       @map("from_address") @db.VarChar(255)
+  toAddress   String?       @map("to_address") @db.VarChar(255)
+  status      String        @default("sent") @db.VarChar(30)
+  provider    String?       @db.VarChar(40)
+  externalId  String?       @map("external_id") @db.VarChar(255)
+  refType     String?       @map("ref_type") @db.VarChar(40)
+  refId       String?       @map("ref_id") @db.VarChar(64)
+  adminId     Int?          @map("admin_id")
+  metadata    Json?
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([customerId, createdAt])
+  @@index([channel, createdAt])
+  @@map("communication_logs")
+}
+
+// Marketing automation: campaigns, multi-step journeys, enrollments.
+model MarketingCampaign {
+  id               String               @id @db.VarChar(255)
+  name             String               @db.VarChar(200)
+  description      String?
+  channel          CommChannel          @default(email)
+  status           CampaignStatus       @default(draft)
+  audience         Json?
+  triggerType      String               @map("trigger_type") @db.VarChar(40)
+  triggerConfig    Json?                @map("trigger_config")
+  createdByAdminId Int?                 @map("created_by_admin_id")
+  startsAt         DateTime?            @map("starts_at") @db.Timestamptz(6)
+  endsAt           DateTime?            @map("ends_at") @db.Timestamptz(6)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  steps            CampaignStep[]
+  enrollments      CampaignEnrollment[]
+
+  @@index([status])
+  @@map("marketing_campaigns")
+}
+
+model CampaignStep {
+  id         String            @id @db.VarChar(255)
+  campaignId String            @map("campaign_id") @db.VarChar(255)
+  position   Int               @default(0)
+  channel    CommChannel       @default(email)
+  delayHours Int               @default(0) @map("delay_hours")
+  subject    String?           @db.VarChar(500)
+  body       String?
+  metadata   Json?
+  campaign   MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, position])
+  @@map("campaign_steps")
+}
+
+model CampaignEnrollment {
+  id          String            @id @db.VarChar(255)
+  campaignId  String            @map("campaign_id") @db.VarChar(255)
+  customerId  String            @map("customer_id") @db.Char(8)
+  currentStep Int               @default(0) @map("current_step")
+  status      EnrollmentStatus  @default(active)
+  nextRunAt   DateTime?         @map("next_run_at") @db.Timestamptz(6)
+  enrolledAt  DateTime          @default(now()) @map("enrolled_at") @db.Timestamptz(6)
+  completedAt DateTime?         @map("completed_at") @db.Timestamptz(6)
+  campaign    MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, customerId])
+  @@index([status, nextRunAt])
+  @@map("campaign_enrollments")
+}
+
+enum DealStatus {
+  open
+  won
+  lost
+}
+
+enum CommChannel {
+  email
+  sms
+  whatsapp
+  chat
+  call
+  push
+  note
+}
+
+enum CommDirection {
+  inbound
+  outbound
+}
+
+enum CampaignStatus {
+  draft
+  active
+  paused
+  completed
+  archived
+}
+
+enum EnrollmentStatus {
+  active
+  completed
+  cancelled
 }

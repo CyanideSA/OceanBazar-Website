@@ -60,12 +60,12 @@ export default function AccountWishlistPage() {
           {list.map((p) => {
             const price =
               user?.userType === 'wholesale'
-                ? (p.wholesalePrice ?? p.retailPrice)
-                : (p.retailPrice ?? p.wholesalePrice);
+                ? (p.pricing?.wholesale?.price ?? p.pricing?.retail?.price)
+                : (p.pricing?.retail?.price ?? p.pricing?.wholesale?.price);
             return (
               <li key={p.id}>
                 <Link
-                  href={`/${locale}/products/${p.id}`}
+                  href={`/${locale}/product/${p.id}`}
                   className="flex gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/40 sm:gap-4"
                 >
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-muted sm:h-24 sm:w-24">

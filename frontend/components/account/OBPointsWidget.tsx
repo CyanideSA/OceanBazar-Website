@@ -2,11 +2,11 @@
 
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { Star, TrendingUp } from 'lucide-react';
+import { Star } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useOBPointsStore } from '@/stores/obPointsStore';
 import { obPointsApi } from '@/lib/api';
-import { TIER_COLORS, getNextTierInfo } from '@/lib/ob-points';
+import { TIER_COLORS, TIER_THRESHOLDS, getNextTierInfo } from '@/lib/ob-points';
 import TierBadge from './TierBadge';
 import RedemptionModal from './RedemptionModal';
 
@@ -52,9 +52,14 @@ export default function OBPointsWidget({ compact = false }: Props) {
     );
   }
 
+  const tierFloor =
+    info.tier === 'Gold'
+      ? TIER_THRESHOLDS.Gold
+      : info.tier === 'Silver'
+        ? TIER_THRESHOLDS.Silver
+        : TIER_THRESHOLDS.Bronze;
   const progress = nextTierInfo
-    ? Math.min(100, ((info.lifetimeSpend - (info.tier === 'Bronze' ? 0 : info.tier === 'Silver' ? 10000 : 50000)) /
-        nextTierInfo.remaining) * 100)
+    ? Math.min(100, ((info.lifetimeSpend - tierFloor) / nextTierInfo.remaining) * 100)
     : 100;
 
   return (
