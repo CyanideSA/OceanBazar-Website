@@ -6,17 +6,20 @@ const prisma = new PrismaClient();
 
 function getConfig() {
   const isSandbox = (process.env.PATHAO_ENV || 'sandbox') === 'sandbox';
-  return {
+  const config = {
     baseUrl: process.env.PATHAO_BASE_URL || (isSandbox
       ? 'https://courier-api-sandbox.pathao.com'
       : 'https://api-hermes.pathao.com'),
-    clientId: process.env.PATHAO_CLIENT_ID || (isSandbox ? '7N1aMJQbWm' : 'Vyb8oXlavA'),
-    clientSecret: process.env.PATHAO_CLIENT_SECRET || (isSandbox
-      ? 'wRcaibZkUdSNz2EI9ZyuXLlNrnAv0TdPUPXMnD39'
-      : '8UweXxp0aVYWR5bWQNg9zolnMMuDtziCZi2b3WEu'),
-    username: process.env.PATHAO_USERNAME || (isSandbox ? 'test@pathao.com' : 'oceanbazar04@gmail.com'),
-    password: process.env.PATHAO_PASSWORD || (isSandbox ? 'lovePathao' : '*#Ocean123'),
+    clientId: process.env.PATHAO_CLIENT_ID || '',
+    clientSecret: process.env.PATHAO_CLIENT_SECRET || '',
+    username: process.env.PATHAO_USERNAME || '',
+    password: process.env.PATHAO_PASSWORD || '',
   };
+
+  if (!config.clientId || !config.clientSecret || !config.username || !config.password) {
+    throw new Error('Pathao credentials are not configured');
+  }
+  return config;
 }
 
 async function getStoredToken(): Promise<{ access_token: string; refresh_token: string; expires_at: Date } | null> {

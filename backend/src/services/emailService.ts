@@ -285,6 +285,16 @@ export async function sendPasswordResetEmail(to: string, resetLink: string): Pro
   return sendMail(to, '🔒 Reset Your OceanBazar Password', emailWrapper(body), 'password_reset');
 }
 
+export async function sendPasswordChangedEmail(to: string): Promise<boolean> {
+  const body = `
+    <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Password Updated 🔒</h2>
+    <p style="color:#6b7280;margin:0 0 20px;">Your OceanBazar account password was changed successfully.</p>
+    <p style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;color:#991b1b;font-size:13px;margin:0;">
+      If you did not make this change, contact <a href="mailto:support@oceanbazar.com" style="color:${PRIMARY};">support@oceanbazar.com</a> immediately.
+    </p>`;
+  return sendMail(to, '🔒 Your OceanBazar password was changed', emailWrapper(body), 'password_changed');
+}
+
 /** Render a DB email template with {{var}} substitution. */
 export async function renderEmailTemplate(
   templateIdOrCategory: string,

@@ -2,6 +2,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaClient } from '@prisma/client';
 import { exchangeMetaLongLivedToken } from './metaClient';
+import { getValidatedMetaOAuthRedirectUri } from './metaOAuthRedirect';
 
 const prisma = new PrismaClient();
 const prismaAny = prisma as any;
@@ -13,7 +14,7 @@ export async function exchangeAndStoreMetaAccount(
 ): Promise<{ ok: true; pageId: string; igId: string | null } | { ok: false; error: string }> {
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
-  const redirectUri = process.env.META_OAUTH_REDIRECT_URI;
+  const redirectUri = getValidatedMetaOAuthRedirectUri();
   if (!code || !appId || !appSecret || !redirectUri) {
     return { ok: false, error: 'missing_params' };
   }

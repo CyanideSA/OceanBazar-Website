@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, Noto_Sans_Bengali } from 'next/font/google';
+import MetaPixel from '@/components/analytics/MetaPixel';
 import './globals.css';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://oceanbazar.com';
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${notoSansBengali.variable}`}>
       <body className="min-h-screen bg-background text-foreground antialiased" suppressHydrationWarning>
         {children}
+        <MetaPixel />
       </body>
     </html>
   );

@@ -44,6 +44,10 @@ export function maintenanceModeMiddleware(req: Request, res: Response, next: Nex
     next();
     return;
   }
+  if (req.method === 'POST' && req.path === '/api/client-errors') {
+    next();
+    return;
+  }
 
   res.setHeader('Retry-After', process.env.MAINTENANCE_RETRY_AFTER || '3600');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');

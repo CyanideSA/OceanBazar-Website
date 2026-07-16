@@ -12,23 +12,8 @@ const prisma = new PrismaClient();
 
 router.use(requireAuth);
 
-function jwtPayloadClaims(authHeader?: string): { hasUserId?: boolean; hasUser_id?: boolean } {
-  try {
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    const payload = token.split('.')[1];
-    if (!payload) return {};
-    const json = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;
-    return { hasUserId: json.userId != null, hasUser_id: json.user_id != null };
-  } catch {
-    return {};
-  }
-}
-
 function handleCoreProxyError(err: unknown, res: Response, req?: Request): void {
   const ax = err as { response?: { status?: number; data?: unknown }; message?: string };
-  // #region agent log
-  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'A',location:'cart.ts:handleCoreProxyError',message:'cart java proxy error',data:{bffUserId:req?.user?.userId,javaStatus:ax.response?.status,claims:jwtPayloadClaims(req?.headers.authorization as string|undefined),detail:typeof ax.response?.data==='object'?ax.response?.data:ax.message},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (ax.response) {
     res.status(ax.response.status || 502).json(ax.response.data ?? { error: 'Core API error' });
     return;
@@ -49,9 +34,6 @@ router.get('/', async (req: Request, res: Response) => {
 
 // POST /api/cart/add
 router.post('/add', async (req: Request, res: Response) => {
-  // #region agent log
-  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'A',location:'cart.ts:POST/add',message:'cart add attempt',data:{bffUserId:req.user?.userId,productId:(req.body as {productId?:string})?.productId,claims:jwtPayloadClaims(req.headers.authorization as string|undefined)},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   try {
     const data = await proxyCartToCore(req, 'POST', '/add', req.body);
     res.json(data);

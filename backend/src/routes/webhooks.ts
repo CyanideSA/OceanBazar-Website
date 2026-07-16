@@ -179,10 +179,26 @@ async function handlePaperflyWebhook(req: Request, res: Response) {
 }
 
 async function handleSteadfastWebhook(req: Request, res: Response) {
+  const configuredToken = process.env.STEADFAST_WEBHOOK_TOKEN;
+  if (!configuredToken) {
+    res.status(503).json({ status: 'error', message: 'Steadfast webhook authentication is not configured.' });
+    return;
+  }
+
+  const authorization = req.header('authorization') || '';
+  const suppliedToken = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  const expected = Buffer.from(configuredToken);
+  const supplied = Buffer.from(suppliedToken);
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) {
+    res.status(401).json({ status: 'error', message: 'Invalid webhook authorization.' });
+    return;
+  }
+
   try {
     const {
       consignment_id,
       tracking_code,
+      invoice,
       status,
     } = req.body as {
       consignment_id?: string;
@@ -191,28 +207,40 @@ async function handleSteadfastWebhook(req: Request, res: Response) {
       invoice?: string;
     };
 
-    const identifier = consignment_id || tracking_code;
-    if (identifier && status) {
-      const internalStatus = mapSteadfastStatus(status);
+    const identifier = consignment_id || tracking_code || invoice;
+    if (!identifier || !status) {
+      res.status(400).json({ status: 'error', message: 'Invalid consignment ID or status.' });
+      return;
+    }
 
-      let cs = await prisma.courier_shipments.findFirst({
-        where: { consignment_id: String(identifier), courier_provider: 'steadfast' },
+    const internalStatus = mapSteadfastStatus(status);
+    let cs = await prisma.courier_shipments.findFirst({
+      where: { consignment_id: String(identifier), courier_provider: 'steadfast' },
+    });
+    if (!cs && tracking_code) {
+      cs = await prisma.courier_shipments.findFirst({
+        where: { tracking_code, courier_provider: 'steadfast' },
       });
-      if (!cs && tracking_code) {
+    }
+    if (!cs && invoice) {
+      const order = await prisma.order.findFirst({ where: { orderNumber: invoice } });
+      if (order) {
         cs = await prisma.courier_shipments.findFirst({
-          where: { tracking_code, courier_provider: 'steadfast' },
+          where: { order_id: order.id, courier_provider: 'steadfast' },
         });
-      }
-
-      if (cs) {
-        await processWebhookEvent('steadfast', cs.consignment_id || String(identifier), status, internalStatus, req.body);
       }
     }
 
-    res.status(200).json({ received: true });
+    if (!cs) {
+      res.status(400).json({ status: 'error', message: 'Invalid consignment ID.' });
+      return;
+    }
+
+    await processWebhookEvent('steadfast', cs.consignment_id || String(identifier), status, internalStatus, req.body);
+    res.status(200).json({ status: 'success', message: 'Webhook received successfully.' });
   } catch (err: any) {
     console.error('[webhook/steadfast] Error:', err.message);
-    res.status(200).json({ received: true });
+    res.status(500).json({ status: 'error', message: 'Webhook processing failed.' });
   }
 }
 

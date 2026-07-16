@@ -7,7 +7,13 @@ import { useTranslations } from 'next-intl';
 import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { validatePassword } from '@/lib/passwordRules';
-import { signInWithGoogle, signInWithFacebook } from '@/lib/firebase';
+import {
+  confirmPhoneSignIn,
+  resetPhoneSignIn,
+  signInWithFacebook,
+  signInWithGoogle,
+  startPhoneSignIn,
+} from '@/lib/firebase';
 import Logo from '@/components/shared/Logo';
 import { loadRecaptchaScript, executeRecaptcha } from '@/lib/recaptcha';
 import type { User } from '@/types';
@@ -15,6 +21,7 @@ import { normalizePhoneTarget } from '@/lib/phoneNormalize';
 
 type Step = 'method' | 'otp' | 'password';
 type Method = 'email' | 'phone' | 'password';
+type OtpProvider = 'backend' | 'firebase';
 
 export default function LoginPage() {
   const t = useTranslations('auth');
@@ -28,6 +35,7 @@ export default function LoginPage() {
   const [step, setStep] = useState<Step>('method');
   const [target, setTarget] = useState('');
   const [otp, setOtp] = useState('');
+  const [otpProvider, setOtpProvider] = useState<OtpProvider>('backend');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
@@ -44,6 +52,7 @@ export default function LoginPage() {
     setLoading(true); setError('');
     try {
       await authApi.sendOtp(resolveTarget(target), 'login');
+      setOtpProvider('backend');
       setStep('otp');
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } } };
@@ -59,10 +68,12 @@ export default function LoginPage() {
   async function handleVerifyOtp() {
     setLoading(true); setError('');
     try {
-      const { data } = await authApi.verifyOtp(resolveTarget(target), otp);
+      const { data } = otpProvider === 'firebase'
+        ? await authApi.firebaseLogin(await confirmPhoneSignIn(otp))
+        : await authApi.verifyOtp(resolveTarget(target), otp);
       const token = data.token || data.access;
       setUser(data.user as User, token);
-      if (data.user && !data.user.emailVerified) {
+      if (data.user?.email && !data.user.emailVerified) {
         router.push(`/${locale}/auth/verify-email`);
       } else {
         router.push(`/${locale}`);
@@ -78,6 +89,35 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   }
 
+  async function handleFirebasePhoneSend() {
+    setLoading(true); setError('');
+    try {
+      await startPhoneSignIn(
+        normalizePhoneTarget(target),
+        'firebase-phone-sign-in-button',
+        locale === 'bn' ? 'bn' : 'en',
+      );
+      setOtpProvider('firebase');
+      setStep('otp');
+    } catch (e: unknown) {
+      const err = e as {
+        code?: string;
+        message?: string;
+        response?: { data?: { error?: { message?: string } | string; message?: string; detail?: string } };
+      };
+      const apiError = err.response?.data?.error;
+      setError(
+        (typeof apiError === 'object' ? apiError?.message : apiError)
+        ?? err.response?.data?.detail
+        ?? err.response?.data?.message
+        ?? err.message
+        ?? tc('error'),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handlePasswordLogin() {
     setLoading(true); setError('');
     try {
@@ -85,7 +125,7 @@ export default function LoginPage() {
       const { data } = await authApi.login(resolveTarget(target), password, recaptchaToken);
       const token = data.token || data.access;
       setUser(data.user as User, token);
-      if (data.user && !data.user.emailVerified) {
+      if (data.user?.email && !data.user.emailVerified) {
         router.push(`/${locale}/auth/verify-email`);
       } else {
         router.push(`/${locale}`);
@@ -197,6 +237,23 @@ export default function LoginPage() {
                 {loading ? tc('loading') : method === 'password' ? t('login') : t('sendOtp')}
               </button>
 
+              {method === 'phone' && (
+                <>
+                  <button
+                    id="firebase-phone-sign-in-button"
+                    type="button"
+                    onClick={handleFirebasePhoneSend}
+                    disabled={loading || !target}
+                    className="w-full border border-primary/40 text-primary py-3 rounded-xl font-semibold hover:bg-primary/5 disabled:opacity-50 transition-colors"
+                  >
+                    Verify with Firebase SMS
+                  </button>
+                  <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                    Phone verification may send an SMS. Standard messaging rates may apply.
+                  </p>
+                </>
+              )}
+
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
                 <div className="relative text-center text-xs text-muted-foreground bg-card px-3 w-fit mx-auto">{t('orContinueWith')}</div>
@@ -254,7 +311,14 @@ export default function LoginPage() {
               >
                 {loading ? tc('loading') : t('verifyOtp')}
               </button>
-              <button onClick={() => setStep('method')} className="w-full text-muted-foreground text-sm hover:underline">
+              <button
+                onClick={() => {
+                  if (otpProvider === 'firebase') resetPhoneSignIn();
+                  setOtp('');
+                  setStep('method');
+                }}
+                className="w-full text-muted-foreground text-sm hover:underline"
+              >
                 {tc('back')}
               </button>
             </div>

@@ -3,12 +3,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { ShoppingCart } from 'lucide-react';
 import { useCartStore } from '@/stores/cartStore';
+import { useNormalizedCart } from '@/hooks/useNormalizedCart';
+import { formatCartMoney } from '@/lib/cart';
 import { cn } from '@/lib/utils';
 
 export default function FloatingCartButton() {
-  const { cart, setOpen, isOpen } = useCartStore();
-  const count = cart?.itemCount ?? 0;
-  const subtotal = cart?.subtotal ?? 0;
+  const { setOpen, isOpen } = useCartStore();
+  const safeCart = useNormalizedCart();
+  const count = safeCart?.itemCount ?? 0;
+  const subtotal = safeCart?.subtotal ?? 0;
   const [bounce, setBounce] = useState(false);
   const prevCount = useRef(count);
 
@@ -54,7 +57,7 @@ export default function FloatingCartButton() {
       </span>
       {subtotal > 0 && (
         <span className="mt-1 text-2xs font-bold leading-none opacity-90">
-          ৳{subtotal > 9999 ? `${Math.round(subtotal / 1000)}k` : subtotal.toLocaleString()}
+          ৳{subtotal > 9999 ? `${Math.round(subtotal / 1000)}k` : formatCartMoney(subtotal)}
         </span>
       )}
     </button>

@@ -1,10 +1,13 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 /** Admin CRM talks only to the BFF (no Java STOMP /ws). */
-const proxyApiTarget = process.env.ADMIN_DEV_PROXY_API || "http://127.0.0.1:4000";
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const proxyApiTarget =
+    env.ADMIN_DEV_PROXY_API || env.VITE_ADMIN_API_URL || "http://127.0.0.1:4001";
 
-export default defineConfig({
+  return {
   plugins: [
     react(),
   ],
@@ -65,6 +68,7 @@ export default defineConfig({
       },
     },
   },
+  };
 });
 
 

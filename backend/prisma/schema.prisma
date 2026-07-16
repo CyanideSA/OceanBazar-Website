@@ -1641,3 +1641,20 @@ enum EnrollmentStatus {
   completed
   cancelled
 }
+
+model ClientErrorReport {
+  id         String    @id @default(uuid()) @db.Uuid
+  digest     String?   @db.VarChar(128)
+  message    String?   @db.Text
+  stack      String?   @db.Text
+  url        String?   @db.VarChar(2048)
+  userAgent  String?   @map("user_agent") @db.VarChar(512)
+  locale     String?   @db.VarChar(8)
+  snapshot   Json?
+  ipHash     String?   @map("ip_hash") @db.VarChar(64)
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)])
+  @@map("client_error_reports")
+}

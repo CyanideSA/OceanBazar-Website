@@ -25,6 +25,8 @@ services:
         value: <FIREBASE_PROJECT_ID>
       - key: NEXT_PUBLIC_FIREBASE_APP_ID
         value: <FIREBASE_APP_ID>
+      - key: NEXT_PUBLIC_META_PIXEL_ID
+        value: <META_PIXEL_ID>
       - key: MAINTENANCE_MODE
         value: "true"
       - key: MAINTENANCE_BYPASS_TOKEN
@@ -115,7 +117,7 @@ services:
       - key: OTP_EXPIRE_MINUTES
         value: 10
       - key: OTP_TERMINAL_ONLY
-        value: true
+        value: false
       - key: CART_ABANDONMENT_CRON
         value: false
       - key: UPLOAD_DIR
@@ -146,6 +148,62 @@ services:
         value: <SMTP_PASS_OR_EMPTY>
       - key: EMAIL_FROM
         value: Oceanbazar <noreply@oceanbazar.com>
+      - key: API_BASE_URL
+        value: https://<bff-service>.onrender.com
+      - key: MS_TENANT_ID
+        sync: false
+      - key: MS_CLIENT_ID
+        sync: false
+      - key: MS_CLIENT_SECRET
+        sync: false
+      - key: MS_SENDER_ADDRESSES
+        sync: false
+      - key: MS_DEFAULT_SENDER
+        value: no-reply@oceanbazar.com.bd
+      - key: MS_SUPPORT_SENDER
+        value: contact@oceanbazar.com.bd
+      - key: SSLCOMMERZ_STORE_ID
+        sync: false
+      - key: SSLCOMMERZ_STORE_PASSWORD
+        sync: false
+      - key: SSLCOMMERZ_SANDBOX
+        value: "false"
+      - key: PATHAO_ENV
+        value: production
+      - key: PATHAO_BASE_URL
+        value: https://api-hermes.pathao.com
+      - key: PATHAO_CLIENT_ID
+        sync: false
+      - key: PATHAO_CLIENT_SECRET
+        sync: false
+      - key: PATHAO_USERNAME
+        sync: false
+      - key: PATHAO_PASSWORD
+        sync: false
+      - key: PATHAO_STORE_ID
+        sync: false
+      - key: STEADFAST_API_KEY
+        sync: false
+      - key: STEADFAST_SECRET_KEY
+        sync: false
+      - key: STEADFAST_WEBHOOK_TOKEN
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_OAUTH_REDIRECT_URI
+        value: https://<bff-service>.onrender.com/api/admin/meta/oauth/callback
+      - key: META_OAUTH_ALLOWED_HOSTS
+        value: <bff-service>.onrender.com,api.oceanbazar.com.bd
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
       - key: MAINTENANCE_MODE
         value: "true"
       - key: MAINTENANCE_BYPASS_TOKEN

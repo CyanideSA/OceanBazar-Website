@@ -39,6 +39,21 @@ router.post('/place', async (req: Request, res: Response) => {
     notes?: string;
   };
 
+  // #region agent log
+  const _dbg = (message: string, hypothesisId: string, data: Record<string, unknown>) => {
+    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId,location:'orders.ts:place',message,data,timestamp:Date.now()})}).catch(()=>{});
+  };
+  _dbg('place entry', 'C', { paymentMethod, shippingAddressId, userId: req.user?.userId, hasCoupon: !!(couponCode || couponId) });
+  // #endregion
+
+  if (shippingAddressId == null || !Number.isFinite(Number(shippingAddressId))) {
+    // #region agent log
+    _dbg('place reject missing address', 'B', { shippingAddressId });
+    // #endregion
+    res.status(400).json({ error: 'Shipping address is required' });
+    return;
+  }
+
   // ── Load cart ────────────────────────────────────────────────────────────
   const cart = await prisma.cart.findUnique({
     where: { userId: req.user!.userId },
@@ -59,7 +74,7 @@ router.post('/place', async (req: Request, res: Response) => {
 
   // ── Load address (needed for COD district check) ─────────────────────────
   const address = await prisma.savedAddress.findFirst({
-    where: { id: shippingAddressId, userId: req.user!.userId },
+    where: { id: Number(shippingAddressId), userId: req.user!.userId },
   });
   if (!address) {
     res.status(400).json({ error: 'Shipping address not found' });
@@ -91,11 +106,17 @@ router.post('/place', async (req: Request, res: Response) => {
     });
   } catch (err: unknown) {
     const ax = err as { response?: { status?: number; data?: unknown } };
+    // #region agent log
+    _dbg('place core validation unavailable', 'C', { status: ax.response?.status, detail: ax.response?.data });
+    // #endregion
     res.status(ax.response?.status || 502).json(ax.response?.data ?? { error: 'Checkout validation unavailable' });
     return;
   }
 
   if (!coreValidation.valid) {
+    // #region agent log
+    _dbg('place core validation invalid', 'C', { errors: coreValidation.errors, paymentMethod });
+    // #endregion
     res.status(400).json({ errors: coreValidation.errors });
     return;
   }
@@ -312,8 +333,9 @@ router.get('/:id/tracking', async (req: Request, res: Response) => {
 // GET /api/orders/:id
 router.get('/:id', async (req: Request, res: Response) => {
   const id = routeParam(req.params.id);
+  const requesterId = req.user!.userId;
   const order = await prisma.order.findFirst({
-    where: { id, userId: req.user!.userId },
+    where: { id, userId: requesterId },
     include: {
       items: true,
       timeline: { orderBy: { createdAt: 'asc' } },
@@ -321,7 +343,38 @@ router.get('/:id', async (req: Request, res: Response) => {
       shippingAddress: true,
     },
   });
-  if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+  if (!order) {
+    // #region agent log
+    const ownedByOther = await prisma.order.findUnique({
+      where: { id },
+      select: { id: true, userId: true, paymentStatus: true, status: true },
+    });
+    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8d503' },
+      body: JSON.stringify({
+        sessionId: 'a8d503',
+        runId: process.env.DEBUG_RUN_ID || 'pre-fix',
+        hypothesisId: 'D',
+        location: 'orders.ts:GET/:id',
+        message: 'order_get_404',
+        data: {
+          orderId: id,
+          requesterId,
+          exists: !!ownedByOther,
+          ownerMismatch: !!(ownedByOther && ownedByOther.userId !== requesterId),
+          paymentStatus: ownedByOther?.paymentStatus ?? null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    res.status(404).json({
+      error: 'Order not found',
+      code: ownedByOther && ownedByOther.userId !== requesterId ? 'ORDER_OWNER_MISMATCH' : 'ORDER_NOT_FOUND',
+    });
+    return;
+  }
   res.json({ order });
 });
 

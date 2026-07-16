@@ -554,6 +554,9 @@ export const adminApi = {
   updateTicket: (id, payload) => api.put(`/api/admin/tickets/${id}`, payload).then((r) => r.data),
   markTicketSeen: (id) => api.post(`/api/admin/tickets/${id}/seen`).then((r) => r.data),
   createAdminTicket: (payload) => api.post("/api/admin/tickets", payload).then((r) => r.data),
+  clientErrors: (params) => api.get("/api/admin/client-errors", { params: params || {} }).then((r) => r.data),
+  clientErrorDetail: (id) => api.get(`/api/admin/client-errors/${id}`).then((r) => r.data),
+  markClientErrorReviewed: (id) => api.post(`/api/admin/client-errors/${id}/reviewed`).then((r) => r.data),
   uploadTicketFile: (file) => {
     const formData = new FormData();
     formData.append("file", file);

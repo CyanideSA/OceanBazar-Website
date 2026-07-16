@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from 'react';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import CartDrawer from '@/components/cart/CartDrawer';
+import CartBootstrap from '@/components/cart/CartBootstrap';
 import FloatingCartButton from '@/components/layout/FloatingCartButton';
 import MobileBottomNav from '@/components/layout/MobileBottomNav';
 import CompareDock from '@/components/product/CompareDock';
@@ -27,6 +28,7 @@ export default function ShopShell({ children }: { children: ReactNode }) {
         <Header />
         <main className="flex-1 pb-16 md:pb-0">{children}</main>
         <Footer />
+        <CartBootstrap />
         <FloatingCartButton />
         <MobileBottomNav />
         <CartDrawer />

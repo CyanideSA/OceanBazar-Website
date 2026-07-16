@@ -1,9 +1,10 @@
 # Local dev overrides — do not use in production ECS deploys.
+# NOTE: Do not bind-mount ./backend/node_modules into the Linux container.
+# Host (Windows) Prisma engines lack libquery_engine-debian-*.so.node and cause P6001.
 services:
   api:
     volumes:
       - ./backend/dist:/app/dist:ro
-      - ./backend/node_modules:/app/node_modules:ro
     environment:
       MAINTENANCE_MODE: "false"
   java_api:
@@ -14,7 +15,7 @@ services:
       - ./frontend/public:/app/public:ro
     environment:
       MAINTENANCE_MODE: "false"
-      NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4401
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
   admin:
     build:

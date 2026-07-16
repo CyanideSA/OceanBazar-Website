@@ -17,7 +17,7 @@ public class CartEntity {
     @Column(name = "updated_at", columnDefinition = "timestamptz", nullable = false)
     private Instant updatedAt;
 
-    @OneToMany(mappedBy = "cartId", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartItemEntity> items;
 
     @PrePersist void prePersist() { if (updatedAt == null) updatedAt = Instant.now(); }

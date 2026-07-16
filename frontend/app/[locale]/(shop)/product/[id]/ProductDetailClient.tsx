@@ -101,7 +101,7 @@ export default function ProductDetailClient({ productId, locale }: Props) {
 
   const addMutation = useMutation({
     mutationFn: (args: { qty: number; variantId?: string | null }) =>
-      cartApi.add(product?.id || productId, args.qty, args.variantId ?? undefined).then((r) => r.data),
+      cartApi.add(product?.id || productId, args.qty, args.variantId ?? undefined),
     onError: (err: any) => {
       const status = err?.response?.status;
       if (status === 401) toastError('Please log in to add items to cart');

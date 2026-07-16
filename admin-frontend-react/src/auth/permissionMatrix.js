@@ -36,6 +36,7 @@ const PERMISSIONS = {
   security:     { view: ["SUPER_ADMIN", "ADMIN"], edit: ["SUPER_ADMIN", "ADMIN"] },
   obPoints:     { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
   tickets:      { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN", "STAFF"], reply: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
+  clientErrors: { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
   abTests:      { view: ["SUPER_ADMIN", "ADMIN", "STAFF"] },
   flashSales:   { view: ["SUPER_ADMIN", "ADMIN", "STAFF"], edit: ["SUPER_ADMIN", "ADMIN"] },
   pendingApprovals: { view: ["SUPER_ADMIN"], edit: ["SUPER_ADMIN"] },

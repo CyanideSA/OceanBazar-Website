@@ -8,6 +8,7 @@ import { useShopRouter } from '@/lib/shopNavigation';
 import { ChevronDown, Loader2, MapPin, Package, CreditCard, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
 import { useCartStore } from '@/stores/cartStore';
 import { cartApi, ordersApi, profileApi, paymentsApi } from '@/lib/api';
+import { normalizeCartSummary } from '@/lib/cart';
 import PaymentMethodSelector from '@/components/checkout/PaymentMethodSelector';
 import AddressCheckoutSection from '@/components/checkout/AddressCheckoutSection';
 import CheckoutObPointsPanel from '@/components/checkout/CheckoutObPointsPanel';
@@ -74,9 +75,29 @@ export default function CheckoutPage() {
     };
   }, [setCartOpen]);
 
-  const { data: cartData, isLoading: cartLoading } = useQuery({
+  const { data: cartData, isLoading: cartLoading, isError: cartError, error: cartQueryError } = useQuery({
     queryKey: ['cart'],
-    queryFn: () => cartApi.get().then((r) => r.data as CartSummary),
+    queryFn: async () => {
+      try {
+        const summary = await cartApi.get();
+        const resolved = summary ?? normalizeCartSummary({ items: [] });
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'A',location:'checkout/page.tsx:cartQuery',message:'cart query ok',data:{itemCount:resolved.itemCount,items:resolved.items?.length??0,subtotal:resolved.subtotal,hasToken:!!localStorage.getItem('ob_access_token')},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return resolved;
+      } catch (err: unknown) {
+        const ax = err as { response?: { status?: number; data?: unknown } };
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'A',location:'checkout/page.tsx:cartQuery',message:'cart query fail',data:{status:ax.response?.status,detail:ax.response?.data,hasToken:!!localStorage.getItem('ob_access_token')},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        throw err;
+      }
+    },
+    retry: (failureCount, err) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 401) return false;
+      return failureCount < 2;
+    },
   });
 
   useEffect(() => {
@@ -85,7 +106,14 @@ export default function CheckoutPage() {
 
   const { data: addressData, isLoading: addrLoading } = useQuery({
     queryKey: ['addresses'],
-    queryFn: () => profileApi.addresses().then((r) => r.data as { addresses: SavedAddress[] }),
+    queryFn: async () => {
+      const r = await profileApi.addresses();
+      const data = r.data as { addresses: SavedAddress[] };
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'B',location:'checkout/page.tsx:addresses',message:'addresses loaded',data:{count:data?.addresses?.length??0,ids:(data?.addresses??[]).map(a=>a.id)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return data;
+    },
   });
 
   const addresses = addressData?.addresses ?? [];
@@ -126,8 +154,11 @@ export default function CheckoutPage() {
   });
 
   const placeMutation = useMutation({
-    mutationFn: () =>
-      ordersApi
+    mutationFn: () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'C',location:'checkout/page.tsx:place:start',message:'place order attempt',data:{paymentMethod,shippingAddressId:selectedAddressId,cartItems:activeCart?.items?.length??0,orderTotal,codOk,couponId:appliedCoupon?.id??null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return ordersApi
         .place({
           shippingAddressId: selectedAddressId,
           paymentMethod,
@@ -135,10 +166,13 @@ export default function CheckoutPage() {
           obPointsToRedeem: appliedObPoints?.points ?? 0,
           notes,
         })
-        .then((r) => r.data as { order: { id: string }; requiresPayment: boolean }),
+        .then((r) => r.data as { order: { id: string }; requiresPayment: boolean });
+    },
     onSuccess: async (data) => {
-      clearCart();
       const { order, requiresPayment } = data;
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'C',location:'checkout/page.tsx:place:success',message:'place order ok',data:{orderId:order?.id,requiresPayment,paymentMethod},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       const orderHref = `/${locale}/account/orders/${order.id}`;
       const settleAfterOrder = async () => {
         try {
@@ -148,34 +182,81 @@ export default function CheckoutPage() {
         }
       };
       if (paymentMethod === 'cod') {
+        clearCart();
         router.push(orderHref, { settle: settleAfterOrder });
         return;
       }
       if (requiresPayment && paymentMethod && paymentMethod !== 'installment') {
         try {
           const pay = await startOnlinePayment(order.id, paymentMethod);
+          // #region agent log
+          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'D',location:'checkout/page.tsx:payment:ok',message:'payment init ok',data:{paymentMethod,orderId:order.id,hasRedirect:!!pay.redirectUrl,transactionId:pay.transactionId??null},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           if (pay.redirectUrl) {
+            clearCart();
             window.location.href = pay.redirectUrl;
             return;
           }
+          setPayRetry({ orderId: order.id, method: paymentMethod });
+          setError(t('paymentInitFailed'));
+          return;
         } catch (err: any) {
+          // #region agent log
+          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'D',location:'checkout/page.tsx:payment:fail',message:'payment init fail',data:{paymentMethod,orderId:order.id,error:String(err?.message||err)},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           setPayRetry({ orderId: order.id, method: paymentMethod });
           setError(err?.message || t('paymentInitFailed'));
           return;
         }
       }
+      clearCart();
       router.push(orderHref, { settle: settleAfterOrder });
     },
     onError: (e: unknown) => {
-      setError((e as { response?: { data?: { error?: string } } }).response?.data?.error ?? tc('error'));
+      const ax = e as { response?: { status?: number; data?: { error?: string; errors?: string[] } } };
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'C',location:'checkout/page.tsx:place:error',message:'place order fail',data:{status:ax.response?.status,error:ax.response?.data?.error,errors:ax.response?.data?.errors,paymentMethod,shippingAddressId:selectedAddressId},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      setError(ax.response?.data?.error ?? tc('error'));
     },
   });
 
-  if (cartLoading || !activeCart) {
+  const cartStatus = (cartQueryError as { response?: { status?: number } } | undefined)?.response?.status;
+
+  if (cartLoading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center gap-2 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
         {tc('loading')}
+      </div>
+    );
+  }
+
+  if (cartError && cartStatus === 401) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-20 text-center">
+        <Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/40" />
+        <h1 className="text-xl font-semibold text-foreground">{t('loginRequiredTitle')}</h1>
+        <p className="mt-2 text-muted-foreground">{t('loginRequiredHint')}</p>
+        <Link
+          href={`/${locale}/auth/login?next=/${locale}/checkout`}
+          className="mt-6 inline-block rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground"
+        >
+          {t('loginToCheckout')}
+        </Link>
+      </div>
+    );
+  }
+
+  if (cartError || !activeCart) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-20 text-center">
+        <Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/40" />
+        <h1 className="text-xl font-semibold text-foreground">{tc('error')}</h1>
+        <p className="mt-2 text-muted-foreground">{t('cartLoadFailed')}</p>
+        <Link href={`/${locale}/products`} className="mt-6 inline-block rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground">
+          {t('browseProducts')}
+        </Link>
       </div>
     );
   }

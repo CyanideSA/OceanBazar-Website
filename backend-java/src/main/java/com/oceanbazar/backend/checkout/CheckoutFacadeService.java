@@ -21,6 +21,7 @@ import com.oceanbazar.backend.utils.WholesalePricingUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -31,6 +32,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CheckoutFacadeService {
 
     private final CartRepository cartRepository;
@@ -49,10 +51,11 @@ public class CheckoutFacadeService {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        CartEntity cart = cartRepository.findByUserId(userId)
+        CartEntity cart = cartRepository.findByUserIdWithItems(userId)
+                .or(() -> cartRepository.findByUserId(userId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cart is empty"));
 
-        List<CartItemEntity> cartItems = cart.getItems() == null ? List.of() : cart.getItems();
+        List<CartItemEntity> cartItems = cart.getItems() == null ? List.of() : new ArrayList<>(cart.getItems());
         if (cartItems.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cart is empty");
         }

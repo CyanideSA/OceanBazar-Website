@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { normalizeCartSummary } from './cart';
+import type { CartSummary } from '@/types';
 
 /** BFF origin: env at build time; in the browser, match page hostname so LAN/docker access works. */
 export function resolvePublicApiBase(): string {
@@ -68,13 +70,8 @@ api.interceptors.response.use(
             window.location.href = `${localePrefix}/auth/login`;
           }
         }
+        return Promise.reject(err);
       }
-    }
-    const url = String(original?.url || '');
-    if (err.response?.status && /\/(cart|upload\/profile-photo|auth\/)/.test(url)) {
-      // #region agent log
-      fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'A-D',location:'api.ts:interceptor',message:'storefront api error',data:{url,status:err.response.status,detail:err.response?.data},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     }
     return Promise.reject(err);
   }
@@ -125,12 +122,18 @@ export const customersApi = {
 };
 
 // ─── Cart ─────────────────────────────────────────────────────────────────────
+const cartRequest = async (p: Promise<{ data: unknown }>): Promise<CartSummary> => {
+  const { data } = await p;
+  return normalizeCartSummary(data ?? { items: [] });
+};
+
 export const cartApi = {
-  get: () => api.get('/cart'),
+  get: async () => cartRequest(api.get('/cart')),
   add: (productId: string, quantity: number, variantId?: string) =>
-    api.post('/cart/add', { productId, quantity, variantId }),
-  update: (itemId: number, quantity: number) => api.put('/cart/update', { itemId, quantity }),
-  remove: (productId: string) => api.delete(`/cart/remove/${productId}`),
+    cartRequest(api.post('/cart/add', { productId, quantity, variantId })),
+  update: (productId: string, quantity: number) =>
+    cartRequest(api.put('/cart/update', { productId, quantity })),
+  remove: (productId: string) => cartRequest(api.delete(`/cart/remove/${productId}`)),
   applyCoupon: (code: string) => api.post('/cart/apply-coupon', { code }),
   applyObPoints: (points: number) => api.post('/cart/apply-ob-points', { points }),
 };

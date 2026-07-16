@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { RefreshCw } from 'lucide-react';
 import Logo from '@/components/shared/Logo';
+import { reportClientError } from '@/lib/reportClientError';
 
 interface Props {
   error: Error & { digest?: string };
@@ -17,7 +18,14 @@ export default function ErrorPage({ error, reset }: Props) {
 
   useEffect(() => {
     console.error('[Error boundary]', error);
-  }, [error]);
+    reportClientError({
+      digest: error.digest,
+      message: error.message,
+      stack: error.stack,
+      locale,
+      snapshot: { boundary: 'shop-error' },
+    });
+  }, [error, locale]);
 
   return (
     <div className="flex min-h-[70vh] flex-col items-center justify-center px-4 py-12 text-center">

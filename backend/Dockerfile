@@ -12,9 +12,15 @@ RUN npm ci
 
 COPY . .
 
-RUN npx prisma generate
-# Skip prebuild schema check (script lives outside backend/ Docker context)
-RUN npx tsc
+# Force Linux query engines into the image. A missing native engine makes Prisma
+# fall back to Data Proxy mode and throw P6001 ("URL must start with prisma://").
+ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
+RUN npx prisma generate \
+  && test -n "$(find node_modules/.prisma/client -name 'libquery_engine*' | head -n 1)" \
+  && echo "Prisma query engine present"
+
+# Always rebuild dist inside the image (host dist timestamps can skip emit).
+RUN rm -rf dist && npx tsc
 RUN npm prune --omit=dev && npm cache clean --force
 
 ENV NODE_ENV=production

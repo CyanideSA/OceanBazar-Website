@@ -7,6 +7,8 @@ import { X, ShoppingBag, Minus, Plus, Trash2, Tag, ArrowRight } from 'lucide-rea
 import { useMutation } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
 import { cartApi } from '@/lib/api';
+import { formatCartMoney } from '@/lib/cart';
+import { useNormalizedCart } from '@/hooks/useNormalizedCart';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { previewOrderTotals } from '@/lib/checkoutTotals';
 import { cn } from '@/lib/utils';
@@ -16,22 +18,32 @@ export default function CartDrawer() {
   const t = useTranslations('cart');
   const tc = useTranslations('common');
   const locale = useLocale();
-  const { cart, isOpen, setOpen, setCart, appliedCoupon, setAppliedCoupon, appliedObPoints } = useCartStore();
+  const { isOpen, setOpen, setCart, appliedCoupon, setAppliedCoupon, appliedObPoints } = useCartStore();
   const [couponInput, setCouponInput] = useState('');
   const { success, error: toastError } = useToast();
 
+  const safeCart = useNormalizedCart();
+
   const updateMutation = useMutation({
-    mutationFn: ({ itemId, quantity }: { itemId: number; quantity: number }) =>
-      cartApi.update(itemId, quantity).then((r) => r.data),
+    mutationFn: ({ productId, quantity }: { productId: string; quantity: number }) =>
+      cartApi.update(productId, quantity),
     onSuccess: setCart,
     onError: () => toastError(tc('error')),
   });
 
   const removeMutation = useMutation({
-    mutationFn: (productId: string) => cartApi.remove(productId).then((r) => r.data),
+    mutationFn: (productId: string) => cartApi.remove(productId),
     onSuccess: setCart,
     onError: () => toastError(tc('error')),
   });
+
+  const changeQuantity = (productId: string, nextQty: number) => {
+    if (nextQty <= 0) {
+      removeMutation.mutate(productId);
+      return;
+    }
+    updateMutation.mutate({ productId, quantity: nextQty });
+  };
 
   const couponMutation = useMutation({
     mutationFn: (code: string) =>
@@ -45,12 +57,12 @@ export default function CartDrawer() {
   });
 
   const preview = useMemo(() => {
-    if (!cart) return null;
+    if (!safeCart) return null;
     const ob = appliedObPoints?.bdtDiscount ?? 0;
-    return previewOrderTotals(cart.subtotal, appliedCoupon, ob, {
-      retailQuantityOrder: cart.retailQuantityOrder,
+    return previewOrderTotals(safeCart.subtotal, appliedCoupon, ob, {
+      retailQuantityOrder: safeCart.retailQuantityOrder,
     });
-  }, [cart, appliedCoupon, appliedObPoints]);
+  }, [safeCart, appliedCoupon, appliedObPoints]);
 
   if (!isOpen) return null;
 
@@ -83,9 +95,9 @@ export default function CartDrawer() {
               <ShoppingBag className="h-4 w-4 text-primary" />
             </div>
             {t('title')}
-            {cart && cart.itemCount > 0 && (
+            {safeCart && safeCart.itemCount > 0 && (
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                {cart.itemCount}
+                {safeCart.itemCount}
               </span>
             )}
           </h2>
@@ -101,7 +113,7 @@ export default function CartDrawer() {
 
         {/* Items */}
         <div className="flex-1 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4">
-          {!cart || cart.items.length === 0 ? (
+          {!safeCart || safeCart.items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
                 <ShoppingBag className="h-8 w-8 text-muted-foreground/40" />
@@ -117,9 +129,9 @@ export default function CartDrawer() {
             </div>
           ) : (
             <ul className="space-y-3 sm:space-y-4">
-              {cart.items.map((item) => (
+              {safeCart.items.map((item) => (
                 <li
-                  key={item.id}
+                  key={item.productId || String(item.id)}
                   className="flex gap-3 rounded-xl border border-border/40 bg-card p-3 transition-colors hover:border-border sm:gap-4 sm:p-4"
                 >
                   {/* Image */}
@@ -138,9 +150,9 @@ export default function CartDrawer() {
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground sm:text-base">{item.title}</p>
                     <p className="mt-1 text-sm font-bold text-primary sm:mt-1.5">
-                      {tc('taka')}{item.unitPrice.toLocaleString()}
+                      {tc('taka')}{formatCartMoney(item.unitPrice)}
                     </p>
-                    {item.discountPct > 0 && (
+                    {(item.discountPct ?? 0) > 0 && (
                       <span className="inline-block rounded-full bg-success/10 px-1.5 py-0.5 text-2xs font-semibold text-success">-{item.discountPct}% {t('off')}</span>
                     )}
 
@@ -148,7 +160,7 @@ export default function CartDrawer() {
                     <div className="mt-2.5 flex items-center gap-2 sm:mt-3">
                       <button
                         type="button"
-                        onClick={() => updateMutation.mutate({ itemId: item.id, quantity: item.quantity - 1 })}
+                        onClick={() => changeQuantity(item.productId, item.quantity - 1)}
                         className="flex h-10 w-10 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors hover:bg-accent active:bg-accent/70 sm:h-9 sm:w-9"
                         aria-label={t('decreaseQty')}
                       >
@@ -157,7 +169,7 @@ export default function CartDrawer() {
                       <span className="min-w-[2rem] text-center text-sm font-semibold">{item.quantity}</span>
                       <button
                         type="button"
-                        onClick={() => updateMutation.mutate({ itemId: item.id, quantity: item.quantity + 1 })}
+                        onClick={() => changeQuantity(item.productId, item.quantity + 1)}
                         className="flex h-10 w-10 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors hover:bg-accent active:bg-accent/70 sm:h-9 sm:w-9"
                         aria-label={t('increaseQty')}
                       >
@@ -177,7 +189,7 @@ export default function CartDrawer() {
                       <Trash2 className="h-4 w-4 sm:h-5 sm:w-5" />
                     </button>
                     <p className="text-sm font-bold text-foreground sm:text-base">
-                      {tc('taka')}{item.lineTotal.toLocaleString()}
+                      {tc('taka')}{formatCartMoney(item.lineTotal)}
                     </p>
                   </div>
                 </li>
@@ -187,7 +199,7 @@ export default function CartDrawer() {
         </div>
 
         {/* Footer */}
-        {cart && cart.items.length > 0 && (
+        {safeCart && safeCart.items.length > 0 && (
           <div className="space-y-3 border-t border-border/60 bg-background/95 px-4 py-4 backdrop-blur-sm sm:space-y-4 sm:px-5 sm:py-5" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
             {/* Coupon */}
             <div className="rounded-xl border border-border/40 bg-muted/30 p-3 sm:p-3.5">
@@ -229,38 +241,38 @@ export default function CartDrawer() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-muted-foreground">
                 <span>{t('subtotal')}</span>
-                <span className="font-medium text-foreground">{tc('taka')}{cart.subtotal.toLocaleString()}</span>
+                <span className="font-medium text-foreground">{tc('taka')}{formatCartMoney(safeCart.subtotal)}</span>
               </div>
               {preview && preview.discount > 0 && (
                 <div className="flex justify-between text-success">
                   <span>{t('discount')}</span>
-                  <span className="font-medium">-{tc('taka')}{preview.discount.toLocaleString()}</span>
+                  <span className="font-medium">-{tc('taka')}{formatCartMoney(preview.discount)}</span>
                 </div>
               )}
               {appliedObPoints && (
                 <div className="flex justify-between text-primary">
                   <span>{t('pointsApplied')}</span>
-                  <span>-{tc('taka')}{appliedObPoints.bdtDiscount.toLocaleString()}</span>
+                  <span>-{tc('taka')}{formatCartMoney(appliedObPoints.bdtDiscount)}</span>
                 </div>
               )}
               <div className="flex justify-between text-muted-foreground">
                 <span>{t('gst')}</span>
-                <span className="font-medium text-foreground">{tc('taka')}{(preview?.gst ?? cart.gst).toLocaleString()}</span>
+                <span className="font-medium text-foreground">{tc('taka')}{formatCartMoney(preview?.gst ?? safeCart.gst)}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
                 <span>{t('shipping')}</span>
                 <span className="font-medium text-foreground">
-                  {(preview?.shippingFee ?? cart.shippingFee) === 0 ? (
+                  {(preview?.shippingFee ?? safeCart.shippingFee) === 0 ? (
                     <span className="inline-flex items-center gap-1 text-success">
                       <span>👑</span>
                       <span>{t('freeShipping')}</span>
                     </span>
                   ) : (
-                    `${tc('taka')}${preview?.shippingFee ?? cart.shippingFee}`
+                    `${tc('taka')}${formatCartMoney(preview?.shippingFee ?? safeCart.shippingFee)}`
                   )}
                 </span>
               </div>
-              {(preview?.shippingFee ?? cart.shippingFee) === 0 && (
+              {(preview?.shippingFee ?? safeCart.shippingFee) === 0 && (
                 <div className="rounded-lg bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/30 dark:border-amber-800/30 dark:text-amber-300">
                   🎖️ Gold Member benefit — free shipping on all orders over ৳500
                 </div>
@@ -270,7 +282,7 @@ export default function CartDrawer() {
             <div className="flex items-center justify-between border-t border-border/40 pt-3">
               <span className="text-base font-bold text-foreground">{t('total')}</span>
               <span className="text-xl font-extrabold text-primary">
-                {tc('taka')}{(preview?.total ?? cart.total).toLocaleString()}
+                {tc('taka')}{formatCartMoney(preview?.total ?? safeCart.total)}
               </span>
             </div>
 
@@ -289,7 +301,7 @@ export default function CartDrawer() {
                 <ArrowRight className="h-4 w-4" />
               </span>
               <span className="mx-2 h-4 w-px bg-white/30" />
-              <span>{tc('taka')}{(preview?.total ?? cart.total).toLocaleString()}</span>
+              <span>{tc('taka')}{formatCartMoney(preview?.total ?? safeCart.total)}</span>
             </Link>
           </div>
         )}

@@ -21,6 +21,8 @@ const nextConfig = {
     ],
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost', port: '4000' },
+      { protocol: 'http', hostname: '127.0.0.1', port: '4001' },
+      { protocol: 'http', hostname: 'localhost', port: '4001' },
       { protocol: 'https', hostname: '*.oceanbazar.com' },
       { protocol: 'https', hostname: '*.oceanbazar.com.bd' },
       { protocol: 'https', hostname: '*.elb.amazonaws.com' },

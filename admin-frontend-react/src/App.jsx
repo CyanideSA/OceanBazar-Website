@@ -39,6 +39,7 @@ const PendingApprovalsPage = lazy(() => import("./pages/PendingApprovalsPage"));
 const SearchAnalyticsPage = lazy(() => import("./pages/SearchAnalyticsPage"));
 const RolePermissionsPage = lazy(() => import("./pages/RolePermissionsPage"));
 const SecurityCenterPage = lazy(() => import("./pages/SecurityCenterPage"));
+const ClientErrorsPage = lazy(() => import("./pages/ClientErrorsPage"));
 const EmailInboxPage = lazy(() => import("./pages/EmailInboxPage"));
 const MetaPage = lazy(() => import("./pages/MetaPage"));
 const CustomerTimelinePage = lazy(() => import("./pages/CustomerTimelinePage"));
@@ -383,6 +384,7 @@ export default function App() {
     searchAnalytics: <SearchAnalyticsPage />,
     rolePermissions: <RolePermissionsPage />,
     security: <SecurityCenterPage />,
+    clientErrors: <ClientErrorsPage />,
     email: <EmailInboxPage />,
     meta: <MetaPage />,
     customerTimeline: <CustomerTimelinePage />,

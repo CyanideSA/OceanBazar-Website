@@ -1,31 +1,20 @@
-/**
- * SSLCommerz Payment Gateway Service
- * Docs: https://developer.sslcommerz.com/doc/v4/
- *
- * Required env vars:
- *   SSLCOMMERZ_STORE_ID, SSLCOMMERZ_STORE_PASSWORD
- *   SSLCOMMERZ_SANDBOX  (true = sandbox, false = production)
- *   API_BASE_URL        (your backend URL, e.g. https://api.oceanbazar.com)
- *   CLIENT_URL          (storefront URL, e.g. https://oceanbazar.com)
- */
-
-import axios from 'axios';
 import crypto from 'crypto';
+import SSLCommerzPayment from 'sslcommerz-lts';
 
 const STORE_ID = process.env.SSLCOMMERZ_STORE_ID || '';
-const STORE_PASS = process.env.SSLCOMMERZ_STORE_PASSWORD || '';
-const IS_SANDBOX = process.env.SSLCOMMERZ_SANDBOX !== 'false';
-
-const GATEWAY_URL = IS_SANDBOX
-  ? 'https://sandbox.sslcommerz.com/gwprocess/v4/api.php'
-  : 'https://securepay.sslcommerz.com/gwprocess/v4/api.php';
-
-const VALIDATE_URL = IS_SANDBOX
-  ? 'https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php'
-  : 'https://securepay.sslcommerz.com/validator/api/validationserverAPI.php';
+const STORE_PASSWORD = process.env.SSLCOMMERZ_STORE_PASSWORD || '';
+const SANDBOX = process.env.SSLCOMMERZ_SANDBOX !== 'false';
+const API_BASE = (process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || 'http://localhost:4000').replace(/\/$/, '');
 
 export function isSslConfigured(): boolean {
-  return !!(STORE_ID && STORE_PASS);
+  return Boolean(STORE_ID && STORE_PASSWORD);
+}
+
+function getClient(): SSLCommerzPayment {
+  if (!isSslConfigured()) {
+    throw new Error('SSLCommerz credentials not configured');
+  }
+  return new SSLCommerzPayment(STORE_ID, STORE_PASSWORD, !SANDBOX);
 }
 
 export interface SslInitPayload {
@@ -38,74 +27,88 @@ export interface SslInitPayload {
 }
 
 export async function initiatePayment(p: SslInitPayload): Promise<string> {
-  const apiBase = process.env.API_BASE_URL || 'http://localhost:4000';
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-
-  const params = new URLSearchParams({
-    store_id: STORE_ID,
-    store_passwd: STORE_PASS,
-    total_amount: p.amount.toFixed(2),
+  const sslcz = getClient();
+  const data = {
+    total_amount: p.amount,
     currency: 'BDT',
     tran_id: p.transactionId,
-    success_url: `${apiBase}/api/payments/sslcommerz/success`,
-    fail_url: `${apiBase}/api/payments/sslcommerz/fail`,
-    cancel_url: `${clientUrl}/en/checkout`,
-    ipn_url: `${apiBase}/api/payments/sslcommerz/ipn`,
+    success_url: `${API_BASE}/api/payments/sslcommerz/success`,
+    fail_url: `${API_BASE}/api/payments/sslcommerz/fail`,
+    cancel_url: `${API_BASE}/api/payments/sslcommerz/cancel`,
+    ipn_url: `${API_BASE}/api/payments/sslcommerz/ipn`,
+    shipping_method: 'NO',
+    num_of_item: 1,
+    product_name: `Order ${p.orderNumber}`,
+    product_category: 'General',
+    product_profile: 'general',
     cus_name: p.customerName || 'Customer',
     cus_email: p.customerEmail || 'customer@oceanbazar.com',
     cus_add1: 'Dhaka',
+    cus_add2: 'Dhaka',
     cus_city: 'Dhaka',
+    cus_state: 'Dhaka',
+    cus_postcode: '1000',
     cus_country: 'Bangladesh',
     cus_phone: p.customerPhone || '01700000000',
-    shipping_method: 'NO',
-    product_name: `OceanBazar Order #${p.orderNumber}`,
-    product_category: 'General',
-    product_profile: 'general',
-    emi_option: '0',
-  });
-
-  const res = await axios.post(GATEWAY_URL, params.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    timeout: 15_000,
-  });
-
-  if (res.data.status !== 'SUCCESS' || !res.data.GatewayPageURL) {
-    throw new Error(`SSLCommerz init error: ${res.data.failedreason || res.data.status}`);
-  }
-
-  return res.data.GatewayPageURL;
-}
-
-/**
- * Verify SSLCommerz IPN signature (MD5-based).
- * Sort all POST fields alphabetically (excluding verify_sign + verify_sign_sha2),
- * append store password hash, then MD5 the whole string.
- */
-export function verifyIpnHash(body: Record<string, string>): boolean {
-  const { verify_sign, verify_sign_sha2, ...rest } = body;
-  if (!verify_sign) return false;
-  const sorted = Object.keys(rest).sort();
-  const parts = sorted.map((k) => `${k}=${rest[k] ?? ''}`);
-  parts.push(`store_passwd=${crypto.createHash('md5').update(STORE_PASS).digest('hex')}`);
-  const hash = crypto.createHash('md5').update(parts.join('&')).digest('hex');
-  return hash === verify_sign;
-}
-
-export async function validatePayment(valId: string): Promise<{ isValid: boolean; amount: string; tranId: string }> {
-  const res = await axios.get(VALIDATE_URL, {
-    params: {
-      val_id: valId,
-      store_id: STORE_ID,
-      store_passwd: STORE_PASS,
-      v: 1,
-      format: 'json',
-    },
-    timeout: 10_000,
-  });
-
-  return {
-    isValid: res.data.status === 'VALID' || res.data.status === 'VALIDATED',
-    amount: String(res.data.amount || '0'),
-    tranId: String(res.data.tran_id || ''),
+    value_a: p.orderNumber,
+    value_b: p.transactionId,
   };
+
+  const res = await sslcz.init(data);
+  if (res.status !== 'SUCCESS' || !res.GatewayPageURL) {
+    throw new Error(res.failedreason || 'SSLCommerz init failed');
+  }
+  return res.GatewayPageURL;
+}
+
+export function verifyIpnHash(body: Record<string, string>): boolean {
+  if (!STORE_PASSWORD) return false;
+  const verifyKey = body.verify_key;
+  const verifySign = body.verify_sign;
+  if (!verifyKey || !verifySign) return false;
+
+  const keys = verifyKey.split(',').map((k) => k.trim()).filter(Boolean);
+  const hashString = keys
+    .map((key) => `${key}=${body[key] ?? ''}`)
+    .join('&');
+  const computed = crypto
+    .createHash('md5')
+    .update(hashString + STORE_PASSWORD)
+    .digest('hex');
+  return computed === verifySign;
+}
+
+export interface SslValidationResult {
+  isValid: boolean;
+  tranId: string;
+  amount: number;
+  currency: string;
+  bankTranId?: string;
+  cardType?: string;
+  raw: Record<string, unknown>;
+}
+
+export async function validatePayment(valId: string): Promise<SslValidationResult> {
+  const sslcz = getClient();
+  const data = await sslcz.validate({ val_id: valId });
+  const isValid = data.status === 'VALID' || data.status === 'VALIDATED';
+  return {
+    isValid,
+    tranId: String(data.tran_id || ''),
+    amount: parseFloat(String(data.amount ?? '0')),
+    currency: String(data.currency || 'BDT'),
+    bankTranId: data.bank_tran_id ? String(data.bank_tran_id) : undefined,
+    cardType: data.card_type ? String(data.card_type) : undefined,
+    raw: data as Record<string, unknown>,
+  };
+}
+
+export async function queryTransactionById(tranId: string): Promise<unknown> {
+  const sslcz = getClient();
+  return sslcz.transactionQueryByTransactionId({ tran_id: tranId });
+}
+
+export async function queryTransactionBySession(sessionKey: string): Promise<unknown> {
+  const sslcz = getClient();
+  return sslcz.transactionQueryBySessionId({ sessionkey: sessionKey });
 }

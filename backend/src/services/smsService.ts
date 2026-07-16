@@ -4,10 +4,24 @@ import { logCommunication } from './communicationLogService';
 import {
   sendOrderConfirmationWhatsApp as sendWaOrderConfirm,
   sendShippingUpdateWhatsApp as sendWaShipping,
+  sendWhatsAppText,
+  sendWhatsAppOtp,
   isWhatsAppConfigured,
 } from './meta/whatsappClient';
 
 const prisma = new PrismaClient();
+
+function isTwilioConfigured(channel: 'sms' | 'whatsapp' = 'sms'): boolean {
+  const fromNumber = channel === 'whatsapp'
+    ? (process.env.TWILIO_WHATSAPP_FROM || process.env.TWILIO_FROM_NUMBER)
+    : process.env.TWILIO_FROM_NUMBER;
+
+  return Boolean(
+    process.env.TWILIO_ACCOUNT_SID?.startsWith('AC') &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    fromNumber,
+  );
+}
 
 async function logSms(to: string, messageType: string, status: string, channel = 'sms', error?: string) {
   try {
@@ -82,7 +96,36 @@ async function sendMessage(
 }
 
 export async function sendOtpSms(phone: string, otp: string, type: string): Promise<boolean> {
-  return sendMessage(phone, `Your Oceanbazar ${type} code: ${otp}. Valid for ${process.env.OTP_EXPIRE_MINUTES || 10} min.`, 'otp', 'sms');
+  const body = `Your OceanBazar ${type.replace(/_/g, ' ')} code is ${otp}. It expires in ${process.env.OTP_EXPIRE_MINUTES || 10} minutes. Never share this code.`;
+
+  if (process.env.OTP_TERMINAL_ONLY === 'true' || isTwilioConfigured('sms')) {
+    return sendMessage(phone, body, 'otp', 'sms');
+  }
+
+  if (isWhatsAppConfigured()) {
+    const sent = await sendWhatsAppOtp(phone, otp, type);
+    await logSms(
+      phone,
+      'otp',
+      sent ? 'sent' : 'failed',
+      'whatsapp',
+      sent ? undefined : 'meta_whatsapp_error',
+    );
+    return sent;
+  }
+
+  console.error('[otp] No SMS or WhatsApp provider is configured');
+  await logSms(phone, 'otp', 'failed', 'sms', 'provider_not_configured');
+  return false;
+}
+
+export async function sendPasswordChangedSms(phone: string): Promise<boolean> {
+  return sendMessage(
+    phone,
+    'Oceanbazar: Your account password was changed. If this was not you, contact support immediately.',
+    'password_changed',
+    'sms',
+  );
 }
 
 export async function sendOrderConfirmationSms(phone: string, orderNumber: string): Promise<boolean> {

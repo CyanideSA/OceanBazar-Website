@@ -14,9 +14,22 @@ const router = Router();
 const prisma = new PrismaClient();
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
-const API_BASE = process.env.API_BASE_URL || 'http://localhost:4000';
+const API_BASE = process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || 'http://localhost:4000';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
+
+function sslValidationMatchesTransaction(
+  validation: ssl.SslValidationResult,
+  transaction: { id: string; amount: unknown },
+): boolean {
+  const expectedAmount = Number(transaction.amount);
+  const receivedAmount = Number(validation.amount);
+  return validation.isValid
+    && validation.tranId === transaction.id
+    && validation.currency.toUpperCase() === 'BDT'
+    && Number.isFinite(receivedAmount)
+    && Math.abs(receivedAmount - expectedAmount) < 0.01;
+}
 
 async function onPaymentSuccess(transactionId: string, providerTxId: string, method: string) {
   const outcome = await prisma.$transaction(async (txn) => {
@@ -154,6 +167,12 @@ router.post('/bkash/confirm', requireAuth, async (req: Request, res: Response) =
 
 router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Response) => {
   const { orderId } = req.body as { orderId: string };
+  // #region agent log
+  const _dbg = (message: string, data: Record<string, unknown>) => {
+    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'E',location:'payments.ts:sslcommerz/initiate',message,data,timestamp:Date.now()})}).catch(()=>{});
+  };
+  _dbg('ssl initiate entry', { orderId, userId: req.user?.userId, configured: ssl.isSslConfigured() });
+  // #endregion
   const [order, user] = await Promise.all([
     prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } }),
     prisma.user.findUnique({ where: { id: req.user!.userId } }),
@@ -172,6 +191,9 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
   });
 
   if (!ssl.isSslConfigured()) {
+    // #region agent log
+    _dbg('ssl not configured', { orderId, txId: tx.id });
+    // #endregion
     return res.status(503).json({
       error: 'SSLCommerz is not configured. Please set up store credentials or use COD.',
       transactionId: tx.id,
@@ -190,8 +212,14 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
       customerPhone: user.phone || '',
     });
 
+    // #region agent log
+    _dbg('ssl initiate ok', { orderId, txId: tx.id, hasRedirect: !!gatewayUrl });
+    // #endregion
     res.json({ transactionId: tx.id, redirectUrl: gatewayUrl });
   } catch (err: any) {
+    // #region agent log
+    _dbg('ssl initiate error', { orderId, error: String(err?.message || err) });
+    // #endregion
     console.error('[SSLCommerz] initiate error:', err.message);
     res.status(502).json({ error: 'Failed to initiate payment. Please try again or use COD.' });
   }
@@ -207,12 +235,35 @@ router.post('/sslcommerz/success', async (req: Request, res: Response) => {
 
   try {
     const validation = await ssl.validatePayment(val_id);
-    if (!validation.isValid) { return res.redirect(`${CLIENT_URL}/en/checkout?payment=invalid`); }
-
     const tx = await prisma.paymentTransaction.findUnique({ where: { id: tran_id } });
     if (!tx) { return res.redirect(`${CLIENT_URL}/en/checkout?payment=error`); }
+    if (!sslValidationMatchesTransaction(validation, tx)) {
+      appLog('warn', 'sslcommerz_validation_mismatch', {
+        transactionId: tran_id,
+        validationTranId: validation.tranId,
+        validationAmount: validation.amount,
+        validationCurrency: validation.currency,
+      });
+      return res.redirect(`${CLIENT_URL}/en/checkout?payment=invalid`);
+    }
     await onPaymentSuccess(tx.id, val_id, 'sslcommerz');
-    res.redirect(`${CLIENT_URL}/en/orders/${tx.orderId}?payment=success`);
+    // #region agent log
+    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8d503' },
+      body: JSON.stringify({
+        sessionId: 'a8d503',
+        runId: process.env.DEBUG_RUN_ID || 'pre-fix',
+        hypothesisId: 'D',
+        location: 'payments.ts:sslcommerz/success',
+        message: 'ssl_success_redirect',
+        data: { orderId: tx.orderId, userId: tx.userId, amount: Number(tx.amount) },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    // Land on account order page (same auth shell as the rest of account)
+    res.redirect(`${CLIENT_URL}/en/account/orders/${tx.orderId}?payment=success`);
   } catch (err: any) {
     console.error('[SSLCommerz] success error:', err.message);
     res.redirect(`${CLIENT_URL}/en/checkout?payment=error`);
@@ -234,10 +285,12 @@ router.post('/sslcommerz/ipn', async (req: Request, res: Response) => {
 
   try {
     const validation = await ssl.validatePayment(val_id);
-    if (!validation.isValid) { res.status(200).send('VALIDATION_FAILED'); return; }
-
     const tx = await prisma.paymentTransaction.findUnique({ where: { id: tran_id } });
-    if (tx) { await onPaymentSuccess(tx.id, val_id, 'sslcommerz'); }
+    if (!tx || !sslValidationMatchesTransaction(validation, tx)) {
+      res.status(200).send('VALIDATION_FAILED');
+      return;
+    }
+    await onPaymentSuccess(tx.id, val_id, 'sslcommerz');
   } catch (err: any) {
     console.error('[SSLCommerz] IPN error:', err.message);
   }
@@ -247,6 +300,10 @@ router.post('/sslcommerz/ipn', async (req: Request, res: Response) => {
 
 router.post('/sslcommerz/fail', async (_req, res) => {
   res.redirect(`${CLIENT_URL}/en/checkout?payment=failed`);
+});
+
+router.post('/sslcommerz/cancel', async (_req, res) => {
+  res.redirect(`${CLIENT_URL}/en/checkout?payment=cancelled`);
 });
 
 // ─── Nagad ────────────────────────────────────────────────────────────────────

@@ -1,0 +1,1 @@
+ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS chat_greeting VARCHAR(500);

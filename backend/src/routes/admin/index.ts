@@ -37,6 +37,7 @@ import marketingRouter from './marketing';
 import metaAdminRouter from './meta';
 import communicationsRouter from './communications';
 import integrationsRouter from './integrations';
+import clientErrorsAdminRouter from './client-errors';
 import { refreshProductReviewStats } from '../../services/reviewService';
 import { routeParam } from '../../utils/params';
 import { emitAdminEvent, emitToRoom, emitToUser, emitBroadcast } from '../../lib/adminEvents';
@@ -1104,6 +1105,7 @@ router.use('/marketing', requireAdmin, marketingRouter);
 router.use('/meta', requireAdmin, metaAdminRouter);
 router.use('/communications', requireAdmin, communicationsRouter);
 router.use('/integrations', requireAdmin, integrationsRouter);
+router.use('/client-errors', requireAdmin, clientErrorsAdminRouter);
 
 
 // ─── Live routes — registered BEFORE studioRouter so the query-param SSE endpoint

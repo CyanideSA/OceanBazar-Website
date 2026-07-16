@@ -5,9 +5,12 @@ import {
   getAuth,
   GoogleAuthProvider,
   FacebookAuthProvider,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
   signInWithPopup,
   signOut as fbSignOut,
   type Auth,
+  type ConfirmationResult,
 } from 'firebase/auth';
 
 function readFirebaseConfig() {
@@ -35,6 +38,8 @@ function looksLikeExamplePlaceholder(cfg: ReturnType<typeof readFirebaseConfig>)
 
 let cachedApp: FirebaseApp | null | undefined;
 let warnedMissing = false;
+let phoneVerifier: RecaptchaVerifier | null = null;
+let phoneConfirmation: ConfirmationResult | null = null;
 
 function getFirebaseApp(): FirebaseApp | null {
   if (cachedApp !== undefined) return cachedApp;
@@ -97,6 +102,58 @@ export async function signInWithFacebook(): Promise<string> {
   const result = await signInWithPopup(auth, facebookProvider);
   const idToken = await result.user.getIdToken();
   return idToken;
+}
+
+/**
+ * Start Firebase Phone Auth with an invisible reCAPTCHA bound to the submit
+ * button. Firebase creates and manages the underlying reCAPTCHA client keys.
+ */
+export async function startPhoneSignIn(
+  phoneNumber: string,
+  buttonId: string,
+  languageCode = 'bn',
+): Promise<void> {
+  const auth = getFirebaseAuth();
+  if (!auth) throw new Error(missingConfigMessage);
+
+  auth.languageCode = languageCode;
+  phoneVerifier?.clear();
+  phoneVerifier = new RecaptchaVerifier(auth, buttonId, {
+    size: 'invisible',
+    'expired-callback': () => {
+      phoneVerifier?.clear();
+      phoneVerifier = null;
+    },
+  });
+
+  try {
+    phoneConfirmation = await signInWithPhoneNumber(auth, phoneNumber, phoneVerifier);
+  } catch (error) {
+    phoneVerifier.clear();
+    phoneVerifier = null;
+    phoneConfirmation = null;
+    throw error;
+  }
+}
+
+/** Confirm the Firebase SMS code and return the ID token for the Node BFF. */
+export async function confirmPhoneSignIn(code: string): Promise<string> {
+  if (!phoneConfirmation) {
+    throw new Error('Request a new verification code before continuing.');
+  }
+
+  const result = await phoneConfirmation.confirm(code);
+  const idToken = await result.user.getIdToken();
+  phoneConfirmation = null;
+  phoneVerifier?.clear();
+  phoneVerifier = null;
+  return idToken;
+}
+
+export function resetPhoneSignIn(): void {
+  phoneConfirmation = null;
+  phoneVerifier?.clear();
+  phoneVerifier = null;
 }
 
 /**

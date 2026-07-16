@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { exchangeAndStoreMetaAccount } from '../../services/meta/metaOAuthService';
+import { getValidatedMetaOAuthRedirectUri } from '../../services/meta/metaOAuthRedirect';
 
 const router = Router();
 
 router.get('/oauth/url', (_req: Request, res: Response) => {
   const appId = process.env.META_APP_ID;
-  const redirectUri = process.env.META_OAUTH_REDIRECT_URI;
+  const redirectUri = getValidatedMetaOAuthRedirectUri();
   if (!appId || !redirectUri) {
     res.status(503).json({ error: 'meta_oauth_not_configured' });
     return;

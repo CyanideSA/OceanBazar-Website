@@ -44,6 +44,7 @@ const NAV_GROUPS = [
   { title: "Communications", items: [
     { key: "chat", label: "Live Chat", icon: FiMessageSquare, badgeKey: "messages" },
     { key: "tickets", label: "Tickets", icon: FiHelpCircle },
+    { key: "clientErrors", label: "Client Errors", icon: FiAlertCircle },
     { key: "email", label: "Email (M365)", icon: FiMail },
     { key: "meta", label: "Meta Suite", icon: FiImage },
     { key: "integrations", label: "Integrations", icon: FiLink },

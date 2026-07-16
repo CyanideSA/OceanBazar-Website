@@ -118,9 +118,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: oceanbazar_bff
-    # BFF is reached via admin CRM proxy on host :4000; use :4001 for direct BFF access.
+    # BFF host port (default 4401). Avoid 3908–4107 on Windows — Hyper-V often reserves those.
     ports:
-      - '4001:4000'
+      - '${BFF_HOST_PORT:-4401}:4000'
     environment:
       DEBUG_LOG_PATH: /debug-logs/debug-9a9989.log
       DEBUG_RUN_ID: post-fix
@@ -129,6 +129,8 @@ services:
       ADMIN_2FA_ONBOARDING_BYPASS: ${ADMIN_2FA_ONBOARDING_BYPASS:-false}
       PORT: 4000
       DATABASE_URL: postgresql://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar
+      # Prisma schema declares directUrl; must be set or the client throws P6001 and can crash the process.
+      DIRECT_URL: postgresql://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar
       REDIS_URL: redis://redis:6379
       JAVA_API_URL: http://java_api:8000
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-oceanbazar_dev_access_secret_change_in_production_32chars}
@@ -136,13 +138,31 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-oceanbazar-secret-key-change-in-production}
       JWT_ACCESS_EXPIRES: ${JWT_ACCESS_EXPIRES:-15m}
       JWT_REFRESH_EXPIRES: ${JWT_REFRESH_EXPIRES:-7d}
-      OTP_TERMINAL_ONLY: ${OTP_TERMINAL_ONLY:-true}
+      OTP_TERMINAL_ONLY: ${OTP_TERMINAL_ONLY:-false}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
       ADMIN_URL: ${ADMIN_URL:-http://localhost:4000}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       TRUST_PROXY: ${TRUST_PROXY:-}
       UPLOAD_DIR: /app/uploads
-      PUBLIC_BASE_URL: ${BFF_PUBLIC_BASE_URL:-http://localhost:4000}
+      PUBLIC_BASE_URL: ${BFF_PUBLIC_BASE_URL:-http://localhost:4401}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:4401}
+      OTP_EXPIRE_MINUTES: ${OTP_EXPIRE_MINUTES:-10}
+      # Payments (sandbox defaults — override in .env for production)
+      BKASH_APP_KEY: ${BKASH_APP_KEY:-}
+      BKASH_APP_SECRET: ${BKASH_APP_SECRET:-}
+      BKASH_USERNAME: ${BKASH_USERNAME:-}
+      BKASH_PASSWORD: ${BKASH_PASSWORD:-}
+      BKASH_BASE_URL: ${BKASH_BASE_URL:-https://tokenized.sandbox.bka.sh/v1.2.0-beta}
+      NAGAD_MERCHANT_ID: ${NAGAD_MERCHANT_ID:-}
+      NAGAD_MERCHANT_KEY: ${NAGAD_MERCHANT_KEY:-}
+      NAGAD_BASE_URL: ${NAGAD_BASE_URL:-https://sandbox.mynagad.com:10080/remote-payment-gateway-1.0}
+      SSLCOMMERZ_STORE_ID: ${SSLCOMMERZ_STORE_ID:-}
+      SSLCOMMERZ_STORE_PASSWORD: ${SSLCOMMERZ_STORE_PASSWORD:-}
+      SSLCOMMERZ_SANDBOX: ${SSLCOMMERZ_SANDBOX:-true}
+      # SMS (OTP when OTP_TERMINAL_ONLY=false)
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
       # Email
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -171,11 +191,16 @@ services:
       META_PAGE_ACCESS_TOKEN: ${META_PAGE_ACCESS_TOKEN:-}
       META_PAGE_ID: ${META_PAGE_ID:-}
       META_IG_ID: ${META_IG_ID:-}
+      META_AD_ACCOUNT_ID: ${META_AD_ACCOUNT_ID:-}
       META_OAUTH_REDIRECT_URI: ${META_OAUTH_REDIRECT_URI:-}
+      META_OAUTH_ALLOWED_HOSTS: ${META_OAUTH_ALLOWED_HOSTS:-localhost,127.0.0.1,api.oceanbazar.com.bd}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
       WHATSAPP_TEMPLATE_ORDER: ${WHATSAPP_TEMPLATE_ORDER:-}
       WHATSAPP_TEMPLATE_SHIPPING: ${WHATSAPP_TEMPLATE_SHIPPING:-}
+      WHATSAPP_TEMPLATE_OTP: ${WHATSAPP_TEMPLATE_OTP:-}
+      WHATSAPP_TEMPLATE_OTP_LANG: ${WHATSAPP_TEMPLATE_OTP_LANG:-en}
       TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
       GA4_PROPERTY_ID: ${GA4_PROPERTY_ID:-}
@@ -197,14 +222,17 @@ services:
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-487252925521551}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-_rHB9A85bxjgZqzcNZb0ja9vBk8}
       # Courier
+      PATHAO_ENV: ${PATHAO_ENV:-sandbox}
       PATHAO_BASE_URL: ${PATHAO_BASE_URL:-https://courier-api-sandbox.pathao.com}
       PATHAO_CLIENT_ID: ${PATHAO_CLIENT_ID:-}
       PATHAO_CLIENT_SECRET: ${PATHAO_CLIENT_SECRET:-}
       PATHAO_USERNAME: ${PATHAO_USERNAME:-}
       PATHAO_PASSWORD: ${PATHAO_PASSWORD:-}
+      PATHAO_STORE_ID: ${PATHAO_STORE_ID:-}
       STEADFAST_BASE_URL: ${STEADFAST_BASE_URL:-https://portal.packzy.com/api/v1}
       STEADFAST_API_KEY: ${STEADFAST_API_KEY:-}
       STEADFAST_SECRET_KEY: ${STEADFAST_SECRET_KEY:-}
+      STEADFAST_WEBHOOK_TOKEN: ${STEADFAST_WEBHOOK_TOKEN:-}
       PAPERFLY_USERNAME: ${PAPERFLY_USERNAME:-}
       PAPERFLY_PASSWORD: ${PAPERFLY_PASSWORD:-}
       PAPERFLY_KEY: ${PAPERFLY_KEY:-}
@@ -324,7 +352,10 @@ services:
       - '443:443'
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx-ip-default.conf:/etc/nginx/nginx-ip-default.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/certbot-www:/var/www/certbot:ro
+      - ./content-id-frontend/dist:/var/www/contentid:ro
     depends_on:
       - web
       - admin

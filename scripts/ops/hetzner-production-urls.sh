@@ -1,0 +1,47 @@
+#!/bin/bash
+# Set production .com.bd URLs on Hetzner (run from /root/oceanbazar)
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+ROOT="$(pwd)"
+
+setkv() {
+  local key="$1" val="$2"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${val}|" .env
+  else
+    echo "${key}=${val}" >> .env
+  fi
+}
+
+BASE="${PROD_BASE:-https://oceanbazar.com.bd}"
+API="${PROD_API:-https://api.oceanbazar.com.bd}"
+ADMIN="${PROD_ADMIN:-https://admin.oceanbazar.com.bd}"
+CONTENTID="${PROD_CONTENTID:-https://contentid.oceanbazar.com.bd}"
+
+setkv CLIENT_URL "$BASE"
+setkv ADMIN_URL "$ADMIN"
+setkv BFF_PUBLIC_BASE_URL "$API"
+setkv JAVA_PUBLIC_BASE_URL "$API"
+setkv CORS_ALLOWED_ORIGINS "${BASE},${ADMIN},${CONTENTID}"
+setkv TRUST_PROXY 1
+
+setkv NEXT_PUBLIC_SITE_URL "$BASE"
+setkv NEXT_PUBLIC_API_URL "$API"
+setkv NEXT_PUBLIC_ADMIN_CRM_URL "$ADMIN"
+
+setkv VITE_ADMIN_API_URL "$ADMIN"
+setkv VITE_MAINTENANCE_PAGE_URL "${BASE}/en/maintenance"
+setkv VITE_MAINTENANCE_COOKIE_DOMAIN .oceanbazar.com.bd
+
+setkv CONTENT_ID_APP_URL "$CONTENTID"
+setkv MS_CONTENT_ID_REDIRECT_URI "${API}/api/content-id/auth/sso/microsoft/callback"
+setkv MS_SSO_REDIRECT_URI "${API}/api/admin/auth/sso/microsoft/callback"
+
+setkv MAINTENANCE_MODE false
+setkv MAINTENANCE_COOKIE_DOMAIN .oceanbazar.com.bd
+
+echo "production URLs written to .env"
+echo "  storefront: $BASE"
+echo "  admin:      $ADMIN"
+echo "  api:        $API"
+echo "  contentid:  $CONTENTID"

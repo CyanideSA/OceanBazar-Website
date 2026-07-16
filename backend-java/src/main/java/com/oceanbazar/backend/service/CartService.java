@@ -18,6 +18,7 @@ import com.oceanbazar.backend.utils.WholesalePricingUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -27,6 +28,7 @@ import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class CartService {
     private final CartRepository cartRepository;
     private final ProductRepository productRepository;
@@ -82,8 +84,12 @@ public class CartService {
             c.setItems(new ArrayList<>());
             return c;
         });
+        if (cart.getItems() == null) {
+            cart.setItems(new ArrayList<>());
+        }
 
         int qtyToAdd = quantity == null ? 1 : quantity;
+        CustomerType lineCustomerType = wholesaleEarly ? CustomerType.wholesale : CustomerType.retail;
 
         CartItemEntity existing = cart.getItems().stream()
                 .filter(i -> productId.equals(i.getProductId()))
@@ -92,12 +98,15 @@ public class CartService {
 
         if (existing != null) {
             existing.setQuantity((existing.getQuantity() == null ? 0 : existing.getQuantity()) + qtyToAdd);
+            existing.setCustomerType(lineCustomerType);
         } else {
             CartItemEntity item = new CartItemEntity();
             item.setProductId(productId);
             item.setQuantity(qtyToAdd);
+            item.setCustomerType(lineCustomerType);
             ProductPricingEntity retail = WholesalePricingUtil.findPricing(product, CustomerType.retail);
             item.setUnitPrice(retail != null && retail.getPrice() != null ? retail.getPrice() : BigDecimal.ZERO);
+            item.setCart(cart);
             cart.getItems().add(item);
         }
 
@@ -126,21 +135,28 @@ public class CartService {
     }
 
     public CartDtos.CartResponseDto updateCart(String userId, String productId, Integer quantity) {
+        int qty = quantity == null ? 0 : quantity;
+        if (qty <= 0) {
+            return removeFromCart(userId, productId);
+        }
+
         CartEntity cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
+        if (cart.getItems() == null) {
+            cart.setItems(new ArrayList<>());
+        }
 
         CartItemEntity existing = cart.getItems().stream()
-                .filter(i -> productId.equals(i.getProductId()))
+                .filter(i -> i != null && productId.equals(i.getProductId()))
                 .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not in cart"));
 
-        existing.setQuantity(quantity == null ? 0 : quantity);
+        existing.setQuantity(qty);
 
         ProductEntity product = productRepository.findById(productId).orElse(null);
         if (product != null) {
             UserEntity user = userRepository.findById(userId).orElse(null);
             boolean isWholesale = WholesalePricingUtil.isApprovedWholesaleUser(user);
-            int qty = existing.getQuantity() == null ? 0 : existing.getQuantity();
             if (!isWholesale && qty > WholesalePricingUtil.RETAIL_MAX_ORDER_QTY) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Retail customers may order at most " + WholesalePricingUtil.RETAIL_MAX_ORDER_QTY
@@ -189,9 +205,11 @@ public class CartService {
         CartEntity cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
-        cart.setItems(cart.getItems().stream()
-                .filter(i -> i != null && !productId.equals(i.getProductId()))
-                .toList());
+        if (cart.getItems() == null) {
+            cart.setItems(new ArrayList<>());
+        } else {
+            cart.getItems().removeIf(i -> i != null && productId.equals(i.getProductId()));
+        }
         cartRepository.save(cart);
         return toCartResponse(cart);
     }

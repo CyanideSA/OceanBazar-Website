@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Home, ShoppingBag, User, LayoutGrid } from 'lucide-react';
+import { useNormalizedCart } from '@/hooks/useNormalizedCart';
 import { useCartStore } from '@/stores/cartStore';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
@@ -12,9 +13,10 @@ export default function MobileBottomNav() {
   const locale = useLocale();
   const pathname = usePathname();
   const t = useTranslations('nav');
-  const { cart, setOpen: setCartOpen } = useCartStore();
+  const { setOpen: setCartOpen } = useCartStore();
   const { isAuthenticated } = useAuthStore();
-  const count = cart?.itemCount ?? 0;
+  const safeCart = useNormalizedCart();
+  const count = safeCart?.itemCount ?? 0;
 
   const tabs = [
     { href: `/${locale}`, label: t('home'), icon: Home },

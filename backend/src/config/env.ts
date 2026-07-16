@@ -48,6 +48,7 @@ const envSchema = z.object({
   META_CATALOG_ID: z.string().optional(),
   META_SCHEDULER: z.string().optional(),
   META_OAUTH_REDIRECT_URI: z.string().optional(),
+  META_OAUTH_ALLOWED_HOSTS: z.string().optional(),
 
   // ─── WhatsApp Business Cloud API ─────────────────────────────────────────
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),

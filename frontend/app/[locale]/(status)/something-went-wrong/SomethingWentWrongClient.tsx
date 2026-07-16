@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import Logo from '@/components/shared/Logo';
 import ObStatusShell from '@/components/status/ObStatusShell';
+import { reportClientError } from '@/lib/reportClientError';
 
 export default function SomethingWentWrongClient() {
   const locale = useLocale();
@@ -12,6 +14,15 @@ export default function SomethingWentWrongClient() {
   const t = useTranslations('status.oops');
   const searchParams = useSearchParams();
   const code = searchParams.get('code')?.slice(0, 64);
+
+  useEffect(() => {
+    reportClientError({
+      digest: code,
+      url: typeof window !== 'undefined' ? window.location.href : undefined,
+      locale,
+      snapshot: { boundary: 'something-went-wrong', code: code ?? null },
+    });
+  }, [code, locale]);
 
   return (
     <ObStatusShell>

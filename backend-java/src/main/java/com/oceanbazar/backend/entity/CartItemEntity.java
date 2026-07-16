@@ -3,6 +3,8 @@ package com.oceanbazar.backend.entity;
 import com.oceanbazar.backend.entity.enums.CustomerType;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 
 @Entity @Table(name = "cart_items")
@@ -11,8 +13,9 @@ public class CartItemEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(name = "cart_id", nullable = false)
-    private Integer cartId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "cart_id", nullable = false)
+    private CartEntity cart;
 
     @Column(name = "product_id", columnDefinition = "char(8)", nullable = false)
     private String productId;
@@ -26,7 +29,7 @@ public class CartItemEntity {
     @Column(name = "unit_price", precision = 12, scale = 2, nullable = false)
     private BigDecimal unitPrice;
 
-    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "customer_type", nullable = false)
     private CustomerType customerType;
 }

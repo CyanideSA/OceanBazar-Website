@@ -42,6 +42,7 @@ import flashSalesRouter from './routes/flash-sales';
 import newsletterRouter from './routes/newsletter';
 import qaRouter from './routes/qa';
 import pwaAnalyticsRouter from './routes/pwa-analytics';
+import clientErrorsRouter from './routes/client-errors';
 import contentIdRouter from './routes/contentId';
 import seoPublicRouter from './routes/seo';
 
@@ -104,7 +105,9 @@ const allowedCorsOrigins = buildAllowedOrigins();
 const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|\d{1,3}(?:\.\d{1,3}){3})(:\d+)?$/;
 
 function corsOriginCheck(origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) {
-  if (!origin) return cb(null, true);
+  // 'null' (literal string) is sent by browsers on cross-origin redirects from HTTPS
+  // payment gateways (SSLCommerz/bKash) back to this local HTTP server.
+  if (!origin || origin === 'null') return cb(null, true);
   if (allowedCorsOrigins.includes(origin)) return cb(null, true);
   if (LOCAL_ORIGIN_RE.test(origin)) return cb(null, true);
   return cb(new Error(`CORS blocked for origin: ${origin}`));
@@ -259,6 +262,7 @@ app.use('/api/flash-sales', flashSalesRouter);
 app.use('/api/newsletter', newsletterRouter);
 app.use('/api/qa', qaRouter);
 app.use('/api/analytics', pwaAnalyticsRouter);
+app.use('/api/client-errors', clientErrorsRouter);
 app.use('/api/content-id', contentIdRouter);
 
 

@@ -42,7 +42,7 @@ export async function createPayment(params: {
   orderNumber: string;
   amount: number;
 }): Promise<{ callBackUrl: string }> {
-  const apiBase = process.env.API_BASE_URL || 'http://localhost:4000';
+  const apiBase = process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || 'http://localhost:4000';
   const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
   const challengeTimestamp = timestamp;
 

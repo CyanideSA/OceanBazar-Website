@@ -43,7 +43,7 @@ function ProductCard({ product }: Props) {
   const isTopTrending = Array.isArray(product.tags) && product.tags.includes('ob_top_trending');
 
   const addMutation = useMutation({
-    mutationFn: () => cartApi.add(product.id, 1).then((r) => r.data),
+    mutationFn: () => cartApi.add(product.id, 1),
     onSuccess: (data) => {
       setCart(data);
       setOpen(true);

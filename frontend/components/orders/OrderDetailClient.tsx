@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Clock, Copy, CreditCard, Package, Truck } from 'lucide-react';
-import { ordersApi } from '@/lib/api';
+import { ordersApi, authApi } from '@/lib/api';
 import type { OrderDetail, OrderShipment, PaymentMethod, SavedAddress, ShipmentStatus } from '@/types';
 import { cn } from '@/lib/utils';
 import { OrderTrackingTimeline, getFulfillmentTimelineIndex, type TrackingData } from '@/components/orders/OrderTrackingTimeline';
@@ -136,9 +136,36 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
   const trackingRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const { data: order, isLoading, isError } = useQuery({
+  const paymentFlag = searchParams.get('payment');
+
+  const { data: order, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['order', orderId],
-    queryFn: () => ordersApi.get(orderId).then((r) => parseOrder((r.data as { order: unknown }).order)),
+    queryFn: async () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a8d503'},body:JSON.stringify({sessionId:'a8d503',runId:'pre-fix',hypothesisId:'D',location:'OrderDetailClient.tsx:queryFn',message:'order_fetch_start',data:{orderId,paymentFlag,hasToken:!!localStorage.getItem('ob_access_token')},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      try {
+        const r = await ordersApi.get(orderId);
+        return parseOrder((r.data as { order: unknown }).order);
+      } catch (err: unknown) {
+        const ax = err as { response?: { status?: number; data?: { code?: string } } };
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a8d503'},body:JSON.stringify({sessionId:'a8d503',runId:'pre-fix',hypothesisId:'D',location:'OrderDetailClient.tsx:queryFn',message:'order_fetch_error',data:{orderId,status:ax.response?.status,code:ax.response?.data?.code??null,paymentFlag},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        // After SSL return, access token may be stale — refresh once then retry
+        if (ax.response?.status === 401 || ax.response?.status === 404) {
+          try {
+            await authApi.refresh();
+            const r2 = await ordersApi.get(orderId);
+            return parseOrder((r2.data as { order: unknown }).order);
+          } catch {
+            /* fall through */
+          }
+        }
+        throw err;
+      }
+    },
+    retry: 1,
   });
 
   useEffect(() => {
@@ -178,13 +205,44 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
   }
 
   if (isError || !order) {
+    const ownerMismatch =
+      paymentFlag === 'success' ||
+      (error as { response?: { data?: { code?: string } } })?.response?.data?.code === 'ORDER_OWNER_MISMATCH';
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6 lg:px-8">
-        <p className="text-muted-foreground">{t('notFound')}</p>
-        <Link href={`/${locale}/account/orders`} className="mt-4 inline-flex items-center gap-2 text-primary hover:underline">
-          <ArrowLeft className="h-4 w-4" />
-          {t('backToOrders')}
-        </Link>
+        {paymentFlag === 'success' ? (
+          <>
+            <p className="text-base font-medium text-foreground">Payment received</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your payment completed, but this browser session is not signed in as the account that placed the order.
+              Sign in with that account to view the order details.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted"
+              >
+                Retry
+              </button>
+              <Link href={`/${locale}/auth/login`} className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
+                Sign in
+              </Link>
+              <Link href={`/${locale}/account/orders`} className="inline-flex items-center gap-2 text-primary hover:underline">
+                <ArrowLeft className="h-4 w-4" />
+                {t('backToOrders')}
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-muted-foreground">{ownerMismatch ? t('notFound') : t('notFound')}</p>
+            <Link href={`/${locale}/account/orders`} className="mt-4 inline-flex items-center gap-2 text-primary hover:underline">
+              <ArrowLeft className="h-4 w-4" />
+              {t('backToOrders')}
+            </Link>
+          </>
+        )}
       </div>
     );
   }

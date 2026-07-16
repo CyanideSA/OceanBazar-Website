@@ -1,5 +1,8 @@
 'use client';
 
+import { useEffect } from 'react';
+import { reportClientError } from '@/lib/reportClientError';
+
 /**
  * Catches errors in the root layout. Must define <html> and <body>.
  * @see https://nextjs.org/docs/app/building-your-application/routing/error-handling
@@ -11,6 +14,15 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    reportClientError({
+      digest: error.digest,
+      message: error.message,
+      stack: error.stack,
+      snapshot: { boundary: 'global-error' },
+    });
+  }, [error]);
+
   return (
     <html lang="en">
       <body

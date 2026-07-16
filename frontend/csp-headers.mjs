@@ -31,6 +31,7 @@ export function getCspDirectives() {
       'https://www.gstatic.com',
       'https://www.recaptcha.net',
       'https://www.googletagmanager.com',
+      'https://connect.facebook.net',
     ].join(' '),
     [
       'style-src',

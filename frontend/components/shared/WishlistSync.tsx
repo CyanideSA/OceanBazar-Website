@@ -17,6 +17,7 @@ export default function WishlistSync() {
 
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
+    if (typeof window !== 'undefined' && !localStorage.getItem('ob_access_token')) return;
     if (syncedRef.current === user.id) return;
     syncedRef.current = user.id;
 

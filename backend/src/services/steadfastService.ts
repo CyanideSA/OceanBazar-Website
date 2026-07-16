@@ -3,13 +3,19 @@ import axios, { AxiosInstance } from 'axios';
 const STEADFAST_BASE = 'https://portal.packzy.com/api/v1';
 
 function getClient(): AxiosInstance {
+  const apiKey = process.env.STEADFAST_API_KEY;
+  const secretKey = process.env.STEADFAST_SECRET_KEY;
+  if (!apiKey || !secretKey) {
+    throw new Error('Steadfast credentials are not configured');
+  }
+
   return axios.create({
     baseURL: process.env.STEADFAST_BASE_URL || STEADFAST_BASE,
     timeout: 30000,
     headers: {
       'Content-Type': 'application/json',
-      'Api-Key': process.env.STEADFAST_API_KEY || 'xbickzb9xcwvtvhygrxiqqhfctnmfcmu',
-      'Secret-Key': process.env.STEADFAST_SECRET_KEY || '89ndw5qrp8nlbxecofx76agc',
+      'Api-Key': apiKey,
+      'Secret-Key': secretKey,
     },
   });
 }

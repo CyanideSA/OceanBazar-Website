@@ -134,7 +134,7 @@ router.post('/send-otp', otpLimiter, async (req: Request, res: Response) => {
   fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'E',location:'auth.ts:send-otp',message:'send otp',data:{type,isEmail:target.includes('@'),startsWithPlus:target.trim().startsWith('+'),len:target.length},timestamp:Date.now()})}).catch(()=>{});
   // #endregion
   await sendOtp(target, type as 'login' | 'forgot_password' | 'verify_email');
-  res.json({ message: 'OTP sent. Check your terminal (dev) or email/SMS.' });
+  res.json({ message: 'Verification code sent to your configured email or phone channel.' });
 });
 
 // ─── POST /api/auth/verify-otp ────────────────────────────────────────────────
@@ -296,21 +296,26 @@ router.post('/firebase', async (req: Request, res: Response) => {
     const fbUser = await verifyFirebaseToken(idToken);
     if (!fbUser) { res.status(401).json({ error: 'Invalid Firebase token' }); return; }
 
-    // Map Firebase provider to our social login
-    const providerMap: Record<string, string> = {
-      'google.com': 'google',
-      'facebook.com': 'facebook',
-      'password': 'firebase',
-    };
-    const provider = providerMap[fbUser.provider] || 'firebase';
+    let provider: 'google' | 'facebook' | 'phone';
+    let user;
 
-    const user = await upsertSocialUser({
-      provider: provider as 'google' | 'facebook' | 'instagram',
-      providerId: fbUser.uid,
-      name: fbUser.name || 'User',
-      email: fbUser.email,
-      accessToken: idToken,
-    });
+    if (fbUser.provider === 'phone') {
+      if (!fbUser.phone) {
+        res.status(401).json({ error: 'Firebase phone number is missing' });
+        return;
+      }
+      provider = 'phone';
+      user = await findOrCreateUserByPhone(fbUser.phone);
+    } else {
+      provider = fbUser.provider === 'facebook.com' ? 'facebook' : 'google';
+      user = await upsertSocialUser({
+        provider,
+        providerId: fbUser.uid,
+        name: fbUser.name || 'User',
+        email: fbUser.email,
+        accessToken: idToken,
+      });
+    }
 
     const access = issueAccessToken(user.id, user.userType);
     const refresh = await issueRefreshSession(user.id, req);
