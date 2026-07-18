@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+﻿import React, { useCallback, useEffect, useState } from "react";
 import { FiShield, FiSave } from "react-icons/fi";
 import { api } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
@@ -119,7 +119,7 @@ export default function RolePermissionsPage() {
                 {actions.map((action) => (
                   <button key={action} type="button" onClick={() => toggle(module, action)}
                     className={`px-2 py-1 rounded text-xs font-bold border capitalize ${
-                      matrix[module]?.[action] === true ? "border-green-500/50 text-green-400 bg-green-500/10" :
+                      matrix[module]?.[action] === true ? "border-green-500/50 text-crm-success bg-green-500/10" :
                       matrix[module]?.[action] === false ? "border-crm-danger/50 text-crm-danger bg-crm-danger-dim" :
                       "border-crm-border text-crm-text-dim"
                     }`}>

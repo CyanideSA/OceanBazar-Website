@@ -6,15 +6,15 @@
  * - POST /api/referral/track-click  → track a referral link click (public)
  * - POST /api/referral/claim        → called during registration — attribute sign-up to referrer
  */
+import { prisma } from '../lib/prisma';
 
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+
 import { requireAuth } from '../middleware/auth';
 import { generateEntityId } from '../utils/hexId';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const REFERRAL_SIGNUP_POINTS = 200;   // points given to referrer when someone signs up
 const REFERRAL_PURCHASE_POINTS = 500; // points given to referrer on referree's first purchase

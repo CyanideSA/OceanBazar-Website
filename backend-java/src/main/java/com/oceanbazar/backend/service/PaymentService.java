@@ -234,7 +234,7 @@ public class PaymentService {
         return switch (ps) {
             case paid, partial -> PaymentTxStatus.success;
             case refunded -> PaymentTxStatus.refunded;
-            case unpaid -> PaymentTxStatus.pending;
+            case unpaid, under_verification -> PaymentTxStatus.pending;
         };
     }
 }

@@ -1,9 +1,10 @@
 /**
  * Flash Sales — campaign lifecycle, pricing snapshots, analytics
  */
+import { prisma } from '../lib/prisma';
 
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+
 import { requireAdmin } from '../middleware/auth';
 import { routeParam } from '../utils/params';
 import { v4 as uuidv4 } from 'uuid';
@@ -30,7 +31,6 @@ import {
 } from '../lib/flashSalesService';
 
 const router = Router();
-const prisma = new PrismaClient();
 let hasWarnedMissingFlashTables = false;
 
 const RESERVED = new Set(['active', 'upcoming', 'validate', 'page', 'status', 'report', 'admin']);
@@ -45,6 +45,17 @@ type ItemInput = {
   flash_tier_bands?: unknown;
   per_customer_limit?: number;
 };
+
+function parseDatetime(input: string | undefined, fallback: Date): Date {
+  if (!input) return fallback;
+  const trimmed = String(input).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    return Number.isNaN(d.getTime()) ? fallback : d;
+  }
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? fallback : d;
+}
 
 function isMissingFlashSalesTable(err: unknown): boolean {
   const msg = (err as { message?: string })?.message ?? '';
@@ -65,6 +76,10 @@ function handleFlashError(res: Response, err: unknown, empty: Record<string, unk
 
 function validateItems(items: ItemInput[]): string | null {
   if (!items.length) return 'Add at least one product';
+  const productIds = items.map((item) => String(item.product_id || ''));
+  if (new Set(productIds).size !== productIds.length) {
+    return 'Each product can only be added once per campaign';
+  }
   for (const item of items) {
     if (!item.product_id) return 'Invalid product';
     if (Number(item.max_units) > MAX_FLASH_UNITS) {
@@ -248,7 +263,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
       return;
     }
   }
-  if (!save_as_draft) {
+  if (!save_as_draft || items.length > 0) {
     const itemErr = validateItems(items);
     if (itemErr) {
       res.status(400).json({ error: itemErr });
@@ -257,8 +272,8 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   }
 
   const saleId = uuidv4();
-  const startDate = new Date(starts_at || Date.now());
-  const endDate = new Date(ends_at || Date.now() + 7 * 86400000);
+  const startDate = parseDatetime(starts_at, new Date());
+  const endDate = parseDatetime(ends_at, new Date(Date.now() + 7 * 86400000));
   const safeName = name || 'New campaign';
   const { campaign_status, is_active } = resolveInitialStatus(!!save_as_draft, startDate, endDate);
 
@@ -298,8 +313,18 @@ router.get('/:id/admin', requireAdmin, async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Not found' });
       return;
     }
+    const pendingRows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM admin_pending_changes
+      WHERE module = 'flashSales' AND action = 'schedule'
+        AND resource_id = ${id} AND status = 'pending'
+      LIMIT 1
+    `.catch(() => [] as Array<{ id: string }>);
     res.json({
-      sale: { ...sale, computed_status: computeCampaignStatus(sale) },
+      sale: {
+        ...sale,
+        computed_status: computeCampaignStatus(sale),
+        pending_approval: pendingRows.length > 0,
+      },
       items: sale.items || [],
     });
   } catch (err: any) {
@@ -364,7 +389,7 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
       return;
     }
 
-    if (items && !save_as_draft) {
+    if (items && (!save_as_draft || items.length > 0)) {
       const itemErr = validateItems(items);
       if (itemErr) {
         res.status(400).json({ error: itemErr });
@@ -373,8 +398,8 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
     }
 
     const wasRunning = status === 'running';
-    const startDate = starts_at ? new Date(starts_at) : new Date(existing.starts_at);
-    const endDate = ends_at ? new Date(ends_at) : new Date(existing.ends_at);
+    const startDate = starts_at ? parseDatetime(starts_at, new Date(existing.starts_at)) : new Date(existing.starts_at);
+    const endDate = ends_at ? parseDatetime(ends_at, new Date(existing.ends_at)) : new Date(existing.ends_at);
 
     if (wasRunning) await revertSalePricing(id);
     const { campaign_status, is_active } =
@@ -415,6 +440,11 @@ router.post('/:id/schedule', requireAdmin, async (req: Request, res: Response) =
     const sale = await fetchSaleById(id);
     if (!sale) {
       res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    const items = Array.isArray(sale.items) ? sale.items : [];
+    if (items.length < 1) {
+      res.status(400).json({ error: 'Add at least one product' });
       return;
     }
     const label = sale.name || id;

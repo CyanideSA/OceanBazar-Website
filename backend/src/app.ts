@@ -47,6 +47,7 @@ import contentIdRouter from './routes/contentId';
 import seoPublicRouter from './routes/seo';
 
 import { startCartAbandonmentCron } from './services/cartAbandonmentService';
+import { ensureAdminGovernanceSchema } from './lib/adminGovernance';
 import { apiCatalogHandler } from './routes/api-catalog';
 import { coreApiProxy, CORE_API_URL } from './proxy/springBootProxy';
 import { getRedisClient } from './cache/redisClient';
@@ -64,6 +65,7 @@ import { startAnalyticsCron } from './jobs/analyticsAggregation';
 import { startMlRecomputeCron } from './jobs/mlRecompute';
 import { startCampaignJourneyCron } from './jobs/campaignJourney';
 import { startMetaScheduler } from './jobs/metaScheduler';
+import { startFlashSaleLifecycleCron } from './jobs/flashSaleLifecycle';
 import { startDlqWorker } from './events/dlqWorker';
 import { Sentry } from './tracing';
 import { env } from './config/env';
@@ -302,6 +304,7 @@ io.on('connection', (socket) => {
     (socket.handshake.auth?.token as string | undefined)
     || (socket.handshake.headers.authorization as string | undefined)
   );
+  const visitorIdentity = String(socket.handshake.auth?.visitorId || '').trim();
 
   // Ticket realtime rooms (customer joins specific ticket)
   socket.on('join:ticket', (ticketId: string) => {
@@ -323,7 +326,9 @@ io.on('connection', (socket) => {
 
   // User-specific room for cart + notification + live chat events
   socket.on('join:user', (userId: string) => {
-    if (!identity.userId || String(identity.userId) !== String(userId)) return;
+    const isOwnAccount = identity.userId && String(identity.userId) === String(userId);
+    const isOwnVisitor = visitorIdentity && visitorIdentity === String(userId);
+    if (!isOwnAccount && !isOwnVisitor) return;
     socket.join(`user:${userId}`);
   });
   socket.on('leave:user', (userId: string) => {
@@ -331,9 +336,12 @@ io.on('connection', (socket) => {
   });
 
   // Live chat session room — customer joins their own session room
-  socket.on('join:chat', (sessionId: string) => {
-    if (!identity.userId && !identity.isAdmin) return;
-    socket.join(`chat:${sessionId}`);
+  socket.on('join:chat', async (sessionId: string) => {
+    if (identity.isAdmin) { socket.join(`chat:${sessionId}`); return; }
+    const session = await (prisma as any).chat_sessions.findUnique({ where: { id: sessionId } });
+    const ownsAsAccount = identity.userId && String(session?.user_id) === String(identity.userId);
+    const ownsAsVisitor = visitorIdentity && String(session?.visitor_id) === visitorIdentity;
+    if (ownsAsAccount || ownsAsVisitor) socket.join(`chat:${sessionId}`);
   });
   socket.on('leave:chat', (sessionId: string) => {
     socket.leave(`chat:${sessionId}`);
@@ -342,6 +350,9 @@ io.on('connection', (socket) => {
   // Generic room join for admin clients (validates allowed rooms)
   const ALLOWED_ADMIN_ROOMS = ['admin:chat', 'admin:crm', 'admin:orders', 'admin:returns'];
   socket.on('join', (room: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'CHAT-A',location:'backend/src/app.ts:socket-join',message:'Socket join request',data:{room,isAdmin:identity.isAdmin,userId:identity.userId},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!identity.isAdmin) return;
     if (ALLOWED_ADMIN_ROOMS.includes(room)) socket.join(room);
   });
@@ -420,11 +431,15 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
   console.log(`   Core API: ${CORE_API_URL}`);
   console.log(`   DB: ${process.env.DATABASE_URL?.replace(/:\/\/[^@]+@/, '://<credentials>@')}\n`);
+  ensureAdminGovernanceSchema().catch((err) =>
+    console.warn('[admin-governance] schema ensure failed:', (err as Error)?.message),
+  );
   void startRedisEventBridge(io);
   if (process.env.BFF_BACKGROUND_JOBS !== 'false') {
     if (process.env.ANALYTICS_CRON !== 'false') startAnalyticsCron();
     startMlRecomputeCron();
     startCampaignJourneyCron();
+    startFlashSaleLifecycleCron();
     startDlqWorker();
     if (process.env.META_SCHEDULER !== 'false') startMetaScheduler();
   }

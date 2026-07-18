@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+﻿import React, { useState, useEffect, useCallback } from "react";
 import { adminApi } from "../../lib/api";
 import { useCatalogStore } from "../../stores/catalogStore";
 import {
@@ -50,7 +50,7 @@ export function CreateCategoryModal({ data, onClose, onSuccess }) {
   };
 
   return (
-    <ModalWrapper title="New Folder" icon={<IconFolder size={14} color="#e3b341" />} onClose={onClose}>
+    <ModalWrapper title="New Folder" icon={<IconFolder size={14} color="var(--crm-warning)" />} onClose={onClose}>
       <form onSubmit={handleSubmit} className="modal-form">
         {error && <div className="form-error">{error}</div>}
         <div className="form-group">
@@ -156,15 +156,15 @@ export function DeleteConfirmModal({ data, onClose, onSuccess }) {
       if (isCategory) { await adminApi.deleteCategory(data.node.id, force); }
       else { await adminApi.deleteProduct(data.node.id); }
       onSuccess(); onClose();
-    } catch (err) { setError(err?.response?.data?.message || "Delete failed"); setLoading(false); }
+    } catch (err) { setError(err?.response?.data?.error || err?.response?.data?.message || "Delete failed"); setLoading(false); }
   };
 
   return (
-    <ModalWrapper title={`Delete ${isCategory ? "Folder" : "Product"}`} icon={<IconTrash size={14} color="#f85149" />} onClose={onClose}>
+    <ModalWrapper title={`Delete ${isCategory ? "Folder" : "Product"}`} icon={<IconTrash size={14} color="var(--crm-danger)" />} onClose={onClose}>
       <div className="modal-form">
         {error && <div className="form-error">{error}</div>}
-        <p style={{ color: "#c9d1d9", fontSize: 13, marginBottom: 14 }}>
-          Are you sure you want to delete <strong style={{ color: "#e6edf3" }}>{name}</strong>?
+        <p style={{ color: "var(--crm-text)", fontSize: 13, marginBottom: 14 }}>
+          Are you sure you want to delete <strong style={{ color: "var(--crm-text-bright)" }}>{name}</strong>?
           {isCategory && " This may contain sub-folders and products."}
         </p>
         {isCategory && (
@@ -269,7 +269,7 @@ export function CreateProductModal({ data, onClose, onSuccess }) {
   };
 
   return (
-    <ModalWrapper title="New Product" icon={<IconPackage size={14} color="#79c0ff" />} onClose={onClose}>
+    <ModalWrapper title="New Product" icon={<IconPackage size={14} color="var(--crm-primary)" />} onClose={onClose}>
       <form onSubmit={handleSubmit} className="modal-form">
         {error && <div className="form-error">{error}</div>}
         <div className="form-group">
@@ -336,19 +336,19 @@ export function BulkUploadModal({ onClose, onSuccess }) {
   };
 
   return (
-    <ModalWrapper title="Bulk Upload" icon={<IconBulkUpload size={14} color="#79c0ff" />} onClose={onClose}>
+    <ModalWrapper title="Bulk Upload" icon={<IconBulkUpload size={14} color="var(--crm-primary)" />} onClose={onClose}>
       <div className="modal-form">
         {error && <div className="form-error">{error}</div>}
         {result ? (
-          <div style={{ background: "#1a3a1a", border: "1px solid #2ea04326", borderRadius: 6, padding: 12, color: "#56d364", fontSize: 13 }}>
+          <div style={{ background: "var(--crm-success-dim)", border: "1px solid #2ea04326", borderRadius: 6, padding: 12, color: "var(--crm-success)", fontSize: 13 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>✓ {result.status}</div>
             <div>{result.message}</div>
-            <div style={{ marginTop: 6, fontSize: 11, color: "#8b949e" }}>{result.fileName} — {result.sizeBytes} bytes</div>
+            <div style={{ marginTop: 6, fontSize: 11, color: "var(--crm-text-dim)" }}>{result.fileName} — {result.sizeBytes} bytes</div>
           </div>
         ) : (
           <>
-            <p style={{ color: "#8b949e", fontSize: 12, marginBottom: 14 }}>
-              Upload a <strong style={{ color: "#c9d1d9" }}>.csv</strong> or <strong style={{ color: "#c9d1d9" }}>.json</strong> file to bulk-import products. The file will be queued for processing.
+            <p style={{ color: "var(--crm-text-dim)", fontSize: 12, marginBottom: 14 }}>
+              Upload a <strong style={{ color: "var(--crm-text)" }}>.csv</strong> or <strong style={{ color: "var(--crm-text)" }}>.json</strong> file to bulk-import products. The file will be queued for processing.
             </p>
             <div className="form-group">
               <span className="form-label">File</span>
@@ -361,7 +361,7 @@ export function BulkUploadModal({ onClose, onSuccess }) {
               />
             </div>
             {file && (
-              <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: "var(--crm-text-dim)", marginBottom: 10 }}>
                 Selected: {file.name} ({(file.size / 1024).toFixed(1)} KB)
               </div>
             )}

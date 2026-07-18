@@ -1,10 +1,10 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { exchangeMetaLongLivedToken } from './metaClient';
 import { getValidatedMetaOAuthRedirectUri } from './metaOAuthRedirect';
 
-const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 const GRAPH = 'https://graph.facebook.com/v19.0';
 

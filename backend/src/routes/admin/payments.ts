@@ -1,12 +1,15 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+import { createRefundRecord } from '../../lib/refundRecords';
+
+import { v4 as uuidv4 } from 'uuid';
 import { routeParam } from '../../utils/params';
 import { requireIdempotencyKey } from '../../middleware/idempotency';
 import { refundTransaction } from '../../services/paymentAdminService';
 import { requireAdminReauth } from '../../middleware/adminReauth';
+import { notifyCustomer } from '../../services/customerNotify';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/admin/payments/reconciliation/mismatches — tx status vs order.payment_status drift
 router.get('/reconciliation/mismatches', async (_req: Request, res: Response) => {
@@ -44,7 +47,13 @@ router.get('/', async (req: Request, res: Response) => {
   const limit = 20;
   const { status, method, search } = req.query as Record<string, string>;
   const where: any = {};
-  if (status) where.status = status;
+  if (status === 'under_verification') {
+    // Gateway captured the funds but an admin has not verified them yet.
+    where.status = 'success';
+    where.order = { paymentStatus: 'under_verification' };
+  } else if (status) {
+    where.status = status;
+  }
   if (method) where.method = method;
   if (search) where.OR = [
     { orderId: { contains: search } },
@@ -56,7 +65,7 @@ router.get('/', async (req: Request, res: Response) => {
     prisma.paymentTransaction.findMany({
       where,
       include: {
-        order: { select: { orderNumber: true, status: true } },
+        order: { select: { orderNumber: true, status: true, paymentStatus: true } },
         user: { select: { name: true, email: true, phone: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -82,12 +91,71 @@ router.get('/:id', async (req: Request, res: Response) => {
   res.json({ transaction: tx });
 });
 
+// POST /api/admin/payments/:id/mark-paid — admin confirms a payment was received (e.g. under verification → paid)
+router.post('/:id/mark-paid', async (req: Request, res: Response) => {
+  const tx = await prisma.paymentTransaction.findUnique({ where: { id: routeParam(req.params.id) } });
+  if (!tx) { res.status(404).json({ error: 'Transaction not found' }); return; }
+
+  const updatedTx = await prisma.paymentTransaction.update({
+    where: { id: tx.id },
+    data: { status: 'success' },
+  });
+  const order = await prisma.order.update({
+    where: { id: tx.orderId },
+    data: { paymentStatus: 'paid', status: 'processing' },
+  });
+  await prisma.orderTimeline.create({
+    data: {
+      orderId: order.id,
+      status: 'processing',
+      note: 'Payment confirmed by admin — order moved to processing',
+      actorType: 'admin',
+      actorId: String(req.admin!.adminId),
+    },
+  });
+  await prisma.auditLog.create({
+    data: { adminId: req.admin!.adminId, action: 'MARK_PAYMENT_PAID', targetType: 'payment_transaction', targetId: tx.id, details: { orderId: order.id } },
+  });
+
+  try {
+    await notifyCustomer({ userId: order.userId, event: 'payment_received', vars: { orderNumber: order.orderNumber } });
+  } catch { /* non-fatal */ }
+
+  res.json({ transaction: updatedTx, order, message: 'Payment marked as received' });
+});
+
 // POST /api/admin/payments/:id/refund
 router.post('/:id/refund', requireIdempotencyKey(), requireAdminReauth(), async (req: Request, res: Response) => {
-  const { amount, note } = req.body as { amount?: number; note?: string };
+  const { amount, note, method } = req.body as { amount?: number; note?: string; method?: string };
   try {
     const updated = await refundTransaction(req, routeParam(req.params.id), amount, note);
-    res.json({ transaction: updated, message: 'Refund processed' });
+    const order = await prisma.order.findUnique({ where: { id: updated.orderId } });
+
+    const refundAmount = amount ?? Number(updated.amount);
+    const record = await createRefundRecord({
+      id: uuidv4(),
+      order_id: updated.orderId,
+      payment_tx_id: updated.id,
+      user_id: updated.userId,
+      amount: refundAmount,
+      method: method || 'original_payment',
+      notes: note,
+      status: 'completed',
+      completed_at: new Date(),
+      created_by: String(req.admin?.adminId ?? ''),
+    });
+
+    if (order) {
+      try {
+        await notifyCustomer({
+          userId: order.userId,
+          event: 'refund_completed',
+          vars: { orderNumber: order.orderNumber, amount: String(refundAmount), method: method || 'original_payment' },
+        });
+      } catch { /* non-fatal */ }
+    }
+
+    res.json({ transaction: updated, refundRecord: record, message: 'Refund processed' });
   } catch (err: any) {
     res.status(err?.status || 500).json({ error: err?.message || 'Refund failed' });
   }

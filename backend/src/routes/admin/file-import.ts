@@ -13,15 +13,15 @@
  *   POST /api/admin/file-import/scan    → returns tree preview
  *   POST /api/admin/file-import/execute → imports categories + products
  */
+import { prisma } from '../../lib/prisma';
 
 import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { PrismaClient } from '@prisma/client';
+
 import { generateEntityId, generateSlug } from '../../utils/hexId';
 
 const router = Router();
-const prisma = new PrismaClient();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prismaAny = prisma as any;
 

@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { getBalance, getLedger, adminAdjustPoints } from '../../services/obPointsService';
 import { getTier, getRedemptionOptions } from '../../utils/obPoints';
 import { routeParam } from '../../utils/params';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // PUT /api/admin/ob-points/adjust — must be before /:userId
 router.put('/adjust', async (req: Request, res: Response) => {

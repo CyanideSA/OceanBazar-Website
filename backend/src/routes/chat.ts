@@ -3,15 +3,15 @@
  * Handles session start, message sending (bot + human), escalation, typing, close.
  */
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { optionalAuth } from '../middleware/auth';
+import { prisma } from '../lib/prisma';
+
+import { optionalAuth, requireAuth } from '../middleware/auth';
 import { generateEntityId } from '../utils/hexId';
 import { getWelcomeMessages, processMessage, processAction } from '../services/chatbotService';
 import { parseBotContext } from '../services/chat/chatEngine';
 import { emitToRoom, emitToUser, emitBroadcast } from '../lib/adminEvents';
 
 const router = Router();
-const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
@@ -109,6 +109,82 @@ router.get('/session', optionalAuth, async (req: Request, res: Response) => {
   }
 });
 
+/* ── POST /api/chat/claim-visitor ─────────────────────────────────────────── */
+// Move a pre-login visitor conversation onto the authenticated account.
+router.post('/claim-visitor', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const visitorId = String(req.body?.visitorId || '').trim();
+    if (!visitorId) { res.json({ session: null, claimed: false }); return; }
+
+    const userId = req.user!.userId;
+    const [visitorSession, accountSession, user] = await Promise.all([
+      prismaAny.chat_sessions.findFirst({
+        where: {
+          visitor_id: visitorId,
+          user_id: visitorId,
+          is_active: true,
+          status: { not: 'finished' },
+        },
+        orderBy: { last_message_at: 'desc' },
+      }),
+      prismaAny.chat_sessions.findFirst({
+        where: { user_id: userId, is_active: true, status: { not: 'finished' } },
+        orderBy: { last_message_at: 'desc' },
+      }),
+      prisma.user.findUnique({ where: { id: userId } }),
+    ]);
+
+    if (!visitorSession) {
+      res.json({ session: accountSession, claimed: false });
+      return;
+    }
+
+    if (accountSession && accountSession.id !== visitorSession.id) {
+      const existing = Array.isArray(accountSession.messages) ? accountSession.messages : [];
+      const incoming = Array.isArray(visitorSession.messages) ? visitorSession.messages : [];
+      const seen = new Set(existing.map((m: any) => String(m?.id || '')));
+      const merged = [...existing, ...incoming.filter((m: any) => !seen.has(String(m?.id || '')))]
+        .sort((a: any, b: any) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+
+      const session = await prismaAny.$transaction(async (tx: any) => {
+        const updated = await tx.chat_sessions.update({
+          where: { id: accountSession.id },
+          data: {
+            messages: merged,
+            visitor_id: visitorId,
+            customer_name: user?.name || accountSession.customer_name,
+            customer_email: user?.email || accountSession.customer_email,
+            customer_phone: user?.phone || accountSession.customer_phone,
+            last_message_at: new Date(),
+          },
+        });
+        await tx.chat_sessions.update({
+          where: { id: visitorSession.id },
+          data: { is_active: false, status: 'finished', resolved_at: new Date() },
+        });
+        return updated;
+      });
+      res.json({ session, claimed: true, merged: true });
+      return;
+    }
+
+    const session = await prismaAny.chat_sessions.update({
+      where: { id: visitorSession.id },
+      data: {
+        user_id: userId,
+        visitor_id: visitorId,
+        customer_name: user?.name || visitorSession.customer_name,
+        customer_email: user?.email || visitorSession.customer_email,
+        customer_phone: user?.phone || visitorSession.customer_phone,
+      },
+    });
+    res.json({ session, claimed: true, merged: false });
+  } catch (err) {
+    console.error('[chat/claim-visitor]', err);
+    res.status(500).json({ error: 'Failed to move visitor conversation' });
+  }
+});
+
 /* ── POST /api/chat/message ───────────────────────────────────────────────── */
 router.post('/message', optionalAuth, async (req: Request, res: Response) => {
   try {
@@ -161,14 +237,13 @@ router.post('/message', optionalAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // If agent is active, emit to admin room
-    if (session.status === 'active' && session.agent_id) {
-      emitToRoom('admin:chat', 'chat:message', {
-        sessionId,
-        message: uMsg,
-        session: { id: sessionId, customer_name: session.customer_name, customer_issue: session.customer_issue },
-      });
-    }
+    // Emit every customer message to the admin room so the CRM chat list and
+    // any open thread stay in sync (bot/waiting sessions included).
+    emitToRoom('admin:chat', 'chat:message', {
+      sessionId,
+      message: uMsg,
+      session: { id: sessionId, customer_name: session.customer_name, customer_issue: session.customer_issue, status: session.status },
+    });
 
     // Handle escalation: transition to waiting_agent
     if (escalated) {

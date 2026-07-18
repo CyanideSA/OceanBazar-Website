@@ -73,11 +73,7 @@ export default function LoginPage() {
         : await authApi.verifyOtp(resolveTarget(target), otp);
       const token = data.token || data.access;
       setUser(data.user as User, token);
-      if (data.user?.email && !data.user.emailVerified) {
-        router.push(`/${locale}/auth/verify-email`);
-      } else {
-        router.push(`/${locale}`);
-      }
+      router.push(`/${locale}`);
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } } };
       const msg = err.response?.data?.error?.message 
@@ -123,13 +119,17 @@ export default function LoginPage() {
     try {
       const recaptchaToken = await executeRecaptcha('login');
       const { data } = await authApi.login(resolveTarget(target), password, recaptchaToken);
+      if (data.requiresEmailOtp) {
+        setTarget(data.verificationTarget);
+        setMethod('email');
+        setOtpProvider('backend');
+        setOtp('');
+        setStep('otp');
+        return;
+      }
       const token = data.token || data.access;
       setUser(data.user as User, token);
-      if (data.user?.email && !data.user.emailVerified) {
-        router.push(`/${locale}/auth/verify-email`);
-      } else {
-        router.push(`/${locale}`);
-      }
+      router.push(`/${locale}`);
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } } };
       const msg = err.response?.data?.error?.message 

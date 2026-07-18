@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ShoppingBag, Package, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { storefrontApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { AB_TESTS, useAbVariant } from '@/lib/abTest';
 
 interface HeroSlide {
   imageUrl: string;
@@ -19,6 +20,7 @@ interface HeroSlide {
 export default function HeroSection() {
   const t = useTranslations('home.hero');
   const locale = useLocale();
+  const heroVariant = useAbVariant(AB_TESTS.HERO_BANNER);
   const [current, setCurrent] = useState(0);
 
   const { data: settings } = useQuery({
@@ -36,10 +38,11 @@ export default function HeroSection() {
   const prev = useCallback(() => setCurrent((c) => (c - 1 + (slides.length || 1)) % (slides.length || 1)), [slides.length]);
 
   useEffect(() => {
+    if (heroVariant === 'B') return;
     if (slides.length <= 1) return;
     const id = setInterval(next, rotationMs);
     return () => clearInterval(id);
-  }, [slides.length, rotationMs, next]);
+  }, [slides.length, rotationMs, next, heroVariant]);
 
   /* ─── Carousel Hero (admin-configured slides) ─── */
   if (hasSlides) {
@@ -70,6 +73,11 @@ export default function HeroSection() {
         {/* Content overlay */}
         <div className="container-tight relative z-10 py-12 sm:py-20 md:py-28 lg:py-32">
           <div className="max-w-2xl text-white">
+            {heroVariant === 'B' && (
+              <p className="mb-3 inline-flex rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-sm">
+                Genuine global brands · Directly sourced
+              </p>
+            )}
             {slide.title && (
               <h1
                 className="font-extrabold leading-[1.15] tracking-tight drop-shadow-lg"
@@ -112,7 +120,7 @@ export default function HeroSection() {
         </div>
 
         {/* Navigation arrows */}
-        {slides.length > 1 && (
+        {slides.length > 1 && heroVariant === 'A' && (
           <>
             <button
               type="button"
@@ -134,7 +142,7 @@ export default function HeroSection() {
         )}
 
         {/* Dots */}
-        {slides.length > 1 && (
+        {slides.length > 1 && heroVariant === 'A' && (
           <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-2 sm:bottom-6">
             {slides.map((_, i) => (
               <button
@@ -166,6 +174,11 @@ export default function HeroSection() {
 
       <div className="container-tight relative py-10 sm:py-20 md:py-28 lg:py-32">
         <div className="max-w-2xl">
+          {heroVariant === 'B' && (
+            <p className="mb-3 inline-flex rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
+              Genuine global brands · Directly sourced
+            </p>
+          )}
           <h1
             className="font-extrabold leading-[1.15] tracking-tight"
             style={{ fontSize: 'clamp(1.5rem, 6vw, 3.75rem)' }}

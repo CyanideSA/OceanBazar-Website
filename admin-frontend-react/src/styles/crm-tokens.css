@@ -1,40 +1,88 @@
+/*
+ * OceanBazar CRM design tokens.
+ *
+ * Each color has two forms:
+ *   --crm-x-rgb : space-separated "R G B" channels (source of truth).
+ *   --crm-x     : a ready-to-use rgb() color for direct consumers
+ *                 (inline styles, chart fills/strokes, index.css classes).
+ * Tailwind utilities use the -rgb channels via rgb(var(--crm-x-rgb) / <alpha-value>)
+ * so opacity modifiers like bg-crm-primary/10 keep working.
+ *
+ * Base :root is the cream-white default theme; the dark "night" theme is
+ * applied under :root[data-crm-theme="dark"].
+ */
 :root {
-  /* Colors - Base Dark (GitHub-inspired) */
-  --crm-bg: #0d1117;
-  --crm-bg-alt: #161b22;
-  --crm-bg-card: #21262d;
-  --crm-bg-hover: #30363d;
-  
+  /* Surfaces - Cream White (default) */
+  --crm-bg-rgb: 247 250 252;        /* #F7FAFC app canvas */
+  --crm-bg-alt-rgb: 255 255 255;    /* #FFFFFF sidebar / topbar / cards */
+  --crm-bg-card-rgb: 255 255 255;   /* #FFFFFF */
+  --crm-bg-hover-rgb: 234 242 248;  /* #EAF2F8 subtle blue tint */
+  /* Aliases used by flash-sales / error pages */
+  --crm-surface-rgb: 255 255 255;   /* same as card */
+  --crm-surface-2-rgb: 234 242 248; /* same as hover */
+
   /* Borders */
-  --crm-border: #30363d;
-  --crm-border-subtle: #21262d;
-  --crm-border-strong: #484f58;
+  --crm-border-rgb: 220 230 238;         /* #DCE6EE */
+  --crm-border-subtle-rgb: 235 241 246;  /* #EBF1F6 */
+  --crm-border-strong-rgb: 183 199 212;  /* #B7C7D4 */
 
   /* Typography */
-  --crm-text: #c9d1d9;
-  --crm-text-dim: #8b949e;
-  --crm-text-bright: #f0f6fc;
-  --crm-text-muted: #484f58;
+  --crm-text-rgb: 5 28 48;          /* #051C30 near-ink body */
+  --crm-text-dim-rgb: 20 52 78;     /* #14344E secondary */
+  --crm-text-bright-rgb: 2 18 32;   /* #021220 headings */
+  --crm-text-muted-rgb: 55 85 110;  /* #37556E muted but still readable */
 
-  /* Accents - Primary (Blue) */
-  --crm-primary: #1f6feb;
-  --crm-primary-hover: #388bfd;
-  --crm-primary-dim: #1f6feb22;
+  /* Accents */
+  --crm-primary-rgb: 30 126 184;    /* #1E7EB8 brand blue */
+  --crm-primary-hover-rgb: 22 98 143; /* #16628F */
 
-  /* Accents - Success (Green) */
-  --crm-success: #238636;
-  --crm-success-hover: #2ea043;
-  --crm-success-dim: #23863622;
+  --crm-success-rgb: 26 127 55;     /* #1A7F37 */
+  --crm-success-hover-rgb: 17 99 41; /* #116329 */
 
-  /* Accents - Warning (Yellow/Orange) */
-  --crm-warning: #d29922;
-  --crm-warning-hover: #e3b341;
-  --crm-warning-dim: #d2992222;
+  --crm-warning-rgb: 154 103 0;     /* #9A6700 */
+  --crm-warning-hover-rgb: 125 78 0; /* #7D4E00 */
 
-  /* Accents - Danger (Red) */
-  --crm-danger: #da3633;
-  --crm-danger-hover: #f85149;
-  --crm-danger-dim: #da363322;
+  --crm-danger-rgb: 207 34 46;      /* #CF222E */
+  --crm-danger-hover-rgb: 164 14 38; /* #A40E26 */
+
+  --crm-purple-rgb: 124 58 237;     /* #7C3AED */
+  --crm-cyan-rgb: 8 145 178;        /* #0891B2 */
+
+  /* Full-color aliases for direct consumers */
+  --crm-bg: rgb(var(--crm-bg-rgb));
+  --crm-bg-alt: rgb(var(--crm-bg-alt-rgb));
+  --crm-bg-card: rgb(var(--crm-bg-card-rgb));
+  --crm-bg-hover: rgb(var(--crm-bg-hover-rgb));
+  --crm-surface: rgb(var(--crm-surface-rgb));
+  --crm-surface-2: rgb(var(--crm-surface-2-rgb));
+
+  --crm-border: rgb(var(--crm-border-rgb));
+  --crm-border-subtle: rgb(var(--crm-border-subtle-rgb));
+  --crm-border-strong: rgb(var(--crm-border-strong-rgb));
+
+  --crm-text: rgb(var(--crm-text-rgb));
+  --crm-text-dim: rgb(var(--crm-text-dim-rgb));
+  --crm-text-bright: rgb(var(--crm-text-bright-rgb));
+  --crm-text-muted: rgb(var(--crm-text-muted-rgb));
+
+  --crm-primary: rgb(var(--crm-primary-rgb));
+  --crm-primary-hover: rgb(var(--crm-primary-hover-rgb));
+  --crm-primary-dim: rgb(var(--crm-primary-rgb) / 0.12);
+
+  --crm-success: rgb(var(--crm-success-rgb));
+  --crm-success-hover: rgb(var(--crm-success-hover-rgb));
+  --crm-success-dim: rgb(var(--crm-success-rgb) / 0.12);
+
+  --crm-warning: rgb(var(--crm-warning-rgb));
+  --crm-warning-hover: rgb(var(--crm-warning-hover-rgb));
+  --crm-warning-dim: rgb(var(--crm-warning-rgb) / 0.12);
+
+  --crm-danger: rgb(var(--crm-danger-rgb));
+  --crm-danger-hover: rgb(var(--crm-danger-hover-rgb));
+  --crm-danger-dim: rgb(var(--crm-danger-rgb) / 0.12);
+
+  --crm-purple: rgb(var(--crm-purple-rgb));
+  --crm-cyan: rgb(var(--crm-cyan-rgb));
 
   /* Layout */
   --crm-sidebar-width: 260px;
@@ -46,46 +94,54 @@
   --crm-radius-full: 999px;
 
   /* Shadows */
-  --crm-shadow-sm: 0 1px 0 rgba(1, 4, 9, 0.04);
-  --crm-shadow-md: 0 4px 12px rgba(1, 4, 9, 0.2);
-  --crm-shadow-lg: 0 8px 24px rgba(1, 4, 9, 0.3);
+  --crm-shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.06);
+  --crm-shadow-md: 0 6px 16px rgba(31, 35, 40, 0.1);
+  --crm-shadow-lg: 0 12px 28px rgba(31, 35, 40, 0.14);
 
   /* Transitions */
   --crm-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-:root[data-crm-theme="light"] {
-  --crm-bg: #f6f8fa;
-  --crm-bg-alt: #ffffff;
-  --crm-bg-card: #ffffff;
-  --crm-bg-hover: #eef2f6;
+:root[data-crm-theme="dark"] {
+  /* Surfaces - Base Dark (GitHub-inspired night theme) */
+  --crm-bg-rgb: 13 17 23;      /* #0d1117 */
+  --crm-bg-alt-rgb: 22 27 34;  /* #161b22 */
+  --crm-bg-card-rgb: 33 38 45; /* #21262d */
+  --crm-bg-hover-rgb: 48 54 61; /* #30363d */
+  --crm-surface-rgb: 33 38 45;
+  --crm-surface-2-rgb: 48 54 61;
 
-  --crm-border: #d0d7de;
-  --crm-border-subtle: #d8dee4;
-  --crm-border-strong: #8c959f;
+  --crm-border-rgb: 48 54 61;         /* #30363d */
+  --crm-border-subtle-rgb: 33 38 45;  /* #21262d */
+  --crm-border-strong-rgb: 72 79 88;  /* #484f58 */
 
-  --crm-text: #24292f;
-  --crm-text-dim: #57606a;
-  --crm-text-bright: #1f2328;
-  --crm-text-muted: #6e7781;
+  --crm-text-rgb: 201 209 217;       /* #c9d1d9 */
+  --crm-text-dim-rgb: 139 148 158;   /* #8b949e */
+  --crm-text-bright-rgb: 240 246 252; /* #f0f6fc */
+  --crm-text-muted-rgb: 72 79 88;    /* #484f58 */
 
-  --crm-primary: #0969da;
-  --crm-primary-hover: #0550ae;
-  --crm-primary-dim: #0969da1a;
+  --crm-primary-rgb: 31 111 235;       /* #1f6feb */
+  --crm-primary-hover-rgb: 56 139 253; /* #388bfd */
 
-  --crm-success: #1a7f37;
-  --crm-success-hover: #116329;
-  --crm-success-dim: #1a7f371a;
+  --crm-success-rgb: 35 134 54;        /* #238636 */
+  --crm-success-hover-rgb: 46 160 67;  /* #2ea043 */
 
-  --crm-warning: #9a6700;
-  --crm-warning-hover: #7d4e00;
-  --crm-warning-dim: #9a67001a;
+  --crm-warning-rgb: 210 153 34;       /* #d29922 */
+  --crm-warning-hover-rgb: 227 179 65; /* #e3b341 */
 
-  --crm-danger: #cf222e;
-  --crm-danger-hover: #a40e26;
-  --crm-danger-dim: #cf222e1a;
+  --crm-danger-rgb: 218 54 51;         /* #da3633 */
+  --crm-danger-hover-rgb: 248 81 73;   /* #f85149 */
 
-  --crm-shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.06);
-  --crm-shadow-md: 0 6px 16px rgba(31, 35, 40, 0.1);
-  --crm-shadow-lg: 0 12px 28px rgba(31, 35, 40, 0.14);
+  --crm-purple-rgb: 163 113 247;       /* #a371f7 */
+  --crm-cyan-rgb: 57 197 187;          /* #39c5bb */
+
+  /* dim tints slightly stronger on dark for visibility */
+  --crm-primary-dim: rgb(var(--crm-primary-rgb) / 0.16);
+  --crm-success-dim: rgb(var(--crm-success-rgb) / 0.16);
+  --crm-warning-dim: rgb(var(--crm-warning-rgb) / 0.16);
+  --crm-danger-dim: rgb(var(--crm-danger-rgb) / 0.16);
+
+  --crm-shadow-sm: 0 1px 0 rgba(1, 4, 9, 0.04);
+  --crm-shadow-md: 0 4px 12px rgba(1, 4, 9, 0.2);
+  --crm-shadow-lg: 0 8px 24px rgba(1, 4, 9, 0.3);
 }

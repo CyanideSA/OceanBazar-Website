@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { routeParam } from '../utils/params';
 import { cacheResponse } from '../cache/cacheMiddleware';
 import { emitAdminEvent } from '../lib/adminEvents';
+import { prisma } from '../lib/prisma';
 
 const router = Router();
 const productCache = cacheResponse({ ttlSeconds: 300, keyPrefix: 'bff:products' });
-const prisma = new PrismaClient();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prismaAny = prisma as any;
 

@@ -1,5 +1,4 @@
 import speakeasy from 'speakeasy';
-import { agentDebugLog } from './debug-agent-log';
 
 const STEP_SEC = 30;
 
@@ -61,16 +60,8 @@ export function verifySetupTotp(secret: string, token: string): TotpVerifyResult
   }
   const valid = speakeasyVerify(normalizedSecret, normalizedToken, 10);
   if (!valid) {
-    agentDebugLog('totp.ts:verifySetupTotp', 'no_match', {
-      secretLen: normalizedSecret.length,
-      secretHint: totpSecretHint(normalizedSecret),
-    }, 'A');
     return { valid: false };
   }
-  agentDebugLog('totp.ts:verifySetupTotp', 'match', {
-    secretLen: normalizedSecret.length,
-    secretHint: totpSecretHint(normalizedSecret),
-  }, 'A');
   return { valid: true, periodCounter: Math.floor(Date.now() / 1000 / STEP_SEC) };
 }
 
@@ -79,10 +70,6 @@ export function verifyAdminTotp(secret: string, token: string): TotpVerifyResult
   const normalizedSecret = normalizeTotpSecret(secret);
   const normalizedToken = String(token ?? '').replace(/\D+/g, '');
   if (!normalizedSecret || normalizedSecret.length < 10 || !/^\d{6}$/.test(normalizedToken)) {
-    agentDebugLog('totp.ts:verifyAdminTotp', 'reject_format', {
-      secretLen: normalizedSecret?.length ?? 0,
-      tokenLen: normalizedToken.length,
-    }, 'D');
     return { valid: false };
   }
   const epochMs = Date.now();
@@ -101,18 +88,8 @@ export function verifyAdminTotp(secret: string, token: string): TotpVerifyResult
     }
   }
   if (matchedDelta === null) {
-    agentDebugLog('totp.ts:verifyAdminTotp', 'no_match', {
-      periodCounter: baseCounter,
-      secretLen: normalizedSecret.length,
-      serverUtc: new Date(epochMs).toISOString(),
-    }, 'A');
     return { valid: false };
   }
-  agentDebugLog('totp.ts:verifyAdminTotp', 'match', {
-    periodCounter: baseCounter + matchedDelta,
-    delta: matchedDelta,
-    secretLen: normalizedSecret.length,
-  }, 'A');
   return { valid: true, periodCounter: baseCounter + matchedDelta };
 }
 

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { requireRole } from '../../middleware/auth';
 import { emailWrapper, sendMail } from '../../services/emailService';
 import {
@@ -20,7 +21,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { logCommunication, resolveCustomerIdByEmail } from '../../services/communicationLogService';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 /** GET /api/admin/email/status — provider + configured mailboxes */
 router.get('/status', (_req: Request, res: Response) => {

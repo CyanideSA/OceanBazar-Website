@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { randomBytes } from 'crypto';
 import multer from 'multer';
 import { emitToRoom, emitToUser } from '../../lib/adminEvents';
@@ -11,7 +12,6 @@ import { logCommunication } from '../../services/communicationLogService';
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/admin/tickets
 router.get('/', async (req: Request, res: Response) => {

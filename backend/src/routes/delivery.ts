@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { requireAuth } from '../middleware/auth';
 import { routeParam } from '../utils/params';
 import {
@@ -10,7 +11,6 @@ import {
 } from '../services/redxService';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // ─── RedX Area Lookup (public) ────────────────────────────────────────────────
 // GET /api/delivery/redx/areas?post_code=1207

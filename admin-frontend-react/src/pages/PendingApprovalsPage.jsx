@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+﻿import React, { useCallback, useEffect, useState } from "react";
 import { FiCheck, FiX, FiShield, FiClock } from "react-icons/fi";
 import { api } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
@@ -86,7 +86,7 @@ export default function PendingApprovalsPage() {
                 {filter === "pending" && (
                   <div className="flex gap-2">
                     <button type="button" disabled={reviewing[item.id]} onClick={() => review(item.id, true)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-semibold bg-green-500/20 text-green-400">
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-semibold bg-crm-success-dim text-crm-success">
                       <FiCheck size={14} /> Approve
                     </button>
                     <button type="button" disabled={reviewing[item.id]} onClick={() => review(item.id, false)}

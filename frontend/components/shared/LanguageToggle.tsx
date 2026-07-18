@@ -19,6 +19,7 @@ export default function LanguageToggle() {
     const newPath = segments.join('/');
     router.push(newPath);
     localStorage.setItem('ob_locale', newLocale);
+    document.cookie = `NEXT_LOCALE=${newLocale}; path=/; max-age=31536000; SameSite=Lax`;
   };
 
   return (

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { FiZap, FiTrash2, FiCheck, FiClock, FiSave } from "react-icons/fi";
+﻿import React, { useState, useEffect, useCallback, useRef } from "react";
+import { FiZap, FiTrash2, FiCheck, FiClock, FiSave, FiSearch } from "react-icons/fi";
 import { api } from "../../lib/api";
 import { useToast } from "../ToastProvider";
 import DateTimeField from "../common/DateTimeField";
@@ -8,6 +8,17 @@ const BASE = "/api";
 const MAX_UNITS = 15;
 const MAX_PER_CUSTOMER = 15;
 const AUTOSAVE_MS = 1500;
+
+function toIsoDatetime(v) {
+  if (!v) return null;
+  const trimmed = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 const emptyForm = () => ({
   name: "",
@@ -30,7 +41,7 @@ function TierBandEditor({ bands, onChange, disabled }) {
   };
   return (
     <div className="mt-2 rounded-lg border border-crm-border/60 p-2 space-y-2 bg-crm-surface/50">
-      <p className="text-[10px] font-bold text-crm-text-muted uppercase">Flash tier bands</p>
+      <p className="text-[10px] font-black text-crm-text-bright uppercase">Flash tier bands</p>
       {bands.map((b, idx) => (
         <div key={idx} className="grid grid-cols-4 gap-1 text-xs">
           <input disabled={disabled} className="crm-input text-xs" placeholder="Min qty" type="number"
@@ -52,8 +63,10 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [campaignStatus, setCampaignStatus] = useState("draft");
+  const [pendingApproval, setPendingApproval] = useState(false);
   const [saveState, setSaveState] = useState("idle");
   const [productSearch, setProductSearch] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [scheduling, setScheduling] = useState(false);
   const formRef = useRef(form);
@@ -70,6 +83,10 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
     try {
       const res = await api.get(`${BASE}/flash-sales/${saleId}/admin`);
       const sale = res.data?.sale;
+      if (!sale) {
+        toast.error("Campaign not found");
+        return;
+      }
       const items = (res.data?.items || []).map((it) => {
         const flash = it.flash_pricing_snapshot || {};
         return {
@@ -91,7 +108,7 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
       });
       skipNextSave.current = true;
       setForm({
-        name: sale.name,
+        name: sale.name || "",
         starts_at: sale.starts_at ? sale.starts_at.slice(0, 16) : "",
         ends_at: sale.ends_at ? sale.ends_at.slice(0, 16) : "",
         banner_text: sale.banner_text || "",
@@ -99,6 +116,7 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
         items,
       });
       setCampaignStatus(sale.computed_status || sale.campaign_status || "draft");
+      setPendingApproval(Boolean(sale.pending_approval));
     } catch {
       toast.error("Failed to load campaign");
     } finally {
@@ -131,8 +149,8 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
     try {
       const body = {
         name: f.name || "Untitled campaign",
-        starts_at: f.starts_at || new Date().toISOString(),
-        ends_at: f.ends_at || new Date(Date.now() + 86400000 * 7).toISOString(),
+        starts_at: toIsoDatetime(f.starts_at) || new Date().toISOString(),
+        ends_at: toIsoDatetime(f.ends_at) || new Date(Date.now() + 86400000 * 7).toISOString(),
         banner_text: f.banner_text,
         banner_color: f.banner_color,
         items: payloadItems(),
@@ -144,17 +162,16 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
         toast.info(res.data?.message || "Submitted for Super Admin verification");
       } else {
         setSaveState("saved");
-        setCampaignStatus(res.data?.campaign_status || campaignStatus);
+        if (res.data?.campaign_status) {
+          setCampaignStatus(res.data.campaign_status);
+        }
         onSaved?.();
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f9670f'},body:JSON.stringify({sessionId:'f9670f',location:'FlashSaleExplorer.jsx:persist',message:'flash autosave ok',data:{saleId:id,itemCount:body.items.length,asDraft},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
     } catch (e) {
       setSaveState("error");
       toast.error(e?.response?.data?.error || "Auto-save failed");
     }
-  }, [campaignStatus, onSaved, payloadItems, toast]);
+  }, [onSaved, payloadItems, toast]);
 
   useEffect(() => {
     if (loading || !saleId) return;
@@ -163,12 +180,12 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
       return;
     }
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => persist(true), AUTOSAVE_MS);
+    timerRef.current = setTimeout(() => persist(campaignStatus === "draft"), AUTOSAVE_MS);
     setSaveState("idle");
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [form, loading, saleId, persist]);
+  }, [form, loading, saleId, campaignStatus, persist]);
 
   const handleSearch = useCallback(async (q) => {
     if (q.length < 2) {
@@ -189,16 +206,15 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
   }, [productSearch, handleSearch]);
 
   function addItem(product) {
-    if (form.items.find((i) => i.product_id === product.id)) return;
     const retail = retailPricing(product);
     const price = retail?.price ?? 0;
     const compareAt = retail?.compareAt ?? price;
     const pricingMode = product.pricingMode === "tiered" ? "tiered" : "non_tiered";
     setForm((f) => ({
       ...f,
-      items: [
-        ...f.items,
-        {
+      items: f.items.some((item) => item.product_id === product.id)
+        ? f.items
+        : [...f.items, {
           product_id: product.id,
           product_title: product.titleEn,
           original_price: price,
@@ -211,8 +227,7 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
           max_units: MAX_UNITS,
           per_customer_limit: MAX_PER_CUSTOMER,
           include_delivery: true,
-        },
-      ],
+        }],
     }));
     setProductSearch("");
     setSearchResults([]);
@@ -251,10 +266,13 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
       return;
     }
     setScheduling(true);
+    // Cancel any pending auto-save so it can't flip the campaign back to draft after scheduling.
+    if (timerRef.current) clearTimeout(timerRef.current);
     try {
       await persist(true);
       const res = await api.post(`${BASE}/flash-sales/${saleId}/schedule`);
       if (res.status === 202 || res.data?.pending) {
+        setPendingApproval(true);
         toast.info(res.data?.message || "Submitted for Super Admin verification before going live");
         return;
       }
@@ -280,6 +298,14 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
   }
 
   const readOnly = campaignStatus === "completed";
+  const normalizedItemSearch = itemSearch.trim().toLowerCase();
+  const visibleItems = form.items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) =>
+      !normalizedItemSearch ||
+      String(item.product_title || "").toLowerCase().includes(normalizedItemSearch) ||
+      String(item.product_id || "").toLowerCase().includes(normalizedItemSearch)
+    );
   const saveLabel =
     saveState === "saving" ? "Saving…" :
     saveState === "saved" ? "Saved" :
@@ -308,12 +334,17 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
         <div className="flex items-center gap-2 shrink-0">
           <span className={`text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg ${
             saveState === "error" ? "text-crm-danger bg-crm-danger-dim" :
-            saveState === "saved" ? "text-green-400 bg-green-500/10" :
+            saveState === "saved" ? "text-crm-success bg-green-500/10" :
             "text-crm-text-dim bg-crm-bg"
           }`}>
             <FiSave size={12} /> {saveLabel}
           </span>
-          {campaignStatus === "draft" && (
+          {campaignStatus === "draft" && pendingApproval && (
+            <span className="text-xs font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-crm-warning bg-crm-warning-dim">
+              <FiClock size={13} /> Awaiting Super Admin approval
+            </span>
+          )}
+          {campaignStatus === "draft" && !pendingApproval && (
             <>
               <button type="button" onClick={deleteCampaign} className="p-2 rounded-lg text-crm-danger hover:bg-crm-danger-dim">
                 <FiTrash2 size={16} />
@@ -373,30 +404,53 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
               className="crm-input w-full" placeholder="Search published products…" />
             {searchResults.length > 0 && (
               <div className="mt-1 border border-crm-border rounded-xl max-h-40 overflow-y-auto bg-crm-surface">
-                {searchResults.map((p) => (
-                  <button key={p.id} type="button" onClick={() => addItem(p)}
-                    className="w-full text-left px-4 py-2 hover:bg-crm-border/30 text-sm">
-                    {p.titleEn}{" "}
-                    <span className="text-crm-text-muted text-xs">
-                      ({p.pricingMode === "tiered" ? "tiered" : "flat"} retail)
-                    </span>
-                  </button>
-                ))}
+                {searchResults.map((p) => {
+                  const alreadyAdded = form.items.some((item) => item.product_id === p.id);
+                  return (
+                    <button key={p.id} type="button" onClick={() => addItem(p)} disabled={alreadyAdded}
+                      className="w-full text-left px-4 py-2 hover:bg-crm-border/30 text-sm disabled:opacity-55 disabled:cursor-not-allowed">
+                      {p.titleEn}{" "}
+                      <span className="text-crm-text-muted text-xs">
+                        {alreadyAdded ? "Already added" : `(${p.pricingMode === "tiered" ? "tiered" : "flat"} retail)`}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
         <div className="space-y-3">
-          <h3 className="text-sm font-bold text-crm-text-bright flex items-center gap-2">
-            <FiClock size={14} /> Products ({form.items.length})
-          </h3>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-sm font-bold text-crm-text-bright flex items-center gap-2">
+              <FiClock size={14} /> Products ({form.items.length})
+            </h3>
+            {form.items.length > 0 && (
+              <label className="relative block w-full sm:max-w-xs">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-crm-text-muted" size={14} />
+                <input
+                  type="search"
+                  value={itemSearch}
+                  onChange={(event) => setItemSearch(event.target.value)}
+                  className="crm-input w-full pl-9 text-sm"
+                  placeholder="Find a product in this campaign…"
+                  aria-label="Search campaign products"
+                />
+              </label>
+            )}
+          </div>
           {form.items.length === 0 && (
             <p className="text-sm text-crm-text-dim py-8 text-center border border-dashed border-crm-border rounded-xl">
               Search and add products above. Pricing criteria appear per product.
             </p>
           )}
-          {form.items.map((item, idx) => (
+          {form.items.length > 0 && visibleItems.length === 0 && (
+            <p className="text-sm text-crm-text-dim py-6 text-center border border-dashed border-crm-border rounded-xl">
+              No campaign products match “{itemSearch}”.
+            </p>
+          )}
+          {visibleItems.map(({ item, index: idx }) => (
             <div key={item.product_id} className="rounded-xl border border-crm-border bg-crm-surface p-4 space-y-3">
               <div className="flex justify-between gap-2">
                 <div>
@@ -464,7 +518,7 @@ export default function FlashSaleExplorer({ saleId, onSaved, onDeleted }) {
                   className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${
                     item.include_delivery !== false
                       ? "border-crm-border text-crm-text-dim"
-                      : "border-green-500/40 text-green-400 bg-green-500/10"
+                      : "border-green-500/40 text-crm-success bg-green-500/10"
                   }`}>
                   {item.include_delivery !== false ? "Delivery: customer pays" : "Delivery: FREE for customer"}
                 </button>

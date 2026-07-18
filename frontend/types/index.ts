@@ -77,6 +77,7 @@ export interface Product {
   flashDeal?: boolean;
   flashFreeDelivery?: boolean;
   flashSaleId?: string;
+  flashAvailable?: number;
   status: ProductStatus;
   moq: number;
   stock: number;
@@ -157,6 +158,9 @@ export interface CartItem {
   lineTotal: number;
   discountPct: number;
   tierApplied: number;
+  stock: number | null;
+  moq: number;
+  retailMaxQty: number | null;
 }
 
 export interface CartSummary {

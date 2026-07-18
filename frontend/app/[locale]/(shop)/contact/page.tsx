@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { Mail, Phone, MapPin, Facebook, Instagram, Youtube, MessageCircle } from 'lucide-react';
 import { storefrontApi } from '@/lib/api';
+import LiveChatLink from '@/components/chat/LiveChatLink';
 
 const BUILDING_SRC = '/oceanbazar-building.jpg?v=1';
 
@@ -109,13 +110,13 @@ export default function ContactPage() {
           </section>
 
           <div className="flex flex-wrap gap-3">
-            <Link
+            <LiveChatLink
               href={`/${locale}/chat`}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-soft transition hover:brightness-105"
             >
               <MessageCircle className="h-4 w-4" />
               {t('chatCta')}
-            </Link>
+            </LiveChatLink>
             <Link
               href={`/${locale}/support`}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground transition hover:border-primary/30"

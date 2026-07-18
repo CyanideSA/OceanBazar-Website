@@ -3,7 +3,6 @@ import {
   FiZap,
   FiPlus,
   FiTrash2,
-  FiClock,
   FiPackage,
   FiBarChart2,
   FiStopCircle,
@@ -17,10 +16,10 @@ import FlashSaleReportModal from "../components/flash-sales/FlashSaleReportModal
 const BASE = "/api";
 
 const STATUS_STYLES = {
-  draft: "bg-crm-surface text-crm-text-dim",
+  draft: "bg-crm-bg-hover text-crm-text-dim",
   scheduled: "bg-crm-warning-dim text-crm-warning",
-  running: "bg-green-500/20 text-green-400 animate-pulse",
-  completed: "bg-crm-surface text-crm-text-muted",
+  running: "bg-crm-success-dim text-crm-success animate-pulse",
+  completed: "bg-crm-bg-hover text-crm-text-muted",
 };
 
 function StatusBadge({ status }) {
@@ -30,26 +29,6 @@ function StatusBadge({ status }) {
       {label}
     </span>
   );
-}
-
-function CountdownTimer({ endsAt }) {
-  const [remaining, setRemaining] = useState("");
-  useEffect(() => {
-    function tick() {
-      const diff = new Date(endsAt) - new Date();
-      if (diff <= 0) {
-        setRemaining("Ended");
-        return;
-      }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      setRemaining(`${h}h ${m}m`);
-    }
-    tick();
-    const id = setInterval(tick, 30000);
-    return () => clearInterval(id);
-  }, [endsAt]);
-  return <span className="font-mono text-crm-warning text-sm">{remaining}</span>;
 }
 
 function defaultDates() {
@@ -74,7 +53,7 @@ export default function FlashSalesPage() {
     try {
       const res = await api.get(`${BASE}/flash-sales`);
       setSales(res.data?.sales || []);
-    } catch {
+    } catch (err) {
       toast.error("Failed to load flash campaigns");
     } finally {
       setLoading(false);
@@ -83,6 +62,11 @@ export default function FlashSalesPage() {
 
   useEffect(() => {
     fetchSales();
+  }, [fetchSales]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void fetchSales(), 60_000);
+    return () => window.clearInterval(timer);
   }, [fetchSales]);
 
   const filtered = useMemo(() => {
@@ -194,7 +178,7 @@ export default function FlashSalesPage() {
             type="button"
             onClick={() => setFilter(key)}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-              filter === key ? "bg-crm-warning-dim text-crm-warning" : "bg-crm-bg text-crm-text-dim hover:text-crm-text-bright"
+              filter === key ? "bg-crm-warning-dim text-crm-warning border border-crm-warning/30" : "bg-crm-bg-alt text-crm-text font-semibold border border-crm-border hover:bg-crm-bg-hover hover:text-crm-text-bright"
             }`}
           >
             {label} ({counts[key] ?? 0})
@@ -220,8 +204,11 @@ export default function FlashSalesPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedId(sale.id)}
-                      className={`w-full text-left px-4 py-3 transition-colors hover:bg-crm-surface/80 ${
-                        active ? "bg-crm-warning-dim/30 border-l-2 border-crm-warning" : ""
+                      aria-current={active ? "true" : undefined}
+                      className={`relative w-full text-left px-4 py-3 transition-all hover:bg-crm-bg-hover ${
+                        active
+                          ? "bg-crm-primary/15 border-l-4 border-crm-primary shadow-[inset_0_0_0_1px_rgba(30,126,184,0.22)]"
+                          : "border-l-4 border-transparent"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -256,7 +243,7 @@ export default function FlashSalesPage() {
                   ))}
                 </select>
               </div>
-              <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-crm-border bg-crm-surface/50 shrink-0">
+              <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-crm-border bg-crm-bg-alt/80 shrink-0">
                 {(() => {
                   const sale = sales.find((s) => s.id === selectedId);
                   if (!sale) return null;
@@ -269,7 +256,7 @@ export default function FlashSalesPage() {
                       </button>
                       {status === "running" && (
                         <button type="button" onClick={(e) => completeEarly(sale.id, e)}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs text-orange-400 border border-orange-500/30">
+                          className="flex items-center gap-1 px-2 py-1 rounded text-xs text-crm-warning border border-crm-warning/30">
                           <FiStopCircle size={12} /> End now
                         </button>
                       )}

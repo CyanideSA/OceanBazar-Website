@@ -2,7 +2,7 @@
  * Admin Studio — catalog tree, full product editor, brands, coupons, shipments list.
  */
 import { Router, Request, Response, NextFunction } from 'express';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import multer from 'multer';
 import { requireAdmin, requireRole } from '../../middleware/auth';
 import { routeParam } from '../../utils/params';
@@ -12,6 +12,7 @@ import { invalidateCache } from '../../cache/cacheMiddleware';
 import sanitizeHtml from 'sanitize-html';
 import { appendFileSync } from 'fs';
 import { join } from 'path';
+import { prisma } from '../../lib/prisma';
 
 const ALLOWED_HTML: sanitizeHtml.IOptions = {
   allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li',
@@ -34,7 +35,6 @@ const ALLOWED_HTML: sanitizeHtml.IOptions = {
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const router = Router();
-const prisma = new PrismaClient();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prismaAny = prisma as any;
 
@@ -276,14 +276,6 @@ router.put('/products/:id', requireRole('super_admin', 'admin'), async (req: Req
     }
 
     if (b.productAssets) {
-      // #region agent log
-      try {
-        appendFileSync(
-          join(process.cwd(), 'debug-f9670f.log'),
-          `${JSON.stringify({ sessionId: 'f9670f', location: 'studio.ts:productAssets', message: 'product asset batch update', data: { productId: id, count: b.productAssets.length }, timestamp: Date.now(), hypothesisId: 'H2' })}\n`,
-        );
-      } catch { /* ignore */ }
-      // #endregion
       await tx.productAsset.deleteMany({ where: { productId: id } });
       if (b.productAssets.length) {
         await tx.productAsset.createMany({
@@ -896,6 +888,5 @@ router.delete('/tags/:id', requireRole('super_admin'), async (req: Request, res:
     res.status(500).json({ error: e.message });
   }
 });
-
 
 export default router;

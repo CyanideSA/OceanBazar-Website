@@ -1,8 +1,8 @@
-import { PrismaClient, type Brand, type Category } from '@prisma/client';
+import { type Brand, type Category } from '@prisma/client';
 import { invalidateCache } from '../cache/cacheMiddleware';
 import { generateEntityId, generateSlug } from '../utils/hexId';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 
 export type EnsureResult<T> = { item: T; created: boolean };
 

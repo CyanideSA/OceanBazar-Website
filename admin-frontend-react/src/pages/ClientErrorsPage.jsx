@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FiAlertTriangle, FiCheck, FiRefreshCw } from "react-icons/fi";
+import { FiAlertTriangle, FiCheck, FiRefreshCw, FiUser } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
+import { isRealUserId } from "../lib/deepLink";
 
-export default function ClientErrorsPage() {
+export default function ClientErrorsPage({ onOpenCustomer }) {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
@@ -98,6 +99,9 @@ export default function ClientErrorsPage() {
                 </div>
                 <p className="text-sm text-crm-text mt-1 line-clamp-2">{r.message || "(no message)"}</p>
                 <p className="text-xs text-crm-text-dim mt-1 truncate">{r.url}</p>
+                {r.userId ? (
+                  <p className="text-[10px] text-crm-primary mt-1 font-mono">User: {r.userId}</p>
+                ) : null}
                 <p className="text-[10px] text-crm-text-dim mt-1">{new Date(r.createdAt).toLocaleString()}</p>
               </button>
             ))}
@@ -138,6 +142,27 @@ export default function ClientErrorsPage() {
                 <div><dt className="text-crm-text-dim">Digest</dt><dd className="font-mono">{selected.digest || "—"}</dd></div>
                 <div><dt className="text-crm-text-dim">URL</dt><dd className="break-all">{selected.url || "—"}</dd></div>
                 <div><dt className="text-crm-text-dim">Locale</dt><dd>{selected.locale || "—"}</dd></div>
+                <div>
+                  <dt className="text-crm-text-dim">User ID</dt>
+                  <dd>
+                    {selected.userId ? (
+                      isRealUserId(selected.userId) && onOpenCustomer ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenCustomer(selected.userId)}
+                          className="inline-flex items-center gap-1 font-mono text-crm-primary hover:underline"
+                        >
+                          <FiUser size={12} />
+                          {selected.userId}
+                        </button>
+                      ) : (
+                        <span className="font-mono">{selected.userId}</span>
+                      )
+                    ) : (
+                      "—"
+                    )}
+                  </dd>
+                </div>
                 <div><dt className="text-crm-text-dim">User agent</dt><dd className="break-all text-xs">{selected.userAgent || "—"}</dd></div>
                 <div><dt className="text-crm-text-dim">Message</dt><dd className="whitespace-pre-wrap">{selected.message || "—"}</dd></div>
               </dl>
@@ -149,8 +174,8 @@ export default function ClientErrorsPage() {
               ) : null}
               {selected.snapshot ? (
                 <div>
-                  <h3 className="text-sm font-semibold text-crm-text mb-2">Snapshot JSON</h3>
-                  <pre className="text-xs bg-black/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+                  <h3 className="text-sm font-semibold text-crm-text mb-2">Snapshot</h3>
+                  <pre className="text-xs bg-black/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap max-h-64">
                     {JSON.stringify(selected.snapshot, null, 2)}
                   </pre>
                 </div>

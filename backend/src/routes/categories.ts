@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { routeParam } from '../utils/params';
 import { cacheResponse } from '../cache/cacheMiddleware';
 import { CategoryListResponseSchema } from '../contracts/category.contract';
 import { parseContract } from '../lib/contractValidate';
 
 const router = Router();
-const prisma = new PrismaClient();
 const categoryCache = cacheResponse({ ttlSeconds: 1800, keyPrefix: 'bff:categories' });
 
 // GET /api/categories — full two-level tree (cached 30 min)

@@ -26,8 +26,9 @@ export function getSocket(): Socket {
   return socket;
 }
 
-export function connectSocket(): Socket {
+export function connectSocket(auth?: { token?: string; visitorId?: string }): Socket {
   const s = getSocket();
+  if (!s.connected && auth) s.auth = auth;
   if (!s.connected) s.connect();
   return s;
 }

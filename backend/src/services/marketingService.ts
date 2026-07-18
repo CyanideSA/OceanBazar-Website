@@ -1,8 +1,8 @@
-import { PrismaClient, CampaignStatus, CommChannel } from '@prisma/client';
+import { CampaignStatus, CommChannel } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { generateMarketing, isMlConfigured, type MarketingGeneration } from './mlClient';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 
 // ─── Audience resolution ────────────────────────────────────────────────────
 
@@ -132,7 +132,14 @@ export async function createCampaign(input: {
   triggerType?: string;
   triggerConfig?: Record<string, unknown>;
   createdByAdminId?: number;
-  steps?: Array<{ subject?: string; body?: string; delayHours?: number; channel?: CommChannel }>;
+  steps?: Array<{
+    subject?: string;
+    body?: string;
+    bodyHtml?: string;
+    designJson?: unknown;
+    delayHours?: number;
+    channel?: CommChannel;
+  }>;
 }) {
   const id = uuidv4();
   return prisma.marketingCampaign.create({
@@ -153,7 +160,10 @@ export async function createCampaign(input: {
               channel: s.channel ?? 'email',
               delayHours: s.delayHours ?? 0,
               subject: s.subject ?? null,
-              body: s.body ?? null,
+              body: s.bodyHtml ?? s.body ?? null,
+              metadata: s.bodyHtml || s.designJson
+                ? { bodyHtml: s.bodyHtml ?? s.body ?? null, designJson: s.designJson ?? null }
+                : undefined,
             })),
           }
         : undefined,
@@ -173,7 +183,14 @@ export async function updateCampaign(
     triggerConfig?: Record<string, unknown>;
     startsAt?: string | null;
     endsAt?: string | null;
-    steps?: Array<{ subject?: string; body?: string; delayHours?: number; channel?: CommChannel }>;
+    steps?: Array<{
+      subject?: string;
+      body?: string;
+      bodyHtml?: string;
+      designJson?: unknown;
+      delayHours?: number;
+      channel?: CommChannel;
+    }>;
   }
 ) {
   // Replace steps if provided (simple, atomic).
@@ -187,7 +204,10 @@ export async function updateCampaign(
         channel: s.channel ?? 'email',
         delayHours: s.delayHours ?? 0,
         subject: s.subject ?? null,
-        body: s.body ?? null,
+        body: s.bodyHtml ?? s.body ?? null,
+        metadata: s.bodyHtml || s.designJson
+          ? { bodyHtml: s.bodyHtml ?? s.body ?? null, designJson: s.designJson ?? null }
+          : undefined,
       })),
     });
   }

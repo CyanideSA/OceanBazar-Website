@@ -1,10 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import type { Request } from 'express';
 import * as courierService from './courierService';
 import type { AssignCourierInput } from './courierService';
 import { recordAdminAudit } from '../lib/adminAudit';
 
-const prisma = new PrismaClient();
 
 export async function assignCourierWithAudit(req: Request, payload: AssignCourierInput) {
   const result = await courierService.assignCourier(payload);

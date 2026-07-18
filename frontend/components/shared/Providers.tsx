@@ -8,6 +8,7 @@ import Toaster from '@/components/shared/Toaster';
 import CatalogSyncProvider from '@/components/shared/CatalogSyncProvider';
 import NotificationListener from '@/components/shared/NotificationListener';
 import WishlistSync from '@/components/shared/WishlistSync';
+import ChatVisitorClaim from '@/components/chat/ChatVisitorClaim';
 import DynamicFavicon from '@/components/shared/DynamicFavicon';
 import PushNotificationInit from '@/components/shared/PushNotificationInit';
 import PwaAnalyticsInit from '@/components/shared/PwaAnalyticsInit';
@@ -45,6 +46,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <PushNotificationInit />
         <PwaAnalyticsInit />
         <WishlistSync />
+        <ChatVisitorClaim />
         <ScrollToTop />
         {children}
         <Toaster />

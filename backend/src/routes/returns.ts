@@ -1,11 +1,17 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+import {
+  listRefundsForReturn,
+  findLatestRefundForReturn,
+  createRefundRecord,
+  updateRefundRecord,
+} from '../lib/refundRecords';
+
 import { requireAuth } from '../middleware/auth';
 import { routeParam } from '../utils/params';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // POST /api/returns — customer submits a return request
 router.post('/', requireAuth, async (req: Request, res: Response) => {
@@ -51,9 +57,9 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
   });
 
   try {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
+    const orderMeta = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
     const { alertRefundRequest } = await import('../services/teamsService');
-    alertRefundRequest(order?.orderNumber || orderId, reason || reasonCategory).catch(() => {});
+    alertRefundRequest(orderMeta?.orderNumber || orderId, reason || reasonCategory).catch(() => {});
   } catch { /* non-fatal */ }
 
   res.status(201).json({ returnRequest: returnReq, message: 'Return request submitted successfully' });
@@ -74,7 +80,65 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     where: { id: routeParam(req.params.id), user_id: req.user!.userId },
   });
   if (!returnReq) { res.status(404).json({ error: 'Return request not found' }); return; }
-  res.json({ returnRequest: returnReq });
+  const refundRecords = await listRefundsForReturn(returnReq.id);
+  res.json({ returnRequest: returnReq, refundRecords });
+});
+
+// POST /api/returns/:id/refund-account — customer submits how they'd like to receive their refund
+router.post('/:id/refund-account', requireAuth, async (req: Request, res: Response) => {
+  const { method, accountNumber, accountName, bankName, branchName, notes } = req.body as {
+    method?: string;
+    accountNumber?: string;
+    accountName?: string;
+    bankName?: string;
+    branchName?: string;
+    notes?: string;
+  };
+
+  if (!method || !accountNumber) {
+    res.status(400).json({ error: 'method and accountNumber are required' });
+    return;
+  }
+
+  const rr = await prisma.return_requests.findFirst({
+    where: { id: routeParam(req.params.id), user_id: req.user!.userId },
+  });
+  if (!rr) { res.status(404).json({ error: 'Return request not found' }); return; }
+  if (!['refund_eligible', 'refund_processing'].includes(rr.status)) {
+    res.status(400).json({ error: 'This return is not yet eligible for refund payment details' });
+    return;
+  }
+
+  const customerAccount = {
+    method,
+    accountNumber,
+    accountName: accountName || null,
+    bankName: bankName || null,
+    branchName: branchName || null,
+    notes: notes || null,
+    submittedAt: new Date().toISOString(),
+  };
+
+  let record = await findLatestRefundForReturn(rr.id);
+  if (record) {
+    record = await updateRefundRecord(record.id, {
+      customer_account: customerAccount,
+      method: method || record.method,
+    });
+  } else {
+    record = await createRefundRecord({
+      id: uuidv4(),
+      order_id: rr.order_id,
+      return_id: rr.id,
+      user_id: req.user!.userId,
+      amount: rr.refund_amount || 0,
+      method,
+      customer_account: customerAccount,
+      status: 'pending_info',
+    });
+  }
+
+  res.json({ refundRecord: record, message: 'Refund payment details submitted' });
 });
 
 export default router;

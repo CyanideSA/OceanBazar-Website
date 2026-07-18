@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { body, validationResult } from 'express-validator';
 import {
   buildMicrosoftAuthorizeUrl,
@@ -19,7 +20,6 @@ import {
 import { generateEntityId, formatOrderNumber } from '../utils/hexId';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 function contentIdAppUrl(): string {
   return (process.env.CONTENT_ID_APP_URL || 'http://localhost:5180').replace(/\/$/, '');

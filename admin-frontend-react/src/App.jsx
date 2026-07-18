@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import ProductsPage from "./pages/ProductsPage";
 import CatalogExplorerPage from "./pages/CatalogExplorerPage";
+import { useCatalogStore } from "./stores/catalogStore";
 import CustomersPage from "./pages/CustomersPage";
 import OrdersPage from "./pages/OrdersPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
@@ -59,12 +60,16 @@ export default function App() {
   const [active, setActive] = useState("dashboard");
   const [ordersSearch, setOrdersSearch] = useState("");
   const [productsSearch, setProductsSearch] = useState("");
+  const [customerDetailId, setCustomerDetailId] = useState("");
+  const [returnDetailId, setReturnDetailId] = useState("");
+  const [paymentDetailId, setPaymentDetailId] = useState("");
   const [adminUnreadAlerts, setAdminUnreadAlerts] = useState(0);
   const [overviewCounts, setOverviewCounts] = useState(null);
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState(() => {
+    // Default: light. Only use dark when the admin previously chose it.
     const saved = typeof window !== "undefined" ? localStorage.getItem("oceanbazar_admin_theme") : null;
-    return saved === "light" ? "light" : "dark";
+    return saved === "dark" ? "dark" : "light";
   });
   
   const adminChatInboundRef = useRef(null);
@@ -227,29 +232,6 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-crm-theme", theme);
     localStorage.setItem("oceanbazar_admin_theme", theme);
-    const styles = getComputedStyle(document.documentElement);
-    // #region agent log
-    fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
-      body: JSON.stringify({
-        sessionId: "9a9989",
-        runId: "color-debug",
-        hypothesisId: "H1",
-        location: "src/App.jsx:theme-effect",
-        message: "Theme attribute and CSS variables after apply",
-        data: {
-          theme,
-          domTheme: document.documentElement.getAttribute("data-crm-theme"),
-          lsTheme: localStorage.getItem("oceanbazar_admin_theme"),
-          bg: styles.getPropertyValue("--crm-bg").trim(),
-          text: styles.getPropertyValue("--crm-text").trim(),
-          primary: styles.getPropertyValue("--crm-primary").trim(),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
   }, [theme]);
 
   const handleLogin = async (payload) => {
@@ -308,37 +290,51 @@ export default function App() {
     setActive("products");
   };
 
-  if (!token || !admin) return <LoginPage onLogin={handleLogin} loading={loading} />;
+  const openProductInExplorer = useCallback((productId, categoryId) => {
+    const store = useCatalogStore.getState();
+    if (categoryId) {
+      store.setCurrentCategoryId(categoryId);
+      store.setExpanded(categoryId, true);
+    } else {
+      store.setCurrentCategoryId(null);
+    }
+    if (productId) store.openProduct(productId);
+    setActive("catalog");
+  }, []);
 
-  const denied = !canAccess(role, active);
+  const navigateTo = useCallback((module, opts = {}) => {
+    if (opts.customerId) {
+      try { sessionStorage.setItem("oceanbazar_customer_detail", opts.customerId); } catch { /* ignore */ }
+      setCustomerDetailId(opts.customerId);
+    }
+    if (opts.timelineCustomerId) {
+      try { sessionStorage.setItem("oceanbazar_timeline_customer", opts.timelineCustomerId); } catch { /* ignore */ }
+    }
+    if (opts.orderId) {
+      setOrdersSearch(opts.orderId);
+      try { sessionStorage.setItem("oceanbazar_order_detail", opts.orderId); } catch { /* ignore */ }
+    }
+    if (opts.productId) setProductsSearch(opts.productId);
+    if (opts.returnId) setReturnDetailId(opts.returnId);
+    if (opts.paymentId) setPaymentDetailId(opts.paymentId);
+    setActive(module);
+  }, []);
 
+  const denied = Boolean(token && admin) && !canAccess(role, active);
+
+  // All hooks must run unconditionally — never place useEffect below the auth early-return.
   useEffect(() => {
     if (!token || !admin) return;
-    // #region agent log
-    fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
-      body: JSON.stringify({
-        sessionId: "9a9989",
-        runId: "crm-visibility-check",
-        hypothesisId: "H2",
-        location: "src/App.jsx:denied-check",
-        message: "App auth/permission state",
-        data: {
-          marker: "enterprise-ui-build-v1",
-          role,
-          active,
-          denied,
-          theme,
-          hasSecurityPage: Object.prototype.hasOwnProperty.call(contentMap, "security"),
-          hasRolePermissionsPage: Object.prototype.hasOwnProperty.call(contentMap, "rolePermissions"),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [token, admin, role, active, denied, theme]);
-  
+    // Keep dashboard as a safe landing module when permissions change after login.
+    if (denied && active !== "dashboard") {
+      setActive("dashboard");
+    }
+  }, [token, admin, denied, active]);
+
+  if (!token || !admin) {
+    return <LoginPage onLogin={handleLogin} loading={loading} />;
+  }
+
   const contentMap = {
     dashboard: (
       <DashboardPage
@@ -350,41 +346,98 @@ export default function App() {
         liveLastUpdatedAt={lastUpdatedAt}
       />
     ),
-    products: <ProductsPage initialSearch={productsSearch} />,
+    products: (
+      <ProductsPage
+        initialSearch={productsSearch}
+        onOpenInExplorer={openProductInExplorer}
+      />
+    ),
     catalog: <CatalogExplorerPage />,
     inventory: <InventoryPage />,
     customers: (
       <CustomersPage
+        initialCustomerId={customerDetailId}
         onOpenTimeline={(customerId) => {
           try { sessionStorage.setItem("oceanbazar_timeline_customer", customerId || ""); } catch { /* ignore */ }
           setActive("customerTimeline");
         }}
       />
     ),
-    orders: <OrdersPage initialSearch={ordersSearch} liveTick={mergedTicks.orders} />,
-    delivery: <DeliveryPage />,
+    orders: (
+      <OrdersPage
+        initialSearch={ordersSearch}
+        liveTick={mergedTicks.orders}
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+        onOpenProduct={(id) => navigateTo("products", { productId: id })}
+      />
+    ),
+    delivery: (
+      <DeliveryPage
+        onOpenOrder={(id) => navigateTo("orders", { orderId: id })}
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+      />
+    ),
     adminUsers: <AdminUsersPage liveTick={mergedTicks.users} />,
-    payments: <PaymentsPage liveTick={mergedTicks.payments} />,
-    returns: <ReturnsPage returnsInboundRef={adminReturnsInboundRef} returnLiveTick={mergedTicks.returns} wsConnected={bffSocketConnected} />,
+    payments: (
+      <PaymentsPage
+        liveTick={mergedTicks.payments}
+        initialPaymentId={paymentDetailId}
+        onOpenOrder={(id) => navigateTo("orders", { orderId: id })}
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+        onOpenProduct={(id) => navigateTo("products", { productId: id })}
+      />
+    ),
+    returns: (
+      <ReturnsPage
+        returnsInboundRef={adminReturnsInboundRef}
+        returnLiveTick={mergedTicks.returns}
+        wsConnected={bffSocketConnected}
+        initialReturnId={returnDetailId}
+        onOpenOrder={(id) => navigateTo("orders", { orderId: id })}
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+        onOpenProduct={(id) => navigateTo("products", { productId: id })}
+      />
+    ),
     reviews: <ReviewsPage />,
     coupons: <CouponsPage />,
     analytics: <AnalyticsPage liveTick={mergedTicks.payments + mergedTicks.orders} />,
-    chat: <ChatPage liveTick={mergedTicks.chats} wsConnected={bffSocketConnected} chatInboundRef={adminChatInboundRef} />,
+    chat: (
+      <ChatPage
+        liveTick={mergedTicks.chats}
+        wsConnected={bffSocketConnected}
+        chatInboundRef={adminChatInboundRef}
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+        onOpenTimeline={(id) => navigateTo("customerTimeline", { timelineCustomerId: id })}
+      />
+    ),
     applications: <ApplicationsPage />,
     notifications: <NotificationsPage onInboxChanged={refreshAdminUnread} />,
-    engagement: <EngagementPage />,
+    engagement: (
+      <EngagementPage
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+      />
+    ),
     disputes: <DisputesPage />,
     audit: <AuditLogsPage />,
     settings: <GlobalSettingsPage />,
     obPoints: <OBPointsPage />,
-    tickets: <TicketsPage />,
+    tickets: (
+      <TicketsPage
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+        onOpenTimeline={(id) => navigateTo("customerTimeline", { timelineCustomerId: id })}
+      />
+    ),
     abTests: <ABTestsPage />,
     flashSales: <FlashSalesPage />,
     pendingApprovals: <PendingApprovalsPage />,
     searchAnalytics: <SearchAnalyticsPage />,
     rolePermissions: <RolePermissionsPage />,
     security: <SecurityCenterPage />,
-    clientErrors: <ClientErrorsPage />,
+    clientErrors: (
+      <ClientErrorsPage
+        onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+      />
+    ),
     email: <EmailInboxPage />,
     meta: <MetaPage />,
     customerTimeline: <CustomerTimelinePage />,
@@ -397,21 +450,6 @@ export default function App() {
 
   const renderContent = () => {
     if (denied) {
-      // #region agent log
-      fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
-        body: JSON.stringify({
-          sessionId: "9a9989",
-          runId: "crm-visibility-check",
-          hypothesisId: "H3",
-          location: "src/App.jsx:renderContent",
-          message: "Module denied by permission guard",
-          data: { role, active },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return <div className="crm-card border-crm-danger text-crm-danger bg-crm-danger-dim p-8 text-center font-bold">You do not have permission for this module.</div>;
     }
     return contentMap[active] || contentMap.dashboard;

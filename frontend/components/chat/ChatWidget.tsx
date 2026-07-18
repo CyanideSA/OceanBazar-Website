@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import {
   MessageCircle, X, Minus, Send, Paperclip, Bot,
-  CheckCheck, RefreshCw, HelpCircle
+  RefreshCw,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { getVisitorId } from '@/lib/visitorId';
+import { LIVE_CHAT_ENABLED } from '@/lib/features';
 import { ChatMessageRenderer, type ChatMessage } from './ChatMessageRenderer';
 
 const BFF_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:4000').replace(/\/$/, '');
@@ -22,16 +25,6 @@ const QUICK_ACTIONS = [
   'Talk to Human',
   'Payment Help',
 ] as const;
-
-function getVisitorId(): string {
-  if (typeof window === 'undefined') return '';
-  let id = localStorage.getItem('ob_visitor_id');
-  if (!id) {
-    id = `visitor-${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem('ob_visitor_id', id);
-  }
-  return id;
-}
 
 interface ChatSession {
   id: string;
@@ -47,20 +40,17 @@ interface ChatSession {
 }
 
 type WidgetState = 'closed' | 'open' | 'minimised';
-type ChatPhase = 'pre_chat' | 'chatting';
 
 export default function ChatWidget() {
   const t = useTranslations('chat');
+  const pathname = usePathname();
   const { user, isAuthenticated } = useAuthStore();
   const [visitorId, setVisitorId] = useState('');
   useEffect(() => { setVisitorId(getVisitorId()); }, []);
   const [widgetState, setWidgetState] = useState<WidgetState>('closed');
   const [session, setSession] = useState<ChatSession | null>(null);
-  const [phase, setPhase] = useState<ChatPhase>('pre_chat');
   const [inputText, setInputText] = useState('');
-  const [issueText, setIssueText] = useState('');
   const [sending, setSending] = useState(false);
-  const [starting, setStarting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<string[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
@@ -75,6 +65,12 @@ export default function ChatWidget() {
   const agentTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingEmit = useRef(0);
   useEffect(() => { widgetStateRef.current = widgetState; }, [widgetState]);
+
+  useEffect(() => {
+    const openChat = () => setWidgetState('open');
+    window.addEventListener('ob:open-chat', openChat);
+    return () => window.removeEventListener('ob:open-chat', openChat);
+  }, []);
 
   /* ── Scroll to bottom ── */
   useEffect(() => {
@@ -91,21 +87,29 @@ export default function ChatWidget() {
   /* ── Load existing session on open ── */
   const loadSession = useCallback(async () => {
     try {
-      const { data } = await api.get('/chat/session', { params: { visitorId: isAuthenticated ? undefined : visitorId } });
-      const s = data?.session ?? null;
-      setSession(s);
-      if (s && Array.isArray(s.messages) && s.messages.length > 0) {
-        setPhase('chatting');
-      } else if (s) {
-        setPhase('chatting');
-      } else {
-        setPhase('pre_chat');
+      let s: ChatSession | null = null;
+      if (isAuthenticated && visitorId) {
+        const claimed = await api.post('/chat/claim-visitor', { visitorId }).catch(() => null);
+        s = (claimed?.data?.session as ChatSession | undefined) ?? null;
       }
+      if (!s) {
+        const { data } = await api.get('/chat/session', { params: { visitorId: isAuthenticated ? undefined : visitorId } });
+        s = data?.session ?? null;
+      }
+      if (!s && isAuthenticated && user) {
+        const { data } = await api.post('/chat/start', {
+          name: user.name || 'Customer',
+          email: user.email || null,
+          phone: user.phone || null,
+          visitorId,
+        });
+        s = data?.session ?? null;
+      }
+      setSession(s);
     } catch {
       setSession(null);
-      setPhase('pre_chat');
     }
-  }, [isAuthenticated, visitorId]);
+  }, [isAuthenticated, user, visitorId]);
 
   useEffect(() => {
     if (widgetState === 'open') loadSession();
@@ -115,7 +119,11 @@ export default function ChatWidget() {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
-    const socket = io(BFF_URL, { withCredentials: true, transports: ['websocket', 'polling'] });
+    const socket = io(BFF_URL, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+      auth: { token: localStorage.getItem('ob_access_token') || '' },
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
@@ -198,29 +206,6 @@ export default function ChatWidget() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user?.id]);
-
-  /* ── Start chat session (pre-chat form submit) ── */
-  const handleStartChat = async () => {
-    if (!issueText.trim() || starting) return;
-    setStarting(true);
-    try {
-      const { data } = await api.post('/chat/start', {
-        name: user?.name || 'Guest',
-        email: user?.email || null,
-        phone: user?.phone || null,
-        issue: issueText.trim(),
-        visitorId: isAuthenticated ? undefined : visitorId,
-      });
-      const s = data?.session ?? null;
-      setSession(s);
-      setPhase('chatting');
-      setIssueText('');
-    } catch {
-      /* ignore */
-    } finally {
-      setStarting(false);
-    }
-  };
 
   /* ── Customer typing emission (throttled to once per 2 s) ── */
   const emitCustomerTyping = useCallback(() => {
@@ -329,7 +314,6 @@ export default function ChatWidget() {
   const closeSession = async () => {
     try { await api.post('/chat/session/close', { sessionId: session?.id }); } catch { /* ignore */ }
     setSession(null);
-    setPhase('pre_chat');
     setWidgetState('closed');
   };
 
@@ -343,6 +327,11 @@ export default function ChatWidget() {
 
   const messages = session?.messages ?? [];
   const isFinished = session?.status === 'finished';
+
+  // Guests use the dedicated /chat page. Auth users on /chat already have the
+  // full-page surface, so hide the floating launcher there.
+  const onFullPageChat = Boolean(pathname?.includes('/chat'));
+  if (!LIVE_CHAT_ENABLED || !isAuthenticated || onFullPageChat) return null;
 
   // Launcher button
   const Launcher = (
@@ -415,56 +404,12 @@ export default function ChatWidget() {
 
         {widgetState === 'open' && (
           <>
-            {/* ── Pre-chat form (query only for logged-in users) ── */}
-            {phase === 'pre_chat' && !session && (
-              <div className="flex-1 overflow-y-auto px-4 py-6">
-                <div className="mb-5 text-center">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                    <HelpCircle className="h-6 w-6 text-primary" />
-                  </div>
-                  <h3 className="text-base font-bold text-foreground">Hi{user?.name ? `, ${user.name.split(' ')[0]}` : ''}!</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">Tell us what you need help with and we&apos;ll connect you right away.</p>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-foreground">What do you need help with?</label>
-                    <select
-                      value={issueText}
-                      onChange={(e) => setIssueText(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                    >
-                      <option value="">Select a topic…</option>
-                      <option value="Order Status">Order Status</option>
-                      <option value="Shipping & Delivery">Shipping &amp; Delivery</option>
-                      <option value="Returns & Refunds">Returns &amp; Refunds</option>
-                      <option value="Payment Issue">Payment Issue</option>
-                      <option value="Product Question">Product Question</option>
-                      <option value="Account Issue">Account Issue</option>
-                      <option value="Coupon / Discount">Coupon / Discount</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!issueText.trim() || starting}
-                    onClick={handleStartChat}
-                    className="w-full rounded-xl bg-primary py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-                  >
-                    {starting ? 'Starting…' : 'Start Live Chat'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Chat messages ── */}
-            {(phase === 'chatting' || session) && (
-              <>
+            {/* ── Chat messages — greeting starts immediately via /chat/start ── */}
                 <div className="flex-1 overflow-y-auto scroll-smooth px-3 py-4 space-y-3">
                   {messages.length === 0 && (
                     <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
                       <MessageCircle className="h-10 w-10 text-muted-foreground/40" />
-                      <p className="text-sm font-medium text-muted-foreground">How can we help you today?</p>
+                      <p className="text-sm font-medium text-muted-foreground">Connecting OceanBazar Support…</p>
                     </div>
                   )}
 
@@ -515,7 +460,7 @@ export default function ChatWidget() {
                     <p className="text-xs text-muted-foreground">This conversation has been resolved.</p>
                     <button
                       type="button"
-                      onClick={() => { setSession(null); setPhase('pre_chat'); }}
+                      onClick={() => { setSession(null); void loadSession(); }}
                       className="mt-1 text-xs font-semibold text-primary hover:underline"
                     >
                       Start a new conversation
@@ -571,8 +516,6 @@ export default function ChatWidget() {
                     </button>
                   </div>
                 )}
-              </>
-            )}
           </>
         )}
       </div>

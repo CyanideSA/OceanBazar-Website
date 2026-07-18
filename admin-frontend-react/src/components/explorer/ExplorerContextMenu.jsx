@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react";
+﻿import React, { useEffect, useRef, useCallback } from "react";
 import {
   IconFolder, IconPackage, IconEdit, IconTrash, IconMove,
   IconPlus, IconCopy, IconBanner
@@ -54,14 +54,14 @@ export default function ExplorerContextMenu({ x, y, target, onClose, onAction })
         <>
           <div className="context-section-label">New</div>
           <CtxItem
-            icon={<IconFolder size={13} color="#e3b341" />}
+            icon={<IconFolder size={13} color="var(--crm-warning)" />}
             label="New Folder"
             shortcut="Ctrl+Shift+N"
             onClick={() => act("createCategory")}
           />
           {isCategory && (
             <CtxItem
-              icon={<IconPackage size={13} color="#79c0ff" />}
+              icon={<IconPackage size={13} color="var(--crm-primary)" />}
               label="New Product"
               shortcut="Ctrl+N"
               onClick={() => act("createProduct")}

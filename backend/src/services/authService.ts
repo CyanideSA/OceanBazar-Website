@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { generateEntityId } from '../utils/hexId';
 import { normalizePhoneTarget } from '../utils/phoneNormalize';
 import { validatePassword } from '../utils/passwordRules';
@@ -9,7 +10,6 @@ import { env } from '../config/env';
 import { sendOtpEmail, sendPasswordChangedEmail } from './emailService';
 import { sendOtpSms, sendPasswordChangedSms } from './smsService';
 
-const prisma = new PrismaClient();
 
 // ─── OTP ──────────────────────────────────────────────────────────────────────
 
@@ -48,23 +48,9 @@ export async function sendOtp(target: string, type: 'login' | 'forgot_password' 
       ? await sendEmailOtp(target, otp, type)
       : await sendSmsOtp(target, otp, type);
 
+
     if (!sent) {
       console.error(`[otp] Delivery failed for ${isEmail ? 'email' : 'phone'} target ${target}`);
-      // #region agent log
-      fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8d503' },
-        body: JSON.stringify({
-          sessionId: 'a8d503',
-          runId: process.env.DEBUG_RUN_ID || 'pre-fix',
-          hypothesisId: isEmail ? 'E' : 'A',
-          location: 'authService.ts:sendOtp',
-          message: 'otp_delivery_failed',
-          data: { channel: isEmail ? 'email' : 'phone', type, targetHasPlus: target.startsWith('+') },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
     }
   }
 

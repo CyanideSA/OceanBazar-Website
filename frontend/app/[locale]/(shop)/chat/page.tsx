@@ -6,6 +6,9 @@ import { api } from '@/lib/api';
 import { connectSocket } from '@/lib/socket';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
+import { ProductCardChat, type ProductCardData } from '@/components/chat/design-system/ProductCardChat';
+import { getVisitorId } from '@/lib/visitorId';
+import { LIVE_CHAT_ENABLED } from '@/lib/features';
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -20,6 +23,8 @@ type Msg = {
   status?: 'sent' | 'delivered' | 'read';
   readAt?: string | null;
   quickReplies?: string[];
+  message_type?: string;
+  content?: unknown;
 };
 
 type Session = {
@@ -32,18 +37,9 @@ type Session = {
   agent_name: string | null;
 };
 
-type IntakeForm = { name: string; email: string; phone: string; issue: string };
+type IntakeForm = { name: string; email: string; phone: string; issue: string; details: string };
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
-
-const VISITOR_KEY = 'ob_visitor_id';
-
-function getVisitorId(): string {
-  if (typeof window === 'undefined') return '';
-  let id = localStorage.getItem(VISITOR_KEY);
-  if (!id) { id = `vis-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`; localStorage.setItem(VISITOR_KEY, id); }
-  return id;
-}
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -70,7 +66,15 @@ function QuickReplies({ replies, onSelect }: { replies: string[]; onSelect: (r: 
 
 /* ─── Message bubble ─────────────────────────────────────────────────────────── */
 
-function MessageBubble({ msg, isLast }: { msg: Msg; isLast: boolean }) {
+function MessageBubble({
+  msg,
+  isLast,
+  onAction,
+}: {
+  msg: Msg;
+  isLast: boolean;
+  onAction: (action: string, payload: Record<string, unknown>) => void;
+}) {
   const isUser = msg.sender === 'user';
   const isSystem = msg.sender === 'system';
   const isBot = msg.sender === 'bot';
@@ -105,6 +109,22 @@ function MessageBubble({ msg, isLast }: { msg: Msg; isLast: boolean }) {
               : 'rounded-tl-sm bg-muted text-foreground',
         )}>
           <p className="whitespace-pre-wrap break-words">{msg.message}</p>
+          {msg.message_type === 'product_card' && Array.isArray(msg.content) ? (
+            <ProductCardChat products={msg.content as ProductCardData[]} onAction={onAction} />
+          ) : null}
+          {msg.message_type === 'system_action' && msg.content && typeof msg.content === 'object' ? (
+            <button
+              type="button"
+              onClick={() => {
+                const action = msg.content as { action?: string; url?: string; payload?: Record<string, unknown> };
+                if (action.url) window.location.href = action.url;
+                else if (action.action) onAction(action.action, action.payload || {});
+              }}
+              className="mt-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+            >
+              {(msg.content as { label?: string }).label || 'Continue'}
+            </button>
+          ) : null}
         </div>
 
         {/* Quick replies */}
@@ -150,8 +170,22 @@ function TypingIndicator({ name }: { name: string }) {
 
 /* ─── Intake form ────────────────────────────────────────────────────────────── */
 
-function IntakeFormModal({ onStart, loading }: { onStart: (f: IntakeForm) => void; loading: boolean }) {
-  const [form, setForm] = useState<IntakeForm>({ name: '', email: '', phone: '', issue: '' });
+function IntakeFormModal({
+  onStart,
+  loading,
+  accountUser,
+}: {
+  onStart: (f: IntakeForm) => void;
+  loading: boolean;
+  accountUser?: { name?: string | null; email?: string | null; phone?: string | null } | null;
+}) {
+  const [form, setForm] = useState<IntakeForm>({
+    name: accountUser?.name || '',
+    email: accountUser?.email || '',
+    phone: accountUser?.phone || '',
+    issue: '',
+    details: '',
+  });
   const set = (k: keyof IntakeForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -162,52 +196,58 @@ function IntakeFormModal({ onStart, loading }: { onStart: (f: IntakeForm) => voi
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
             <MessageSquare className="h-8 w-8 text-primary" />
           </div>
-          <h2 className="text-xl font-bold text-foreground">Welcome to OceanBazar Support 👋</h2>
+          <h2 className="text-xl font-bold text-foreground">OceanBazar Support</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Tell us a bit about yourself and we'll connect you right away!
+            {accountUser
+              ? 'Choose a topic and tell us how we can help.'
+              : "Tell us a little about yourself so we can keep your conversation connected."}
           </p>
         </div>
 
         <div className="space-y-3">
+          {!accountUser && (
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">Your name *</label>
+                <input
+                  value={form.name}
+                  onChange={set('name')}
+                  placeholder="e.g. Rahim Uddin"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-muted-foreground">Email</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={set('email')}
+                    placeholder="you@example.com"
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-muted-foreground">Phone</label>
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onChange={set('phone')}
+                    placeholder="01XXXXXXXXX"
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+            </>
+          )}
           <div>
-            <label className="mb-1 block text-xs font-semibold text-muted-foreground">Your Name *</label>
-            <input
-              value={form.name}
-              onChange={set('name')}
-              placeholder="e.g. Rahim Uddin"
-              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-muted-foreground">Email</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={set('email')}
-                placeholder="you@example.com"
-                className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-muted-foreground">Phone</label>
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={set('phone')}
-                placeholder="01XXXXXXXXX"
-                className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-muted-foreground">What do you need help with? *</label>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">Help topic *</label>
             <select
               value={form.issue}
               onChange={set('issue')}
               className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-              <option value="">Select an issue…</option>
+              <option value="">Select a topic…</option>
               <option value="Order & Tracking">Order & Tracking</option>
               <option value="Returns & Refunds">Returns & Refunds</option>
               <option value="Payment Issue">Payment Issue</option>
@@ -215,13 +255,24 @@ function IntakeFormModal({ onStart, loading }: { onStart: (f: IntakeForm) => voi
               <option value="Account & Login">Account & Login</option>
               <option value="Delivery & Shipping">Delivery & Shipping</option>
               <option value="Coupon & Offers">Coupon & Offers</option>
+              <option value="Wholesale & Business">Wholesale & Business</option>
               <option value="Other">Other</option>
             </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">How can we help? *</label>
+            <textarea
+              value={form.details}
+              onChange={set('details')}
+              rows={4}
+              placeholder="Describe what you need help with."
+              className="w-full resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
           </div>
 
           <button
             type="button"
-            disabled={!form.name.trim() || !form.issue || loading}
+            disabled={(!accountUser && !form.name.trim()) || !form.issue || !form.details.trim() || loading}
             onClick={() => onStart(form)}
             className="mt-2 w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground disabled:opacity-50 transition-all hover:brightness-110 flex items-center justify-center gap-2"
           >
@@ -261,8 +312,8 @@ function StatusBar({ status, agentName }: { status: Session['status']; agentName
 
 /* ─── Main page ──────────────────────────────────────────────────────────────── */
 
-export default function ChatPage() {
-  const { user } = useAuthStore();
+function EnabledChatPage() {
+  const { user, isAuthenticated } = useAuthStore();
   const [session, setSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState('');
@@ -281,6 +332,14 @@ export default function ChatPage() {
   useEffect(() => {
     const load = async () => {
       try {
+        if (isAuthenticated && visitorId) {
+          const claimed = await api.post('/chat/claim-visitor', { visitorId }).catch(() => null);
+          if (claimed?.data?.session) {
+            setSession(claimed.data.session);
+            setMessages(Array.isArray(claimed.data.session.messages) ? claimed.data.session.messages : []);
+            return;
+          }
+        }
         const { data } = await api.get(`/chat/session?visitorId=${encodeURIComponent(visitorId)}`);
         if (data.session) {
           setSession(data.session);
@@ -289,7 +348,7 @@ export default function ChatPage() {
       } catch { /* no session yet */ }
     };
     load();
-  }, [visitorId]);
+  }, [isAuthenticated, visitorId]);
 
   /* ── Scroll to bottom ─────────────────────── */
   useEffect(() => {
@@ -299,7 +358,10 @@ export default function ChatPage() {
   /* ── Socket.IO ─────────────────────────────── */
   useEffect(() => {
     if (!sessionId) return;
-    const socket = connectSocket();
+    const socket = connectSocket({
+      token: typeof window !== 'undefined' ? localStorage.getItem('ob_access_token') || undefined : undefined,
+      visitorId: !isAuthenticated ? visitorId : undefined,
+    });
 
     socket.emit('join:user', userId);
     socket.emit('join:chat', sessionId);
@@ -360,19 +422,33 @@ export default function ChatPage() {
       socket.off('chat:session_finished', onFinished);
       socket.off('chat:not_resolved', onNotResolved);
     };
-  }, [sessionId, userId, visitorId]);
+  }, [isAuthenticated, sessionId, userId, visitorId]);
 
   /* ── Start session ─────────────────────────── */
   const handleStart = useCallback(async (form: IntakeForm) => {
     setStarting(true);
     try {
-      const { data } = await api.post('/chat/start', { ...form, visitorId });
+      const { details, ...intake } = form;
+      const { data } = await api.post('/chat/start', {
+        ...intake,
+        visitorId: isAuthenticated ? undefined : visitorId,
+      });
       setSession(data.session);
-      setMessages(Array.isArray(data.session.messages) ? data.session.messages : []);
+      if (details.trim()) {
+        const response = await api.post('/chat/message', {
+          sessionId: data.session.id,
+          message: details.trim(),
+          visitorId: isAuthenticated ? undefined : visitorId,
+        });
+        setSession(response.data.session || data.session);
+        setMessages(Array.isArray(response.data.session?.messages) ? response.data.session.messages : data.session.messages || []);
+      } else {
+        setMessages(Array.isArray(data.session.messages) ? data.session.messages : []);
+      }
     } catch { /* ignore */ } finally {
       setStarting(false);
     }
-  }, [visitorId]);
+  }, [isAuthenticated, visitorId]);
 
   /* ── Send message ──────────────────────────── */
   const handleSend = useCallback(async (text?: string) => {
@@ -417,6 +493,22 @@ export default function ChatPage() {
     }
   };
 
+  const handleBotAction = useCallback(async (action: string, payload: Record<string, unknown>) => {
+    if (!sessionId) return;
+    try {
+      const { data } = await api.post('/chat/action', {
+        sessionId,
+        action,
+        payload,
+        visitorId: isAuthenticated ? undefined : visitorId,
+      });
+      if (data.session) {
+        setSession(data.session);
+        setMessages(Array.isArray(data.session.messages) ? data.session.messages : []);
+      }
+    } catch { /* keep the conversation available */ }
+  }, [isAuthenticated, sessionId, visitorId]);
+
   /* ── Keyboard send ─────────────────────────── */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -431,7 +523,11 @@ export default function ChatPage() {
 
         {/* No session yet — show intake form */}
         {!session ? (
-          <IntakeFormModal onStart={handleStart} loading={starting} />
+          <IntakeFormModal
+            onStart={handleStart}
+            loading={starting}
+            accountUser={isAuthenticated ? user : null}
+          />
         ) : (
           <>
             {/* Status header */}
@@ -444,6 +540,7 @@ export default function ChatPage() {
                   key={msg.id}
                   msg={msg}
                   isLast={i === messages.length - 1}
+                  onAction={handleBotAction}
                 />
               ))}
 
@@ -538,4 +635,22 @@ export default function ChatPage() {
       </div>
     </div>
   );
+}
+
+export default function ChatPage() {
+  if (!LIVE_CHAT_ENABLED) {
+    return (
+      <main className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center px-4 py-16">
+        <section className="w-full rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+          <HeadphonesIcon className="mx-auto h-10 w-10 text-primary" />
+          <h1 className="mt-4 text-2xl font-semibold text-foreground">Live chat is temporarily unavailable</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Our team is preparing an improved support experience. Please use the Contact page while live chat is paused.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  return <EnabledChatPage />;
 }

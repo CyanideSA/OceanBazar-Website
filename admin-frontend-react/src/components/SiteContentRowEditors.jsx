@@ -1,13 +1,7 @@
 import React from "react";
 
-function rowCardStyle(disabled) {
-  return {
-    border: "1px solid var(--border, #e2e8f0)",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
-    background: disabled ? "transparent" : "var(--card-inner, #f8fafc)",
-  };
+function rowCardClass(disabled) {
+  return `rounded-lg border border-crm-border p-3 mb-3 ${disabled ? "opacity-60" : "bg-crm-bg"}`;
 }
 
 export function HeroSlidesRowEditor({ jsonString, onJsonChange, disabled }) {
@@ -47,70 +41,70 @@ export function HeroSlidesRowEditor({ jsonString, onJsonChange, disabled }) {
   return (
     <div>
       {rows.length === 0 ? (
-        <p className="muted" style={{ fontSize: 13 }}>
+        <p className="text-sm text-crm-text-dim">
           No slides yet. Add a row or paste JSON below.
         </p>
       ) : null}
       {rows.map((row, idx) => (
-        <div key={idx} style={rowCardStyle(disabled)}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            <button type="button" className="btn ghost" disabled={disabled || idx === 0} onClick={() => move(idx, -1)}>
+        <div key={idx} className={rowCardClass(disabled)}>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <button type="button" className="crm-btn text-xs" disabled={disabled || idx === 0} onClick={() => move(idx, -1)}>
               Up
             </button>
-            <button type="button" className="btn ghost" disabled={disabled || idx === rows.length - 1} onClick={() => move(idx, 1)}>
+            <button type="button" className="crm-btn text-xs" disabled={disabled || idx === rows.length - 1} onClick={() => move(idx, 1)}>
               Down
             </button>
-            <button type="button" className="btn ghost" disabled={disabled} onClick={() => removeRow(idx)}>
+            <button type="button" className="crm-btn text-xs text-crm-danger" disabled={disabled} onClick={() => removeRow(idx)}>
               Remove
             </button>
           </div>
-          <label className="muted" style={{ fontSize: 11, display: "block" }}>
+          <label className="text-xs text-crm-text-dim block">
             Image URL
             <input
-              style={{ width: "100%", marginTop: 4 }}
+              className="crm-input w-full mt-1"
               value={row.imageUrl || ""}
               onChange={(e) => updateRow(idx, { imageUrl: e.target.value })}
               disabled={disabled}
               placeholder="https://… or /uploads/…"
             />
           </label>
-          <label className="muted" style={{ fontSize: 11, display: "block", marginTop: 8 }}>
+          <label className="text-xs text-crm-text-dim block mt-2">
             Link URL
             <input
-              style={{ width: "100%", marginTop: 4 }}
+              className="crm-input w-full mt-1"
               value={row.linkUrl || ""}
               onChange={(e) => updateRow(idx, { linkUrl: e.target.value })}
               disabled={disabled}
             />
           </label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            <label className="text-xs text-crm-text-dim block">
               Title
-              <input style={{ width: "100%", marginTop: 4 }} value={row.title || ""} onChange={(e) => updateRow(idx, { title: e.target.value })} disabled={disabled} />
+              <input className="crm-input w-full mt-1" value={row.title || ""} onChange={(e) => updateRow(idx, { title: e.target.value })} disabled={disabled} />
             </label>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+            <label className="text-xs text-crm-text-dim block">
               Subtitle
-              <input style={{ width: "100%", marginTop: 4 }} value={row.subtitle || ""} onChange={(e) => updateRow(idx, { subtitle: e.target.value })} disabled={disabled} />
+              <input className="crm-input w-full mt-1" value={row.subtitle || ""} onChange={(e) => updateRow(idx, { subtitle: e.target.value })} disabled={disabled} />
             </label>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            <label className="text-xs text-crm-text-dim block">
               Sort order
               <input
                 type="number"
-                style={{ width: "100%", marginTop: 4 }}
+                className="crm-input w-full mt-1"
                 value={row.sortOrder ?? idx}
                 onChange={(e) => updateRow(idx, { sortOrder: Number(e.target.value) })}
                 disabled={disabled}
               />
             </label>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+            <label className="text-xs text-crm-text-dim block">
               Rotation (ms, optional)
               <input
                 type="number"
                 min={0}
                 step={500}
-                style={{ width: "100%", marginTop: 4 }}
+                className="crm-input w-full mt-1"
                 value={row.rotationMs ?? ""}
                 onChange={(e) => updateRow(idx, { rotationMs: e.target.value === "" ? "" : Number(e.target.value) })}
                 disabled={disabled}
@@ -120,7 +114,7 @@ export function HeroSlidesRowEditor({ jsonString, onJsonChange, disabled }) {
           </div>
         </div>
       ))}
-      <button type="button" className="btn ghost" disabled={disabled} onClick={addRow} style={{ marginTop: 4 }}>
+      <button type="button" className="crm-btn text-sm mt-1" disabled={disabled} onClick={addRow}>
         + Add hero slide
       </button>
     </div>
@@ -164,69 +158,69 @@ export function TestimonialsRowEditor({ jsonString, onJsonChange, disabled }) {
   return (
     <div>
       {rows.length === 0 ? (
-        <p className="muted" style={{ fontSize: 13 }}>
+        <p className="text-sm text-crm-text-dim">
           No testimonials yet. Add a row or paste JSON below.
         </p>
       ) : null}
       {rows.map((row, idx) => (
-        <div key={idx} style={rowCardStyle(disabled)}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            <button type="button" className="btn ghost" disabled={disabled || idx === 0} onClick={() => move(idx, -1)}>
+        <div key={idx} className={rowCardClass(disabled)}>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <button type="button" className="crm-btn text-xs" disabled={disabled || idx === 0} onClick={() => move(idx, -1)}>
               Up
             </button>
-            <button type="button" className="btn ghost" disabled={disabled || idx === rows.length - 1} onClick={() => move(idx, 1)}>
+            <button type="button" className="crm-btn text-xs" disabled={disabled || idx === rows.length - 1} onClick={() => move(idx, 1)}>
               Down
             </button>
-            <button type="button" className="btn ghost" disabled={disabled} onClick={() => removeRow(idx)}>
+            <button type="button" className="crm-btn text-xs text-crm-danger" disabled={disabled} onClick={() => removeRow(idx)}>
               Remove
             </button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="text-xs text-crm-text-dim block">
               Name
-              <input style={{ width: "100%", marginTop: 4 }} value={row.name || ""} onChange={(e) => updateRow(idx, { name: e.target.value })} disabled={disabled} />
+              <input className="crm-input w-full mt-1" value={row.name || ""} onChange={(e) => updateRow(idx, { name: e.target.value })} disabled={disabled} />
             </label>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+            <label className="text-xs text-crm-text-dim block">
               Title / role
-              <input style={{ width: "100%", marginTop: 4 }} value={row.title || ""} onChange={(e) => updateRow(idx, { title: e.target.value })} disabled={disabled} />
+              <input className="crm-input w-full mt-1" value={row.title || ""} onChange={(e) => updateRow(idx, { title: e.target.value })} disabled={disabled} />
             </label>
           </div>
-          <label className="muted" style={{ fontSize: 11, display: "block", marginTop: 8 }}>
+          <label className="text-xs text-crm-text-dim block mt-2">
             Quote
             <textarea
-              style={{ width: "100%", marginTop: 4, minHeight: 64, fontFamily: "inherit" }}
+              className="crm-input w-full mt-1 min-h-[64px]"
               value={row.quote || row.comment || ""}
               onChange={(e) => updateRow(idx, { quote: e.target.value, comment: undefined })}
               disabled={disabled}
             />
           </label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+            <label className="text-xs text-crm-text-dim block">
               Rating (1–5)
               <input
                 type="number"
                 min={1}
                 max={5}
-                style={{ width: "100%", marginTop: 4 }}
+                className="crm-input w-full mt-1"
                 value={row.rating ?? 5}
                 onChange={(e) => updateRow(idx, { rating: Number(e.target.value) })}
                 disabled={disabled}
               />
             </label>
-            <label className="muted" style={{ fontSize: 11, display: "block", alignSelf: "end" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 18 }}>
+            <label className="text-xs text-crm-text-dim block self-end">
+              <span className="flex items-center gap-2 mt-5">
                 <input type="checkbox" checked={Boolean(row.verified)} onChange={(e) => updateRow(idx, { verified: e.target.checked })} disabled={disabled} />
                 Verified
               </span>
             </label>
-            <label className="muted" style={{ fontSize: 11, display: "block" }}>
+            <label className="text-xs text-crm-text-dim block">
               Avatar URL
-              <input style={{ width: "100%", marginTop: 4 }} value={row.avatarUrl || ""} onChange={(e) => updateRow(idx, { avatarUrl: e.target.value })} disabled={disabled} />
+              <input className="crm-input w-full mt-1" value={row.avatarUrl || ""} onChange={(e) => updateRow(idx, { avatarUrl: e.target.value })} disabled={disabled} />
             </label>
           </div>
         </div>
       ))}
-      <button type="button" className="btn ghost" disabled={disabled} onClick={addRow} style={{ marginTop: 4 }}>
+      <button type="button" className="crm-btn text-sm mt-1" disabled={disabled} onClick={addRow}>
         + Add testimonial
       </button>
     </div>

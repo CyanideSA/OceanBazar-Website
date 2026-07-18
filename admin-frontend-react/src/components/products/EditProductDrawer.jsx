@@ -85,7 +85,7 @@ function AssetGrid({ productId, assets, onReload }) {
                     Set Primary
                   </button>
                 )}
-                <button onClick={() => remove(a.id)} className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded font-semibold">
+                <button onClick={() => remove(a.id)} className="text-[10px] bg-crm-danger text-white px-2 py-0.5 rounded font-semibold">
                   Remove
                 </button>
               </div>
@@ -131,11 +131,11 @@ function VideoAssetSection({ productId, assets, onReload }) {
         onClick={() => fileRef.current?.click()}
         onDragOver={e => e.preventDefault()}
         onDrop={e => { e.preventDefault(); upload(e.dataTransfer.files); }}
-        className="border-2 border-dashed border-crm-border rounded-xl p-5 text-center cursor-pointer hover:border-purple-500 hover:bg-purple-500/10 transition-all"
+        className="border-2 border-dashed border-crm-border rounded-xl p-5 text-center cursor-pointer hover:border-crm-purple hover:bg-crm-purple/10 transition-all"
       >
         <FiFilm size={22} className="mx-auto mb-1 text-crm-text-muted" />
         <p className="text-xs text-crm-text-dim">Drop videos or click to upload (max 5)</p>
-        {uploading && <p className="text-xs text-purple-400 mt-1 animate-pulse">Uploading...</p>}
+        {uploading && <p className="text-xs text-crm-purple mt-1 animate-pulse">Uploading...</p>}
         <input ref={fileRef} type="file" multiple accept="video/*" className="hidden"
           onChange={e => upload(e.target.files)} />
       </div>
@@ -143,9 +143,9 @@ function VideoAssetSection({ productId, assets, onReload }) {
         <div className="space-y-2">
           {assets.map(a => (
             <div key={a.id} className="flex items-center gap-3 p-2 bg-crm-bg-hover rounded-lg border border-crm-border">
-              <FiFilm size={18} className="text-purple-400 flex-shrink-0" />
+              <FiFilm size={18} className="text-crm-purple flex-shrink-0" />
               <p className="text-xs text-crm-text-dim truncate flex-1">{a.url?.split("/").pop() || "Video"}</p>
-              <button onClick={() => remove(a.id)} className="text-crm-text-muted hover:text-red-400 p-1">
+              <button onClick={() => remove(a.id)} className="text-crm-text-muted hover:text-crm-danger p-1">
                 <FiTrash2 size={13} />
               </button>
             </div>
@@ -198,11 +198,11 @@ function BannerSection({ productId, banners, productTitle, onReload }) {
         onClick={() => fileRef.current?.click()}
         onDragOver={e => e.preventDefault()}
         onDrop={e => { e.preventDefault(); upload(e.dataTransfer.files); }}
-        className="border-2 border-dashed border-crm-border rounded-xl p-5 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-500/10 transition-all"
+        className="border-2 border-dashed border-crm-border rounded-xl p-5 text-center cursor-pointer hover:border-crm-primary hover:bg-crm-primary/10 transition-all"
       >
         <FiImage size={22} className="mx-auto mb-1 text-crm-text-muted" />
         <p className="text-xs text-crm-text-dim">Drop banner images or click to upload (max 5, 1200x400px recommended)</p>
-        {uploading && <p className="text-xs text-blue-400 mt-1 animate-pulse">Uploading...</p>}
+        {uploading && <p className="text-xs text-crm-primary mt-1 animate-pulse">Uploading...</p>}
         <input ref={fileRef} type="file" multiple accept="image/*" className="hidden"
           onChange={e => upload(e.target.files)} />
       </div>
@@ -215,7 +215,7 @@ function BannerSection({ productId, banners, productTitle, onReload }) {
                 <p className="text-xs text-crm-text-dim truncate">{b.title || "Banner"}</p>
                 <p className="text-[10px] text-crm-text-muted">Order: {b.sortOrder}</p>
               </div>
-              <button onClick={() => remove(b.id)} className="text-crm-text-muted hover:text-red-400 p-1 flex-shrink-0">
+              <button onClick={() => remove(b.id)} className="text-crm-text-muted hover:text-crm-danger p-1 flex-shrink-0">
                 <FiTrash2 size={13} />
               </button>
             </div>
@@ -746,7 +746,7 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-purple-400 uppercase">Wholesale Price (৳)</label>
+                          <label className="text-xs font-bold text-crm-purple uppercase">Wholesale Price (৳)</label>
                           <input type="number" min="0" className="crm-input" value={form.wholesalePrice ?? ""}
                             onChange={e => set("wholesalePrice", e.target.value)} placeholder="0" />
                         </div>
@@ -757,7 +757,7 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
                         </div>
                       </div>
                       {form.wholesalePrice && (
-                        <div className="p-4 bg-crm-bg-hover rounded-xl border border-purple-800/40 space-y-3">
+                        <div className="p-4 bg-crm-bg-hover rounded-xl border border-crm-purple/40 space-y-3">
                           <BandTierEditor
                             bands={form.wholesaleBands || [{ ...INITIAL_BAND }]}
                             onChange={(rows) => set("wholesaleBands", rows)}
@@ -786,10 +786,10 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
                       <input type="number" min="1" className="crm-input" value={form.moq ?? 1} onChange={e => set("moq", e.target.value)} />
                     </div>
                   </div>
-                  <div className={`p-4 rounded-xl flex items-center gap-3 ${Number(form.stock) < 10 ? "bg-red-500/10 border border-red-500/30" : "bg-crm-success/10 border border-crm-success/30"}`}>
-                    <FiAlertCircle size={16} className={Number(form.stock) < 10 ? "text-red-400" : "text-crm-success"} />
+                  <div className={`p-4 rounded-xl flex items-center gap-3 ${Number(form.stock) < 10 ? "bg-crm-danger/10 border border-crm-danger/30" : "bg-crm-success/10 border border-crm-success/30"}`}>
+                    <FiAlertCircle size={16} className={Number(form.stock) < 10 ? "text-crm-danger" : "text-crm-success"} />
                     <div>
-                      <p className={`text-xs font-bold ${Number(form.stock) < 10 ? "text-red-400" : "text-crm-success"}`}>
+                      <p className={`text-xs font-bold ${Number(form.stock) < 10 ? "text-crm-danger" : "text-crm-success"}`}>
                         {Number(form.stock) === 0 ? "Out of Stock" : Number(form.stock) < 10 ? "Low Stock Warning" : "In Stock"}
                       </p>
                       <p className="text-xs text-crm-text-dim">{Number(form.stock)} units available</p>
@@ -825,7 +825,7 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
                     ].map(f => (
                       <label key={f.key} className="flex items-start gap-3 p-3 rounded-xl border border-crm-border hover:border-crm-primary/50 cursor-pointer transition-all group">
                         <input type="checkbox" checked={!!form[f.key]} onChange={e => set(f.key, e.target.checked)}
-                          className="mt-0.5 w-4 h-4 rounded accent-blue-500 shrink-0" />
+                          className="mt-0.5 w-4 h-4 rounded accent-crm-primary shrink-0" />
                         <div>
                           <p className="text-sm font-bold text-crm-text-bright group-hover:text-crm-primary transition-colors">{f.label}</p>
                           <p className="text-xs text-crm-text-dim">{f.desc}</p>

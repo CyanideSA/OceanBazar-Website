@@ -33,7 +33,7 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class AdminOrderCommandService {
     private static final java.util.Set<PaymentStatus> ALLOWED_PAYMENT_STATUSES = java.util.Set.of(
-            PaymentStatus.unpaid, PaymentStatus.partial, PaymentStatus.paid, PaymentStatus.refunded);
+            PaymentStatus.unpaid, PaymentStatus.under_verification, PaymentStatus.partial, PaymentStatus.paid, PaymentStatus.refunded);
     private static final java.util.Map<String, java.util.Set<String>> ORDER_STATUS_TRANSITIONS = java.util.Map.of(
             "pending", java.util.Set.of("confirmed", "cancelled"),
             "confirmed", java.util.Set.of("processing", "cancelled"),

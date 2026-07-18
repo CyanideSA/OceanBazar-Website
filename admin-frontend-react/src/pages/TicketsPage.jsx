@@ -12,6 +12,7 @@ import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from '../components/ToastProvider';
 import useAdminBffSocket from '../hooks/useAdminBffSocket';
+import { isRealUserId } from '../lib/deepLink';
 
 const STATUS_CFG = {
   open:        { label: 'Open',        dot: 'bg-crm-warning',   class: 'crm-badge-warning' },
@@ -48,7 +49,7 @@ function PriorityBadge({ priority }) {
   return <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${cfg.class}`}>{cfg.label}</span>;
 }
 
-export default function TicketsPage() {
+export default function TicketsPage({ onOpenCustomer, onOpenTimeline }) {
   const toast = useToast();
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState(null);
@@ -369,7 +370,7 @@ export default function TicketsPage() {
                           )}
                         </div>
                         <div className={`mt-1 flex items-center gap-2 text-[10px] text-crm-text-dim px-1 ${isMe ? "justify-end" : "justify-start"}`}>
-                          <span className="font-bold">{isMe ? "Support Agent" : detail.customerName || "Customer"}</span>
+                          <span className="font-bold">{isMe ? "Support Agent" : detail.user?.name || "Customer"}</span>
                           <span>{format(new Date(msg.createdAt), "HH:mm")}</span>
                         </div>
                       </div>
@@ -435,16 +436,31 @@ export default function TicketsPage() {
                 <h4 className="text-[10px] font-bold text-crm-text-dim uppercase tracking-widest border-b border-crm-border pb-2">Customer</h4>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-crm-primary flex items-center justify-center text-white font-bold">
-                    {detail.customerName?.charAt(0)}
+                    {(detail.user?.name || detail.user?.email || "?").charAt(0)}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-crm-text-bright truncate">{detail.customerName}</p>
-                    <p className="text-[10px] text-crm-text-dim truncate">{detail.customerEmail}</p>
+                    <p className="text-sm font-bold text-crm-text-bright truncate">{detail.user?.name || "Customer"}</p>
+                    <p className="text-[10px] text-crm-text-dim truncate">{detail.user?.email || "—"}</p>
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] text-crm-text-muted uppercase font-bold tracking-wider">User ID</p>
-                  <p className="text-xs font-mono text-crm-text-dim bg-crm-bg p-1.5 rounded border border-crm-border truncate">{detail.userId}</p>
+                  {detail.userId && isRealUserId(detail.userId) && onOpenCustomer ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenCustomer(detail.userId)}
+                      className="text-xs font-mono text-crm-primary bg-crm-bg p-1.5 rounded border border-crm-border truncate w-full text-left hover:bg-crm-primary-dim"
+                    >
+                      {detail.userId}
+                    </button>
+                  ) : (
+                    <p className="text-xs font-mono text-crm-text-dim bg-crm-bg p-1.5 rounded border border-crm-border truncate">{detail.userId || "—"}</p>
+                  )}
+                  {detail.userId && isRealUserId(detail.userId) && onOpenTimeline && (
+                    <button type="button" onClick={() => onOpenTimeline(detail.userId)} className="crm-btn crm-btn-secondary text-xs w-full mt-1">
+                      View timeline
+                    </button>
+                  )}
                 </div>
               </div>
 

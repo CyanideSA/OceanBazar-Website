@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { routeParam } from '../../utils/params';
 
 const router = Router();
-const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 
 router.get('/timeline/:customerId', async (req: Request, res: Response) => {

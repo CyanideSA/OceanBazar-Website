@@ -6,8 +6,11 @@ import { useTranslations, useLocale } from 'next-intl';
 import { X, ShoppingBag, Minus, Plus, Trash2, Tag, ArrowRight } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
+import { useAuthStore } from '@/stores/authStore';
 import { cartApi } from '@/lib/api';
 import { formatCartMoney } from '@/lib/cart';
+import { RETAIL_MAX_UNITS } from '@/lib/pricing';
+import type { CartItem } from '@/types';
 import { useNormalizedCart } from '@/hooks/useNormalizedCart';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { previewOrderTotals } from '@/lib/checkoutTotals';
@@ -23,12 +26,26 @@ export default function CartDrawer() {
   const { success, error: toastError } = useToast();
 
   const safeCart = useNormalizedCart();
+  const { user } = useAuthStore();
+  const isWholesaleUser = user?.userType === 'wholesale';
+
+  // Same per-product cap as the product page: retail tier-3 threshold from the
+  // admin CRM (falling back to the global retail cap), bounded by stock.
+  const maxQtyFor = (item: CartItem): number => {
+    const stock = item.stock != null && item.stock > 0 ? item.stock : null;
+    if (isWholesaleUser) return stock ?? Number.MAX_SAFE_INTEGER;
+    const retailCap = item.retailMaxQty != null && item.retailMaxQty > 0 ? item.retailMaxQty : RETAIL_MAX_UNITS;
+    return Math.max(1, stock != null ? Math.min(retailCap, stock) : retailCap);
+  };
 
   const updateMutation = useMutation({
     mutationFn: ({ productId, quantity }: { productId: string; quantity: number }) =>
       cartApi.update(productId, quantity),
     onSuccess: setCart,
-    onError: () => toastError(tc('error')),
+    onError: (e: unknown) => {
+      const ax = e as { response?: { data?: { error?: string; message?: string } } };
+      toastError(ax.response?.data?.error || ax.response?.data?.message || tc('error'));
+    },
   });
 
   const removeMutation = useMutation({
@@ -37,12 +54,14 @@ export default function CartDrawer() {
     onError: () => toastError(tc('error')),
   });
 
-  const changeQuantity = (productId: string, nextQty: number) => {
+  const changeQuantity = (item: CartItem, nextQty: number) => {
     if (nextQty <= 0) {
-      removeMutation.mutate(productId);
+      removeMutation.mutate(item.productId);
       return;
     }
-    updateMutation.mutate({ productId, quantity: nextQty });
+    const clamped = Math.min(nextQty, maxQtyFor(item));
+    if (clamped === item.quantity) return;
+    updateMutation.mutate({ productId: item.productId, quantity: clamped });
   };
 
   const couponMutation = useMutation({
@@ -160,7 +179,7 @@ export default function CartDrawer() {
                     <div className="mt-2.5 flex items-center gap-2 sm:mt-3">
                       <button
                         type="button"
-                        onClick={() => changeQuantity(item.productId, item.quantity - 1)}
+                        onClick={() => changeQuantity(item, item.quantity - 1)}
                         className="flex h-10 w-10 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors hover:bg-accent active:bg-accent/70 sm:h-9 sm:w-9"
                         aria-label={t('decreaseQty')}
                       >
@@ -169,12 +188,16 @@ export default function CartDrawer() {
                       <span className="min-w-[2rem] text-center text-sm font-semibold">{item.quantity}</span>
                       <button
                         type="button"
-                        onClick={() => changeQuantity(item.productId, item.quantity + 1)}
-                        className="flex h-10 w-10 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors hover:bg-accent active:bg-accent/70 sm:h-9 sm:w-9"
+                        disabled={item.quantity >= maxQtyFor(item)}
+                        onClick={() => changeQuantity(item, item.quantity + 1)}
+                        className="flex h-10 w-10 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors hover:bg-accent active:bg-accent/70 disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
                         aria-label={t('increaseQty')}
                       >
                         <Plus className="h-4 w-4" />
                       </button>
+                      {item.quantity >= maxQtyFor(item) && (
+                        <span className="text-2xs font-medium text-amber-600 dark:text-amber-400">{t('maxQtyReached')}</span>
+                      )}
                     </div>
                   </div>
 

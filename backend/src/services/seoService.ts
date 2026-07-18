@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { generateSeo, isMlConfigured } from './mlClient';
 
-const prisma = new PrismaClient();
 
 export type SeoEntityType = 'product' | 'category' | 'brand' | 'page';
 

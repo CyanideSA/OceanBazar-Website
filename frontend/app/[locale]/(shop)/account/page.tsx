@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { obPointsApi, profileApi, uploadApi } from '@/lib/api';
 import TierBadge from '@/components/account/TierBadge';
 import OBPointsWidget from '@/components/account/OBPointsWidget';
+import LiveChatLink from '@/components/chat/LiveChatLink';
 import type { User as UserType } from '@/types';
 
 function mapProfileUser(raw: Record<string, unknown>): Partial<UserType> {
@@ -63,7 +64,7 @@ export default function AccountDashboardPage() {
   const quick = [
     { href: `/${locale}/account/wishlist`, label: tDash('manageWishlist'), Icon: Heart },
     { href: `/${locale}/account/orders`, label: tDash('trackOrders'), Icon: Package },
-    { href: `/${locale}/chat`, label: t('ticketsShort'), Icon: MessageSquare },
+    { href: `/${locale}/chat`, label: t('ticketsShort'), Icon: MessageSquare, liveChat: true },
   ] as const;
 
   return (
@@ -159,18 +160,22 @@ export default function AccountDashboardPage() {
           {tDash('quickActions')}
         </h3>
         <div className="grid grid-cols-1 gap-2 xs:grid-cols-3 sm:gap-3">
-          {quick.map(({ href, label, Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-muted/40 sm:p-4"
-            >
+          {quick.map(({ href, label, Icon, ...item }) => {
+            const content = (
+              <>
               <div className="rounded-lg bg-primary/10 p-2 text-primary">
                 <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
               <span className="text-sm font-medium text-foreground">{label}</span>
-            </Link>
-          ))}
+              </>
+            );
+            const className = 'flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40 sm:p-4';
+            return 'liveChat' in item ? (
+              <LiveChatLink key={href} href={href} className={className}>{content}</LiveChatLink>
+            ) : (
+              <Link key={href} href={href} className={className}>{content}</Link>
+            );
+          })}
         </div>
       </div>
     </div>

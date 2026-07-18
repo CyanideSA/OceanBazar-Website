@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FiMail, FiSend, FiInbox, FiRefreshCw, FiList, FiCornerUpLeft, FiAlertTriangle } from "react-icons/fi";
+import { FiMail, FiSend, FiInbox, FiRefreshCw, FiList, FiCornerUpLeft, FiAlertTriangle, FiEdit2, FiTrash2, FiSettings } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
+import EmailBuilder from "../components/email/EmailBuilder";
 import { format } from "date-fns";
 
 const FOLDERS = [
@@ -14,9 +15,38 @@ const FOLDERS = [
 const TABS = [
   { key: "inbox", label: "Mailbox", icon: FiInbox },
   { key: "compose", label: "Compose", icon: FiSend },
+  { key: "system", label: "System Templates", icon: FiSettings },
   { key: "templates", label: "Templates", icon: FiList },
   { key: "logs", label: "Sent Log", icon: FiList },
 ];
+
+const SYSTEM_CATEGORIES = [
+  { value: "order_confirmation", label: "Order confirmation" },
+  { value: "shipping_update", label: "Shipping update" },
+  { value: "payment_verification", label: "Payment verification" },
+  { value: "payment_received", label: "Payment received" },
+  { value: "return_initiated", label: "Return initiated" },
+  { value: "return_received", label: "Return received" },
+  { value: "refund_eligible", label: "Refund eligible" },
+  { value: "refund_payment_info_request", label: "Refund payment info request" },
+  { value: "refund_completed", label: "Refund completed" },
+  { value: "delivery_update", label: "Delivery update" },
+  { value: "otp", label: "OTP" },
+  { value: "support_reply", label: "Support reply" },
+  { value: "password_reset", label: "Password reset" },
+  { value: "password_changed", label: "Password changed" },
+  { value: "cart_abandonment", label: "Cart abandonment" },
+  { value: "refund", label: "Refund" },
+  { value: "marketing", label: "Marketing" },
+];
+
+const emptyTemplateForm = () => ({
+  name: "",
+  subject: "",
+  bodyHtml: "",
+  designJson: null,
+  category: "support_reply",
+});
 
 export default function EmailInboxPage() {
   const toast = useToast();
@@ -31,7 +61,12 @@ export default function EmailInboxPage() {
   const [compose, setCompose] = useState({ to: "", subject: "", body: "", from: "", cc: "", bcc: "" });
   const [folder, setFolder] = useState("Inbox");
   const [templates, setTemplates] = useState([]);
-  const [newTemplate, setNewTemplate] = useState({ name: "", subject: "", bodyHtml: "", category: "support_reply" });
+  const [newTemplate, setNewTemplate] = useState(emptyTemplateForm());
+  const [editingTemplateId, setEditingTemplateId] = useState(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [systemCategory, setSystemCategory] = useState(SYSTEM_CATEGORIES[0].value);
+  const [systemForm, setSystemForm] = useState(emptyTemplateForm());
+  const [systemSaving, setSystemSaving] = useState(false);
   const [junkFolderId, setJunkFolderId] = useState("");
 
   const loadStatus = useCallback(async () => {
@@ -87,11 +122,33 @@ export default function EmailInboxPage() {
   }, [toast]);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
+  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
   useEffect(() => {
     if (tab === "inbox" && status?.graphConfigured) { loadInbox(); loadFolders(); }
     if (tab === "logs") loadLogs();
-    if (tab === "templates") loadTemplates();
+    if (tab === "templates" || tab === "system") loadTemplates();
   }, [tab, status, loadInbox, loadLogs, loadTemplates, loadFolders]);
+
+  useEffect(() => {
+    const existing = templates.find((t) => t.category === systemCategory);
+    const catLabel = SYSTEM_CATEGORIES.find((c) => c.value === systemCategory)?.label || systemCategory;
+    if (existing) {
+      setSystemForm({
+        name: existing.name,
+        subject: existing.subject,
+        bodyHtml: existing.bodyHtml || "",
+        designJson: existing.designJson ?? null,
+        category: existing.category,
+      });
+    } else {
+      setSystemForm({
+        ...emptyTemplateForm(),
+        name: catLabel,
+        category: systemCategory,
+      });
+    }
+  }, [systemCategory, templates]);
 
   const openMessage = async (m) => {
     try {
@@ -128,6 +185,97 @@ export default function EmailInboxPage() {
     }
   };
 
+  const saveCustomTemplate = async () => {
+    if (!newTemplate.name.trim() || !newTemplate.subject.trim() || !newTemplate.bodyHtml.trim()) {
+      toast.error("Name, subject and body are required");
+      return;
+    }
+    setTemplateSaving(true);
+    try {
+      const payload = {
+        name: newTemplate.name.trim(),
+        subject: newTemplate.subject.trim(),
+        bodyHtml: newTemplate.bodyHtml,
+        category: newTemplate.category,
+        designJson: newTemplate.designJson ?? null,
+      };
+      if (editingTemplateId) {
+        await adminApi.emailTemplateUpdate(editingTemplateId, payload);
+        toast.success("Template updated");
+      } else {
+        await adminApi.emailTemplateCreate(payload);
+        toast.success("Template saved");
+      }
+      setNewTemplate(emptyTemplateForm());
+      setEditingTemplateId(null);
+      loadTemplates();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to save template");
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  const startEditTemplate = (t) => {
+    setEditingTemplateId(t.id);
+    setNewTemplate({
+      name: t.name,
+      subject: t.subject,
+      bodyHtml: t.bodyHtml || "",
+      designJson: t.designJson ?? null,
+      category: t.category,
+    });
+  };
+
+  const deleteTemplate = async (id) => {
+    if (!window.confirm("Delete this template?")) return;
+    try {
+      await adminApi.emailTemplateDelete(id);
+      toast.success("Template deleted");
+      if (editingTemplateId === id) {
+        setEditingTemplateId(null);
+        setNewTemplate(emptyTemplateForm());
+      }
+      loadTemplates();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Delete failed");
+    }
+  };
+
+  const saveSystemTemplate = async () => {
+    if (!systemForm.subject.trim() || !systemForm.bodyHtml.trim()) {
+      toast.error("Subject and body are required");
+      return;
+    }
+    setSystemSaving(true);
+    try {
+      const payload = {
+        name: systemForm.name.trim() || SYSTEM_CATEGORIES.find((c) => c.value === systemCategory)?.label || systemCategory,
+        subject: systemForm.subject.trim(),
+        bodyHtml: systemForm.bodyHtml,
+        category: systemCategory,
+        designJson: systemForm.designJson ?? null,
+      };
+      const existing = templates.find((t) => t.category === systemCategory);
+      if (existing) {
+        await adminApi.emailTemplateUpdate(existing.id, payload);
+        toast.success("System template updated");
+      } else {
+        await adminApi.emailTemplateCreate(payload);
+        toast.success("System template saved");
+      }
+      loadTemplates();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to save system template");
+    } finally {
+      setSystemSaving(false);
+    }
+  };
+
+  const customTemplates = templates.filter(
+    (t) => !SYSTEM_CATEGORIES.some((c) => c.value === t.category)
+  );
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -156,19 +304,21 @@ export default function EmailInboxPage() {
         </div>
       )}
 
-      <div className="flex gap-2 border-b border-crm-border">
+      <div className="flex gap-2 border-b border-crm-border flex-wrap">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => { setTab(t.key); setSelected(null); }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition ${tab === t.key ? "border-crm-primary text-crm-primary" : "border-transparent text-crm-text-dim hover:text-crm-text-bright"}`}>
             <t.icon size={16} /> {t.label}
           </button>
         ))}
-        <button onClick={() => (tab === "logs" ? loadLogs() : loadInbox())} className="ml-auto crm-btn-ghost flex items-center gap-2 text-sm">
+        <button onClick={() => (tab === "logs" ? loadLogs() : tab === "inbox" ? loadInbox() : loadTemplates())} className="ml-auto crm-btn-ghost flex items-center gap-2 text-sm">
           <FiRefreshCw size={14} /> Refresh
         </button>
       </div>
 
-      {loading && <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-b-2 border-crm-primary rounded-full" /></div>}
+      {loading && tab !== "system" && tab !== "templates" && (
+        <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-b-2 border-crm-primary rounded-full" /></div>
+      )}
 
       {tab === "inbox" && status?.graphConfigured && !loading && (
         <div className="grid grid-cols-1 lg:grid-cols-[160px_1fr_1fr] gap-4">
@@ -268,30 +418,88 @@ export default function EmailInboxPage() {
         </div>
       )}
 
+      {tab === "system" && (
+        <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
+          <div className="crm-card p-2 space-y-1 max-h-[720px] overflow-y-auto">
+            {SYSTEM_CATEGORIES.map((c) => {
+              const hasTemplate = templates.some((t) => t.category === c.value);
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setSystemCategory(c.value)}
+                  className={`w-full text-left rounded-lg px-3 py-2 text-sm ${systemCategory === c.value ? "bg-crm-primary-dim text-crm-primary font-semibold" : "text-crm-text-dim hover:bg-crm-bg-hover"}`}
+                >
+                  {c.label}
+                  {hasTemplate ? <span className="ml-1 text-[10px] text-crm-success">●</span> : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="crm-card space-y-3">
+            <h3 className="font-bold text-crm-text-bright">
+              {SYSTEM_CATEGORIES.find((c) => c.value === systemCategory)?.label}
+            </h3>
+            <input className="crm-input" placeholder="Template name" value={systemForm.name} onChange={(e) => setSystemForm((f) => ({ ...f, name: e.target.value }))} />
+            <input className="crm-input" placeholder="Subject" value={systemForm.subject} onChange={(e) => setSystemForm((f) => ({ ...f, subject: e.target.value }))} />
+            <EmailBuilder
+              key={`system-${systemCategory}-${Boolean(systemForm.designJson)}`}
+              designJson={systemForm.designJson}
+              htmlFallback={systemForm.bodyHtml}
+              minHeight={480}
+              onChange={({ html, design }) => setSystemForm((f) => ({ ...f, bodyHtml: html, designJson: design }))}
+            />
+            <button className="crm-btn-primary" disabled={systemSaving} onClick={saveSystemTemplate}>
+              {systemSaving ? "Saving…" : "Save system template"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {tab === "templates" && (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="crm-card space-y-3">
-            <h3 className="font-bold">New template</h3>
+            <h3 className="font-bold">{editingTemplateId ? "Edit template" : "New template"}</h3>
             <input className="crm-input" placeholder="Name" value={newTemplate.name} onChange={(e) => setNewTemplate((t) => ({ ...t, name: e.target.value }))} />
             <select className="crm-input" value={newTemplate.category} onChange={(e) => setNewTemplate((t) => ({ ...t, category: e.target.value }))}>
+              <option value="support_reply">Support reply</option>
+              <option value="marketing">Marketing</option>
               <option value="order_confirmation">Order confirmation</option>
               <option value="refund">Refund</option>
-              <option value="marketing">Marketing</option>
-              <option value="support_reply">Support reply</option>
             </select>
             <input className="crm-input" placeholder="Subject" value={newTemplate.subject} onChange={(e) => setNewTemplate((t) => ({ ...t, subject: e.target.value }))} />
-            <textarea className="crm-input" rows={6} placeholder="HTML body with {{name}} variables" value={newTemplate.bodyHtml} onChange={(e) => setNewTemplate((t) => ({ ...t, bodyHtml: e.target.value }))} />
-            <button className="crm-btn-primary" onClick={() => adminApi.emailTemplateCreate(newTemplate).then(() => { toast.success("Template saved"); loadTemplates(); })}>Save template</button>
+            <EmailBuilder
+              key={`custom-${editingTemplateId || "new"}-${Boolean(newTemplate.designJson)}`}
+              designJson={newTemplate.designJson}
+              htmlFallback={newTemplate.bodyHtml}
+              minHeight={420}
+              onChange={({ html, design }) => setNewTemplate((t) => ({ ...t, bodyHtml: html, designJson: design }))}
+            />
+            <div className="flex gap-2">
+              <button className="crm-btn-primary flex-1" disabled={templateSaving} onClick={saveCustomTemplate}>
+                {templateSaving ? "Saving…" : editingTemplateId ? "Update template" : "Save template"}
+              </button>
+              {editingTemplateId && (
+                <button type="button" className="crm-btn" onClick={() => { setEditingTemplateId(null); setNewTemplate(emptyTemplateForm()); }}>Cancel</button>
+              )}
+            </div>
           </div>
           <div className="crm-card">
             <h3 className="font-bold mb-2">Saved templates</h3>
             <ul className="space-y-2 text-sm">
-              {templates.map((t) => (
-                <li key={t.id} className="border-b border-crm-border pb-2">
-                  <p className="font-semibold">{t.name} <span className="text-crm-text-dim">({t.category})</span></p>
-                  <p className="text-xs text-crm-text-dim truncate">{t.subject}</p>
+              {customTemplates.map((t) => (
+                <li key={t.id} className="border-b border-crm-border pb-2 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold">{t.name} <span className="text-crm-text-dim">({t.category})</span></p>
+                    <p className="text-xs text-crm-text-dim truncate">{t.subject}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button type="button" className="crm-btn-ghost p-1.5" onClick={() => startEditTemplate(t)} title="Edit"><FiEdit2 size={14} /></button>
+                    <button type="button" className="crm-btn-ghost p-1.5 text-crm-danger" onClick={() => deleteTemplate(t.id)} title="Delete"><FiTrash2 size={14} /></button>
+                  </div>
                 </li>
               ))}
+              {customTemplates.length === 0 && <li className="text-crm-text-dim py-4">No custom templates yet.</li>}
             </ul>
           </div>
         </div>

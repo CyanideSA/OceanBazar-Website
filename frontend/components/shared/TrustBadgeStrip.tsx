@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { Truck, Shield, RotateCcw, Headphones } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AB_TESTS, useAbVariant } from '@/lib/abTest';
 
 const BADGES = [
   { key: 'freeShipping', Icon: Truck,       gradient: 'from-blue-500/10 to-blue-600/5',   iconColor: 'text-blue-600 dark:text-blue-400' },
@@ -13,6 +14,7 @@ const BADGES = [
 
 export default function TrustBadgeStrip() {
   const t = useTranslations('home.trustBadges');
+  const shippingVariant = useAbVariant(AB_TESTS.SHIPPING_BADGE);
 
   return (
     <div className="border-y border-border/40 bg-card/50">
@@ -23,7 +25,9 @@ export default function TrustBadgeStrip() {
               <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-soft sm:h-10 sm:w-10', gradient)}>
                 <Icon className={cn('h-4 w-4 sm:h-5 sm:w-5', iconColor)} />
               </div>
-              <span className="text-xs font-medium leading-tight text-foreground sm:text-sm">{t(key)}</span>
+              <span className="text-xs font-medium leading-tight text-foreground sm:text-sm">
+                {key === 'freeShipping' && shippingVariant === 'B' ? 'Fast delivery across Dhaka' : t(key)}
+              </span>
             </div>
           ))}
         </div>

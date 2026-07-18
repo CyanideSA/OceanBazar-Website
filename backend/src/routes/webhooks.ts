@@ -1,14 +1,15 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { mapPaperflyStatus } from '../services/paperflyService';
 import { mapSteadfastStatus } from '../services/steadfastService';
 import { sendShippingUpdate } from '../services/emailService';
 import { sendShippingUpdateSms, sendShippingUpdateWhatsApp } from '../services/smsService';
+import { notifyCustomer } from '../services/customerNotify';
 import crypto from 'crypto';
 import { emitToUser, emitToRoom } from '../lib/adminEvents';
 
 const router = Router();
-const prisma = new PrismaClient();
 type CourierProvider = 'paperfly' | 'steadfast' | 'pathao' | 'redx';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -124,6 +125,23 @@ async function processWebhookEvent(
       sendShippingUpdateWhatsApp(order.user.phone, order.orderNumber, internalStatus, cs.tracking_code || undefined)
         .catch(e => console.error('[webhook] WhatsApp notify error:', e.message));
     }
+  }
+
+  // Unified in-app + socket notification (in addition to the direct email/SMS/WhatsApp above).
+  if (order?.userId) {
+    notifyCustomer({
+      userId: order.userId,
+      event: 'delivery_update',
+      vars: {
+        orderNumber: order.orderNumber,
+        status: internalStatus,
+        trackingNumber: cs.tracking_code || '',
+        carrier: courierProvider,
+      },
+      // Direct email/SMS already sent above — avoid double-sending those channels.
+      skipEmail: true,
+      skipSms: true,
+    }).catch((e) => console.error('[webhook] notifyCustomer error:', (e as Error)?.message));
   }
 
   if (order?.userId) {

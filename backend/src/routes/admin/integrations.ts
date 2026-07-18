@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { fetchGa4Overview, fetchSearchConsoleQueries, isGoogleInsightsConfigured } from '../../services/googleInsightsService';
 import { isGoogleMerchantConfigured, syncProductToMerchantCenter } from '../../services/googleMerchantService';
 import { listDirectoryUsers, createCalendarEvent, uploadDriveFile } from '../../services/microsoftGraphService';
@@ -12,7 +13,6 @@ import { isConfigured as isGraphMailConfigured } from '../../services/microsoftG
 import { isRecaptchaConfigured } from '../../services/recaptchaService';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.get('/status', (_req: Request, res: Response) => {
   res.json({

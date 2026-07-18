@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { requireRole } from '../../middleware/auth';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // snake_case -> camelCase helper
 function toCamel(s: string) { return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); }
@@ -16,12 +16,16 @@ function toSnake(s: string) { return s.replace(/[A-Z]/g, c => `_${c.toLowerCase(
 
 // GET /api/admin/global-settings
 router.get('/', async (_req: Request, res: Response) => {
-  let settings = await prisma.site_settings.findFirst({ where: { id: 'default' } });
-  if (!settings) {
-    settings = await prisma.site_settings.create({ data: { id: 'default' } });
+  try {
+    let settings = await prisma.site_settings.findFirst({ where: { id: 'default' } });
+    if (!settings) {
+      settings = await prisma.site_settings.create({ data: { id: 'default' } });
+    }
+    res.json({ ...settings, ...camelizeObj(settings as any) });
+  } catch (err: any) {
+    console.error('[global-settings] GET failed:', err);
+    res.status(500).json({ error: err?.message || 'Failed to load settings' });
   }
-  // Return both snake_case and camelCase for compatibility
-  res.json({ ...settings, ...camelizeObj(settings as any) });
 });
 
 // PUT /api/admin/global-settings

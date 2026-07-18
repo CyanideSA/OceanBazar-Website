@@ -7,6 +7,7 @@ import { ArrowRight } from 'lucide-react';
 import { resolvePublicApiBase } from '@/lib/api';
 import { flashDealsPagePath } from '@/lib/flashDeals';
 import { cn } from '@/lib/utils';
+import { AB_TESTS, useAbVariant } from '@/lib/abTest';
 
 interface FlashSalePayload {
   id: string;
@@ -55,6 +56,7 @@ function InlineCountdown({ time, compact }: { time: TimeLeft; compact?: boolean 
 export default function FlashSaleBanner() {
   const locale = useLocale();
   const t = useTranslations('home.flashDeal');
+  const urgencyVariant = useAbVariant(AB_TESTS.FLASH_URGENCY);
   const [sale, setSale] = useState<FlashSalePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [time, setTime] = useState<TimeLeft>({ hours: 0, minutes: 0, seconds: 0, total: 0 });
@@ -116,7 +118,7 @@ export default function FlashSaleBanner() {
           <span aria-hidden>🔥</span> {t('title')}
           <span className="mx-2 hidden text-white/25 sm:inline">·</span>
           <span className="hidden font-semibold normal-case tracking-normal text-orange-100/90 sm:inline">
-            ⏱ {t('clockTicking')}
+            {urgencyVariant === 'B' ? '⚡ Limited units · selling fast' : `⏱ ${t('clockTicking')}`}
           </span>
         </p>
 
@@ -133,7 +135,7 @@ export default function FlashSaleBanner() {
           )}
         >
           <span className="relative z-10 flex items-center gap-1">
-            {t('shopNow')}
+            {urgencyVariant === 'B' ? 'Claim deal' : t('shopNow')}
             <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
           </span>
         </Link>

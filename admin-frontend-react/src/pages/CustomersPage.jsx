@@ -44,7 +44,7 @@ function TypeBadge({ type }) {
   );
 }
 
-export default function CustomersPage({ onOpenTimeline }) {
+export default function CustomersPage({ onOpenTimeline, initialCustomerId }) {
   const { requestToken, modal: reauthModal } = useStepUpReauth();
   const adminRole = useMemo(() => String(getAdminUser()?.role || "STAFF").toUpperCase(), []);
   const canManage = adminRole === "SUPER_ADMIN" || adminRole === "ADMIN";
@@ -115,6 +115,18 @@ export default function CustomersPage({ onOpenTimeline }) {
       setDetailLoading(false);
     }
   }, [toast]);
+
+  // Deep-link from other CRM pages
+  useEffect(() => {
+    let id = initialCustomerId;
+    if (!id) {
+      try {
+        id = sessionStorage.getItem("oceanbazar_customer_detail");
+        if (id) sessionStorage.removeItem("oceanbazar_customer_detail");
+      } catch { /* ignore */ }
+    }
+    if (id) openDetail(id);
+  }, [initialCustomerId, openDetail]);
 
   /* ── Save edit ── */
   const handleSaveEdit = async () => {
@@ -334,7 +346,7 @@ export default function CustomersPage({ onOpenTimeline }) {
                   {/* Edit form or contact info */}
                   {editMode ? (
                     <div className="px-6 py-5 space-y-4 border-b border-crm-border">
-                      <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Edit Customer</h4>
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Edit Customer</h4>
                       <div className="space-y-3">
                         <div className="space-y-1">
                           <label className="text-xs font-semibold text-crm-text-dim uppercase">Full Name</label>
@@ -376,7 +388,7 @@ export default function CustomersPage({ onOpenTimeline }) {
                     </div>
                   ) : (
                     <div className="px-6 py-5 space-y-3 border-b border-crm-border">
-                      <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Contact Info</h4>
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Contact Info</h4>
                       <div className="space-y-2.5 text-sm">
                         <div className="flex items-center gap-2.5"><FiPhone className="text-crm-primary shrink-0" size={14} /><span className="text-crm-text-bright">{detail.phone || "—"}</span></div>
                         <div className="flex items-center gap-2.5"><FiMapPin className="text-crm-primary shrink-0" size={14} /><span className="text-crm-text-dim text-xs">{detail.savedAddresses?.[0] ? `${detail.savedAddresses[0].city || ""} ${detail.savedAddresses[0].country || ""}`.trim() : "No address on file"}</span></div>
@@ -393,7 +405,7 @@ export default function CustomersPage({ onOpenTimeline }) {
                   {/* Wholesale / Retail migration */}
                   {canManage && !editMode && (
                     <div className="px-6 py-5 border-b border-crm-border">
-                      <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest mb-3">Customer Type Migration</h4>
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest mb-3">Customer Type Migration</h4>
                       {migrateConfirm ? (
                         <div className="bg-crm-bg p-3 rounded-xl border border-crm-border space-y-3">
                           <p className="text-sm text-crm-text-bright">
@@ -429,7 +441,7 @@ export default function CustomersPage({ onOpenTimeline }) {
                   {/* Status actions */}
                   {canManage && !editMode && (
                     <div className="px-6 py-4 border-b border-crm-border">
-                      <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest mb-3">Account Actions</h4>
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest mb-3">Account Actions</h4>
                       <div className="flex flex-wrap gap-2">
                         {detail.accountStatus !== "active" && (
                           <button onClick={() => handleChangeStatus("active")} disabled={saving}
@@ -450,7 +462,7 @@ export default function CustomersPage({ onOpenTimeline }) {
                   {/* Order history */}
                   <div className="px-6 py-5 border-b border-crm-border">
                     <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Order History</h4>
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Order History</h4>
                       <span className="crm-badge">{orders.length} orders</span>
                     </div>
                     {orders.length === 0 ? (

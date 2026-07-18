@@ -38,6 +38,9 @@ function normalizeCartItem(row: unknown, index: number): CartItem | null {
       : toNum(item.price ?? product.price ?? product.retailPrice);
   const lineTotal = toNum(item.lineTotal) || unitPrice * quantity;
 
+  const stock = product.stock != null ? toNum(product.stock) : null;
+  const retailMaxQty = product.retailMaxQty != null ? toNum(product.retailMaxQty) : null;
+
   return {
     id: toNum(item.id) || index + 1,
     productId,
@@ -49,6 +52,9 @@ function normalizeCartItem(row: unknown, index: number): CartItem | null {
     lineTotal,
     discountPct: toNum(item.discountPct),
     tierApplied: toNum(item.tierApplied),
+    stock,
+    moq: Math.max(1, toNum(product.moq) || 1),
+    retailMaxQty,
   };
 }
 

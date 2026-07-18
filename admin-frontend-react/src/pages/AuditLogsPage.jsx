@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+﻿import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { 
   FiSearch, FiFilter, FiActivity, FiClock, FiUser, 
   FiPackage, FiRefreshCw, FiChevronDown, FiChevronUp, FiTarget,
@@ -189,7 +189,7 @@ export default function AuditLogsPage() {
                               >
                                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
                                   <div className="space-y-4">
-                                    <div className="flex items-center gap-2 text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">
+                                    <div className="flex items-center gap-2 text-xs font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">
                                       <FiTarget /> Target Reference
                                     </div>
                                     <div className="space-y-2">
@@ -207,7 +207,7 @@ export default function AuditLogsPage() {
                                     </div>
                                   </div>
                                   <div className="space-y-4">
-                                    <div className="flex items-center gap-2 text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">
+                                    <div className="flex items-center gap-2 text-xs font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">
                                       <FiUser /> Actor Context
                                     </div>
                                     <div className="space-y-2">

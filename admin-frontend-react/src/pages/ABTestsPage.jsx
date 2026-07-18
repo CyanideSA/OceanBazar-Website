@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   FiActivity, FiTrendingUp, FiTrendingDown, FiRefreshCw,
-  FiBarChart2, FiUsers, FiTarget, FiAward
+  FiBarChart2, FiUsers, FiTarget, FiAward, FiPlay, FiPause, FiSquare
 } from "react-icons/fi";
-import { adminApi, api } from "../lib/api";
+import { api } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -21,7 +21,7 @@ function WinnerBadge({ winner }) {
   );
 }
 
-function VariantCard({ variant, data, isWinner }) {
+function VariantCard({ variant, data, isWinner, label }) {
   const colors = VARIANT_COLORS[variant] || VARIANT_COLORS.A;
   const rate = parseFloat(data?.rate ?? "0") || 0;
 
@@ -29,7 +29,10 @@ function VariantCard({ variant, data, isWinner }) {
     <div className={`rounded-xl border p-4 ${colors.border} ${colors.bg}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className={`text-2xl font-black ${colors.text}`}>Variant {variant}</span>
+          <div>
+            <span className={`text-2xl font-black ${colors.text}`}>Variant {variant}</span>
+            {label && <p className="text-[10px] font-semibold text-crm-text-dim">{label}</p>}
+          </div>
           <WinnerBadge winner={isWinner} />
         </div>
         <span className={`text-3xl font-black ${colors.text}`}>{data?.rate ?? "0%"}</span>
@@ -57,12 +60,12 @@ function VariantCard({ variant, data, isWinner }) {
   );
 }
 
-function TestCard({ testId, data }) {
+function TestCard({ testId, data, onStatus, onAllocation }) {
   const A = data?.A;
   const B = data?.B;
   const rateA = parseFloat(A?.rate ?? "0") || 0;
   const rateB = parseFloat(B?.rate ?? "0") || 0;
-  const winner = rateA > rateB ? "A" : rateB > rateA ? "B" : null;
+  const winner = data?.winner || null;
   const totalImpressions = (A?.impressions ?? 0) + (B?.impressions ?? 0);
   const totalConversions = (A?.conversions ?? 0) + (B?.conversions ?? 0);
   const liftPct = rateA > 0 ? (((rateB - rateA) / rateA) * 100).toFixed(1) : null;
@@ -77,10 +80,44 @@ function TestCard({ testId, data }) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-b border-crm-border">
         <div>
-          <h3 className="font-bold text-crm-text-bright text-base">{testId}</h3>
+          <h3 className="font-bold text-crm-text-bright text-base">{data?.name || testId}</h3>
+          <p className="text-[10px] font-mono text-crm-text-muted">{testId}</p>
           <p className="text-xs text-crm-text-dim mt-0.5">
-            {totalImpressions.toLocaleString()} total impressions · {totalConversions.toLocaleString()} conversions
+            Tier {data?.tier ?? "—"} · {data?.surface ?? "storefront"} · {data?.primary_metric ?? "conversion"}
           </p>
+          <p className="text-xs text-crm-text-muted mt-1">
+            {totalImpressions.toLocaleString()} impressions · {totalConversions.toLocaleString()} primary outcomes
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+            data?.status === "running" ? "bg-emerald-500/15 text-emerald-400" : "bg-crm-bg-hover text-crm-text-dim"
+          }`}>{data?.status || "draft"}</span>
+          <select
+            value={data?.traffic_allocation ?? 100}
+            onChange={(event) => onAllocation(testId, Number(event.target.value))}
+            className="crm-input h-8 py-0 text-xs"
+            title="Traffic allocation"
+          >
+            <option value={10}>10% traffic</option>
+            <option value={25}>25% traffic</option>
+            <option value={50}>50% traffic</option>
+            <option value={100}>100% traffic</option>
+          </select>
+          {data?.status !== "running" ? (
+            <button type="button" onClick={() => onStatus(testId, "running")} className="crm-btn-secondary text-xs">
+              <FiPlay size={12} /> Start
+            </button>
+          ) : (
+            <button type="button" onClick={() => onStatus(testId, "paused")} className="crm-btn-secondary text-xs">
+              <FiPause size={12} /> Pause
+            </button>
+          )}
+          {data?.status !== "completed" && (
+            <button type="button" onClick={() => onStatus(testId, "completed")} className="crm-btn-secondary text-xs">
+              <FiSquare size={12} /> Complete
+            </button>
+          )}
         </div>
         {liftPct !== null && (
           <div className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold border ${
@@ -96,8 +133,17 @@ function TestCard({ testId, data }) {
 
       {/* Variants */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5">
-        <VariantCard variant="A" data={A} isWinner={winner === "A"} />
-        <VariantCard variant="B" data={B} isWinner={winner === "B"} />
+        <VariantCard variant="A" data={A} isWinner={winner === "A"} label={data?.variant_a?.label} />
+        <VariantCard variant="B" data={B} isWinner={winner === "B"} label={data?.variant_b?.label} />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-crm-border px-5 py-3 text-xs text-crm-text-dim">
+        <span>
+          Confidence: <strong className="text-crm-text-bright">{data?.confidence ?? 0}%</strong>
+          {data?.pValue != null ? ` · p=${data.pValue}` : ""}
+        </span>
+        <span className={data?.significant ? "text-emerald-400 font-bold" : "text-amber-400"}>
+          {data?.significant ? `Significant winner: ${data.winner}` : "Preliminary — keep collecting data"}
+        </span>
       </div>
 
       {/* No data message */}
@@ -131,6 +177,26 @@ export default function ABTestsPage() {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  const updateStatus = useCallback(async (testId, status) => {
+    try {
+      await api.patch(`/api/ab/tests/${testId}`, { status });
+      toast.success(`Experiment ${status}`);
+      await load();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Could not update experiment");
+    }
+  }, [load, toast]);
+
+  const updateAllocation = useCallback(async (testId, trafficAllocation) => {
+    try {
+      await api.patch(`/api/ab/tests/${testId}`, { trafficAllocation });
+      toast.success(`Traffic allocation set to ${trafficAllocation}%`);
+      await load();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Could not update traffic allocation");
+    }
+  }, [load, toast]);
 
   const testIds = Object.keys(tests);
   const totalImpressions = testIds.reduce((sum, id) => {
@@ -168,7 +234,7 @@ export default function ABTestsPage() {
       {/* Summary strip */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Active Tests", value: testIds.length, icon: FiTarget },
+          { label: "Active Tests", value: testIds.filter((id) => tests[id]?.status === "running").length, icon: FiTarget },
           { label: "Total Impressions", value: totalImpressions.toLocaleString(), icon: FiUsers },
           { label: "Total Conversions", value: totalConversions.toLocaleString(), icon: FiTrendingUp },
         ].map((s) => (
@@ -199,7 +265,13 @@ export default function ABTestsPage() {
         <AnimatePresence>
           <div className="space-y-4">
             {testIds.map((id) => (
-              <TestCard key={id} testId={id} data={tests[id]} />
+              <TestCard
+                key={id}
+                testId={id}
+                data={tests[id]}
+                onStatus={updateStatus}
+                onAllocation={updateAllocation}
+              />
             ))}
           </div>
         </AnimatePresence>

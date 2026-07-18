@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
+
 
 export async function refreshProductReviewStats(productId: string): Promise<void> {
   const agg = await prisma.productReview.aggregate({

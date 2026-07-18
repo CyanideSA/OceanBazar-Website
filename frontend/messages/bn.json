@@ -305,7 +305,8 @@
     "couponApplied": "কুপন সফলভাবে প্রয়োগ হয়েছে!",
     "couponInvalid": "কুপন কোডটি অবৈধ বা মেয়াদোত্তীর্ণ।",
     "decreaseQty": "পরিমাণ কমান",
-    "increaseQty": "পরিমাণ বাড়ান"
+    "increaseQty": "পরিমাণ বাড়ান",
+    "maxQtyReached": "সর্বোচ্চ সীমায় পৌঁছেছে"
   },
   "checkout": {
     "title": "চেকআউট",
@@ -316,6 +317,10 @@
     "shippingAddress": "ডেলিভারি ঠিকানা",
     "paymentMethod": "পেমেন্ট পদ্ধতি",
     "cod": "ক্যাশ অন ডেলিভারি",
+    "payNow": "এখনই পেমেন্ট করুন",
+    "payNowSub": "বিকাশ, নগদ, উপায়, কার্ড ও ব্যাংক — SSLCommerz-এর মাধ্যমে",
+    "payLater": "পরে পেমেন্ট করুন",
+    "payLaterSub": "ক্যাশ অন ডেলিভারি — পণ্য হাতে পেয়ে পেমেন্ট করুন",
     "bkash": "বিকাশ",
     "nagad": "নগদ",
     "rocket": "রকেট (ডিবিবিএল)",
@@ -356,7 +361,11 @@
     "removeCoupon": "কুপন সরান",
     "paymentRetryTitle": "পেমেন্ট খুলেনি?",
     "paymentRetryCta": "আবার পেমেন্ট চেষ্টা করুন",
+    "paymentRetrying": "নিরাপদ পেমেন্ট খোলা হচ্ছে…",
     "paymentInitFailed": "পেমেন্ট শুরু হয়নি। অর্ডার থেকে আবার চেষ্টা করুন।",
+    "paymentReturnedFailed": "আপনার পেমেন্ট সম্পন্ন হয়নি। অর্ডারটি সংরক্ষিত আছে এবং পেমেন্টের অপেক্ষায় রয়েছে।",
+    "paymentRecoveryHint": "আপনার অর্ডার নিরাপদে সংরক্ষিত আছে। প্রস্তুত হলে নিরাপদ পেমেন্ট পেজে যান।",
+    "viewPendingOrder": "অপেক্ষমান অর্ডার দেখুন",
     "emptyCartTitle": "কার্ট খালি",
     "emptyCartHint": "চেকআউটের আগে পণ্য যোগ করুন।",
     "loginRequiredTitle": "চেকআউটের জন্য লগইন করুন",
@@ -433,6 +442,9 @@
     "phoneRequired": "ফোন নম্বর আবশ্যক",
     "bothRequired": "ইমেইল ও ফোন দুটিই আবশ্যক",
     "verifyBothRequired": "অনুগ্রহ করে আপনার ইমেইল ও ফোন উভয়ই যাচাই করুন",
+    "verifyEmailRequired": "অ্যাকাউন্ট তৈরি করতে অনুগ্রহ করে আপনার ইমেইল যাচাই করুন",
+    "verifyOptional": "যাচাই (ঐচ্ছিক)",
+    "phoneVerifyOptionalHint": "সাইনআপে ফোন যাচাই ঐচ্ছিক। ফোন দিয়ে সাইন ইন করার সময় যাচাই করতে হবে।",
     "forgotPasswordTitle": "পাসওয়ার্ড রিসেট করুন",
     "forgotPasswordChoose": "রিসেট কোড পাওয়ার উপায় বেছে নিন:",
     "viaEmail": "ইমেইলের মাধ্যমে",
@@ -603,7 +615,13 @@
     "orderLevelTracking": "অর্ডার ট্র্যাকিং ID",
     "notFound": "এই অর্ডার পাওয়া যায়নি।",
     "cancelling": "বাতিল হচ্ছে…",
-    "quantity": "পরিমাণ"
+    "quantity": "পরিমাণ",
+    "awaitingPayment": "পেমেন্টের অপেক্ষায়",
+    "paymentStillPending": "পেমেন্ট এখনও বাকি",
+    "paymentRetryFromOrderHint": "আপনার অর্ডার সংরক্ষিত আছে। প্রক্রিয়াকরণ শুরু করতে নিরাপদে পেমেন্ট সম্পন্ন করুন।",
+    "payNow": "পেমেন্ট সম্পন্ন করুন",
+    "paymentRetrying": "নিরাপদ পেমেন্ট খোলা হচ্ছে…",
+    "paymentRetryUnavailable": "পেমেন্ট খোলা যায়নি। আবার চেষ্টা করুন অথবা সাপোর্টে যোগাযোগ করুন।"
   },
   "tickets": {
     "title": "সাপোর্ট টিকিট",

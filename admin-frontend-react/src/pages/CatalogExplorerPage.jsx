@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { adminApi } from "../lib/api";
+import { useToast } from "../components/ToastProvider";
 import { useCatalogStore } from "../stores/catalogStore";
 import FolderTreePanel from "../components/explorer/FolderTreePanel";
 import ExplorerToolbar from "../components/explorer/ExplorerToolbar";
@@ -23,6 +24,7 @@ const TREE_MAX_WIDTH = 400;
 const TREE_DEFAULT_WIDTH = 240;
 
 export default function CatalogExplorerPage() {
+  const toast = useToast();
   const {
     currentCategoryId,
     setCurrentCategoryId,
@@ -81,9 +83,12 @@ export default function CatalogExplorerPage() {
     try {
       const result = await adminApi.categoryTree();
       const nodes = Array.isArray(result) ? result : (result?.tree ?? []);
-      setTree(nodes);    } catch (err) {    }
+      setTree(nodes);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err?.response?.data?.message || "Failed to load category tree");
+    }
     finally { setLoadingTree(false); }
-  }, [setLoadingTree, setTree]);
+  }, [setLoadingTree, setTree, toast]);
 
   // ─── Load folder contents ────────────────────────────────────────────────
   const loadContents = useCallback(async () => {
@@ -123,9 +128,11 @@ export default function CatalogExplorerPage() {
         setBreadcrumb(crumbs);
         crumbs.forEach((c) => setExpanded(c.id, true));
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err?.response?.data?.message || "Failed to load folder contents");
+    }
     finally { setLoadingContents(false); }
-  }, [currentCategoryId, selectedBrandId, selectedBrandCategoryId, setFolderContents, setBreadcrumb, setLoadingContents, setExpanded]);
+  }, [currentCategoryId, selectedBrandId, selectedBrandCategoryId, setFolderContents, setBreadcrumb, setLoadingContents, setExpanded, toast]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
   useEffect(() => { loadContents(); }, [loadContents]);
@@ -138,11 +145,13 @@ export default function CatalogExplorerPage() {
         if (type === "product") await adminApi.moveProduct(srcId, targetCategoryId);
         else await adminApi.moveCategory(srcId, { newParentId: targetCategoryId });
         await Promise.all([loadTree(), loadContents()]);
-      } catch { /* ignore */ }
+      } catch (err) {
+        toast.error(err?.response?.data?.error || err?.response?.data?.message || "Move failed");
+      }
     };
     window.addEventListener("explorer:drop", handleDrop);
     return () => window.removeEventListener("explorer:drop", handleDrop);
-  }, [loadTree, loadContents]);
+  }, [loadTree, loadContents, toast]);
 
   // ─── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
@@ -236,9 +245,22 @@ export default function CatalogExplorerPage() {
       case "open":
         if (target?.type === "product") openProduct(target.node.id);
         break;
+      case "duplicate":
+        if (target?.type === "product") {
+          adminApi.duplicateProduct(target.node.id)
+            .then(() => {
+              toast.success("Product duplicated as draft");
+              loadTree();
+              loadContents();
+            })
+            .catch((err) => {
+              toast.error(err?.response?.data?.error || err?.response?.data?.message || "Failed to duplicate product");
+            });
+        }
+        break;
       default: break;
     }
-  }, [openModal, currentCategoryId, openProduct]);
+  }, [openModal, currentCategoryId, openProduct, loadTree, loadContents, toast]);
 
   // ─── Navigation ──────────────────────────────────────────────────────────
   const handleOpenCategory = useCallback((id) => {

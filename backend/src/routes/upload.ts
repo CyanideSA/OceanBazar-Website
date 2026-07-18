@@ -7,10 +7,9 @@ import {
   deleteImage,
   uploadProfilePhoto,
 } from '../services/cloudinaryService';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -38,9 +37,6 @@ router.post('/image', requireAuth, upload.single('image'), async (req: Request, 
 // ─── Profile photo upload ────────────────────────────────────────────────────
 
 router.post('/profile-photo', requireAuth, upload.single('photo'), async (req: Request, res: Response) => {
-  // #region agent log
-  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'B',location:'upload.ts:profile-photo',message:'profile photo upload',data:{hasFile:!!req.file,userId:req.user?.userId,size:req.file?.size},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (!req.file) { res.status(400).json({ error: 'No photo file provided' }); return; }
   try {
     const result = await uploadProfilePhoto(req.file.buffer, req.user!.userId);
@@ -50,9 +46,6 @@ router.post('/profile-photo', requireAuth, upload.single('photo'), async (req: R
     });
     res.json({ url: result.secureUrl, publicId: result.publicId });
   } catch (err: any) {
-    // #region agent log
-    fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'B',location:'upload.ts:profile-photo:catch',message:'profile photo failed',data:{detail:err?.message},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     console.error('[upload] Profile photo error:', err.message);
     res.status(500).json({ error: 'Upload failed', detail: err.message });
   }

@@ -2,13 +2,13 @@
  * Admin Live Chat — claim, finish, not-resolved, typing, read receipts, greeting.
  */
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { requireAdmin } from '../../middleware/auth';
 import { routeParam } from '../../utils/params';
 import { emitToRoom, emitToUser, emitBroadcast } from '../../lib/adminEvents';
 
 const router = Router();
-const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 
 function agentMsg(text: string, agentId: number, agentName: string) {
@@ -119,6 +119,9 @@ router.post('/sessions/:id/messages', requireAdmin, async (req: Request, res: Re
   const agentName = admin?.name || `Agent #${agentId}`;
   const newMsg = agentMsg(req.body.message, agentId, agentName);
   await pushMessages(sessionId, [newMsg]);
+  // #region agent log
+  fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'duplicate-pre-fix',hypothesisId:'DUP-C',location:'backend/src/routes/admin/chat.ts:send',message:'Admin message persisted and emitted',data:{messageId:newMsg.id,sessionId},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   emitToUser(session.user_id, 'chat:message', { sessionId, message: newMsg });
   emitToRoom('admin:chat', 'chat:message', { sessionId, message: newMsg });
   res.status(201).json({ message: newMsg });

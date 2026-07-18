@@ -38,7 +38,7 @@ export default function AdminProfileAvatar({ admin, onUpdated, size = "w-8 h-8",
         type="button"
         title="Change profile photo"
         onClick={() => fileRef.current?.click()}
-        className={`${size} rounded-full overflow-hidden border-2 border-crm-border flex items-center justify-center bg-gradient-to-br from-crm-primary to-purple-500 text-white font-bold text-xs shadow-md`}
+        className={`${size} rounded-full overflow-hidden border-2 border-crm-border flex items-center justify-center bg-gradient-to-br from-crm-primary to-crm-purple text-white font-bold text-xs shadow-md`}
       >
         {src ? (
           <img src={src} alt="" className="w-full h-full object-cover" />

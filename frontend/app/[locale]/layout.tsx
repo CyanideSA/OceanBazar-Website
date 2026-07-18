@@ -32,8 +32,8 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
   openGraph: {
     type: 'website',
-    locale: 'en_US',
-    alternateLocale: 'bn_BD',
+    locale: 'bn_BD',
+    alternateLocale: 'en_US',
     url: SITE_URL,
     siteName: 'Oceanbazar',
     title: 'Oceanbazar — বাংলাদেশের সেরা অনলাইন শপ',

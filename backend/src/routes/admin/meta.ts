@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { generateEntityId } from '../../utils/hexId';
 import { routeParam } from '../../utils/params';
@@ -7,7 +8,6 @@ import { isMetaConfigured, publishMetaPost, syncProductToCatalog, createAdCampai
 import metaOAuthRouter from './meta-oauth';
 
 const router = Router();
-const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 
 router.use(metaOAuthRouter);

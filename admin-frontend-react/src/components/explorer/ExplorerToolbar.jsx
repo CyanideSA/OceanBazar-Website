@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from "react";
+﻿import React, { useRef, useState, useCallback } from "react";
 import { useCatalogStore } from "../../stores/catalogStore";
 import { adminApi } from "../../lib/api";
 import {
@@ -60,7 +60,7 @@ export default function ExplorerToolbar({ onRefresh, showPreview, onTogglePrevie
         {breadcrumb.map((crumb, i) => (
           <React.Fragment key={crumb.id}>
             <span className="crumb-sep">
-              <IconChevronRight size={10} color="#484f58" />
+              <IconChevronRight size={10} color="var(--crm-text-muted)" />
             </span>
             <span
               className={`crumb${i === breadcrumb.length - 1 ? " crumb-active" : ""}`}
@@ -85,7 +85,7 @@ export default function ExplorerToolbar({ onRefresh, showPreview, onTogglePrevie
           onClick={() => openModal("createCategory", { parentId: currentCategoryId })}
           title="New Folder (Ctrl+Shift+N)"
         >
-          <IconFolder size={13} color="#e3b341" />
+          <IconFolder size={13} color="var(--crm-warning)" />
           <IconPlus size={10} color="currentColor" />
           Folder
         </button>
@@ -128,7 +128,7 @@ export default function ExplorerToolbar({ onRefresh, showPreview, onTogglePrevie
         />
         {searching && (
           <span className="search-spinner-wrap">
-            <IconSpinner size={13} color="#484f58" />
+            <IconSpinner size={13} color="var(--crm-text-muted)" />
           </span>
         )}
         {searchQuery && !searching && (
@@ -154,7 +154,7 @@ export default function ExplorerToolbar({ onRefresh, showPreview, onTogglePrevie
         className={`toolbar-btn toolbar-btn-icon${showPreview ? " view-btn active" : ""}`}
         onClick={onTogglePreview}
         title="Toggle Storefront Preview"
-        style={showPreview ? { background: "#1f6feb", border: "1px solid #388bfd", color: "#fff" } : {}}
+        style={showPreview ? { background: "var(--crm-primary)", border: "1px solid var(--crm-primary-hover)", color: "#fff" } : {}}
       >
         <IconPreview size={14} color="currentColor" />
       </button>

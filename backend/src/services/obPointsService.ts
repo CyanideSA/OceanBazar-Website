@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import {
   getTier,
   getTierInfo,
@@ -9,7 +10,6 @@ import {
   type OBTier,
 } from '../utils/obPoints';
 
-const prisma = new PrismaClient();
 
 export { getTier, getTierInfo, wouldUpgradeTier };
 

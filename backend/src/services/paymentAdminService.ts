@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { recordAdminAudit } from '../lib/adminAudit';
 import type { Request } from 'express';
 
-const prisma = new PrismaClient();
 
 export async function refundTransaction(
   req: Request,

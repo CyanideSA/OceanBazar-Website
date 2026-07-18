@@ -7,9 +7,9 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Oceanbazar — বাংলাদেশের সেরা অনলাইন শপ',
     short_name: 'Oceanbazar',
     description: 'Retail & Wholesale ecommerce for Bangladesh',
-    start_url: '/en',
+    start_url: '/bn',
     display: 'standalone',
-    background_color: '#0a0a0a',
+    background_color: '#ffffff',
     theme_color: '#0ea5e9',
     orientation: 'portrait',
     categories: ['shopping', 'lifestyle'],
@@ -19,9 +19,9 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [
-      { name: 'Products', url: '/en/products', icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }] },
-      { name: 'My Orders', url: '/en/account/orders', icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }] },
-      { name: 'Cart', url: '/en/cart', icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }] },
+      { name: 'Products', url: '/bn/products', icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }] },
+      { name: 'My Orders', url: '/bn/account/orders', icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }] },
+      { name: 'Cart', url: '/bn/cart', icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }] },
     ],
   };
 }

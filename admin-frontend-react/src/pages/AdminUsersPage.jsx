@@ -151,7 +151,9 @@ function InviteMemberModal({ onClose, onCreated, myRole }) {
               <input className="crm-input" placeholder="janedoe" value={form.username} onChange={e => set("username", e.target.value)} /></div>
           </div>
           <div className="space-y-1"><label className="text-xs font-bold text-crm-text-dim uppercase">Email</label>
-            <input className="crm-input" type="email" placeholder="jane@company.com" value={form.email} onChange={e => set("email", e.target.value)} /></div>
+            <input className="crm-input" type="email" placeholder="jane@oceanbazar.com.bd" value={form.email} onChange={e => set("email", e.target.value)} />
+            <p className="text-[11px] text-crm-text-muted">Must match their Microsoft 365 sign-in email so SSO can link on first login.</p>
+          </div>
           <div className="space-y-1"><label className="text-xs font-bold text-crm-text-dim uppercase">Initial Password</label>
             <div className="relative">
               <input className="crm-input pr-10" type={showPw ? "text" : "password"} placeholder="Min 6 characters" value={form.password} onChange={e => set("password", e.target.value)} />
@@ -217,7 +219,9 @@ function EditMemberModal({ member, onClose, onSaved, myRole, myId }) {
           <div className="space-y-1"><label className="text-xs font-bold text-crm-text-dim uppercase">Full Name</label>
             <input className="crm-input" value={form.name} onChange={e => set("name", e.target.value)} /></div>
           <div className="space-y-1"><label className="text-xs font-bold text-crm-text-dim uppercase">Email</label>
-            <input className="crm-input" type="email" value={form.email} onChange={e => set("email", e.target.value)} /></div>
+            <input className="crm-input" type="email" value={form.email} onChange={e => set("email", e.target.value)} />
+            <p className="text-[11px] text-crm-text-muted">Must match their Microsoft 365 sign-in email for SSO linking.</p>
+          </div>
           <div className="space-y-1"><label className="text-xs font-bold text-crm-text-dim uppercase">Role</label>
             <select className="crm-input" value={form.role} onChange={e => set("role", e.target.value)} disabled={isSelf}>
               {availableRoles.map(([v,l]) => <option key={v} value={v}>{l}</option>)}
@@ -548,7 +552,8 @@ export default function AdminUsersPage({ liveTick = 0 }) {
     try {
       const res = await adminApi.teamMembers();
       const list = Array.isArray(res) ? res : res?.members || res?.items || [];
-      setItems(list);    } catch (err) {      toast.error("Failed to fetch team members");
+      setItems(list);    } catch (err) {
+      toast.error("Failed to fetch team members");
     } finally { setLoading(false); }
   }, [toast]);
 
@@ -723,7 +728,7 @@ export default function AdminUsersPage({ liveTick = 0 }) {
 
                 {/* Info */}
                 <div className="space-y-3">
-                  <p className="text-[10px] font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">Account Info</p>
+                  <p className="text-[10px] font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">Account Info</p>
                   {[
                     ["Full Name",  detail.name],
                     ["Username",   detail.username || "—"],
@@ -739,7 +744,7 @@ export default function AdminUsersPage({ liveTick = 0 }) {
 
                 {/* Permission summary for this role */}
                 <div className="space-y-3">
-                  <p className="text-[10px] font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">
+                  <p className="text-[10px] font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">
                     Role Access Summary
                   </p>
                   <p className="text-xs text-crm-text-dim">
@@ -763,7 +768,7 @@ export default function AdminUsersPage({ liveTick = 0 }) {
                 {/* Actions */}
                 {canEdit && (
                   <div className="space-y-2 pt-2 border-t border-crm-border">
-                    <p className="text-[10px] font-bold text-crm-text-muted uppercase tracking-widest mb-3">Actions</p>
+                    <p className="text-[10px] font-black text-crm-text-bright uppercase tracking-widest mb-3">Actions</p>
                     <button onClick={() => setEditTarget(detail)}
                       className="crm-btn crm-btn-primary w-full py-2.5 flex items-center justify-center gap-2">
                       <FiEdit2 size={14}/> Edit Role & Status

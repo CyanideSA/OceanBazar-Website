@@ -1,7 +1,7 @@
-import { PrismaClient, DealStatus } from '@prisma/client';
+import { DealStatus } from '@prisma/client';
 import { generateEntityId } from '../utils/hexId';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 
 const DEFAULT_STAGES = [
   { name: 'Lead', winProbability: 10 },
@@ -108,6 +108,9 @@ export async function createDeal(input: {
   if (!pipeline) throw new Error('pipeline_not_found');
   const stageId = input.stageId || pipeline.stages[0]?.id;
   if (!stageId) throw new Error('no_stage');
+  if (input.customerId && input.customerId.length !== 8) {
+    throw new Error('customerId must be exactly 8 characters');
+  }
 
   return prisma.deal.create({
     data: {
@@ -123,6 +126,10 @@ export async function createDeal(input: {
       notes: input.notes ?? null,
     },
   });
+}
+
+export async function deleteDeal(id: string) {
+  return prisma.deal.delete({ where: { id } });
 }
 
 export async function updateDeal(id: string, input: {

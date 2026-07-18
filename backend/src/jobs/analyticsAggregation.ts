@@ -1,7 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { appLog } from '../lib/appLog';
 
-const prisma = new PrismaClient();
 
 const ANALYTICS_VIEWS = [
   'analytics.sales_daily',
@@ -17,12 +17,24 @@ export async function refreshAnalyticsMaterializedViews(
   for (const view of views) {
     try {
       await prisma.$executeRawUnsafe(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`);
-      appLog('info', 'analytics_mv_refreshed', { view });
+      appLog('info', 'analytics_mv_refreshed', { view, mode: 'concurrent' });
     } catch (e) {
-      appLog('warn', 'analytics_mv_refresh_failed', {
-        view,
-        detail: e instanceof Error ? e.message : String(e),
-      });
+      const detail = e instanceof Error ? e.message : String(e);
+      // First populate (or missing unique index) cannot use CONCURRENTLY.
+      if (/CONCURRENTLY cannot be used|does not exist|not populated/i.test(detail)) {
+        try {
+          await prisma.$executeRawUnsafe(`REFRESH MATERIALIZED VIEW ${view}`);
+          appLog('info', 'analytics_mv_refreshed', { view, mode: 'blocking_fallback' });
+          continue;
+        } catch (e2) {
+          appLog('warn', 'analytics_mv_refresh_failed', {
+            view,
+            detail: e2 instanceof Error ? e2.message : String(e2),
+          });
+          continue;
+        }
+      }
+      appLog('warn', 'analytics_mv_refresh_failed', { view, detail });
     }
   }
 }

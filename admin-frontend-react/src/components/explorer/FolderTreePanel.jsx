@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, memo } from "react";
+﻿import React, { useCallback, useEffect, memo } from "react";
 import { useCatalogStore } from "../../stores/catalogStore";
 import { adminApi } from "../../lib/api";
 import {
@@ -19,9 +19,9 @@ const BrandRow = memo(function BrandRow({ brand, categoryId, level }) {
       <span className="tree-node-icon">
         {brand.logoUrl
           ? <img src={brand.logoUrl} alt="" style={{ width: 14, height: 14, borderRadius: 2, objectFit: "contain" }} />
-          : <span style={{ fontSize: 10, color: "#8b949e" }}>🏷</span>}
+          : <span style={{ fontSize: 10, color: "var(--crm-text-dim)" }}>🏷</span>}
       </span>
-      <span className="tree-node-label" style={{ color: isActive ? "#58a6ff" : "#8b949e", fontSize: 12 }}>
+      <span className="tree-node-label" style={{ color: isActive ? "var(--crm-primary)" : "var(--crm-text-dim)", fontSize: 12 }}>
         {brand.nameEn}
       </span>
       {brand.productCount > 0 && (
@@ -85,7 +85,7 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
     }
   }, [node.id]);
 
-  const folderColor = isActive ? "#58a6ff" : isExpanded ? "#f0a500" : "#e3b341";
+  const folderColor = isActive ? "var(--crm-primary)" : isExpanded ? "#f0a500" : "var(--crm-warning)";
   const canExpand = hasChildren || node.isLeaf;
 
   return (
@@ -94,7 +94,7 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
         className={`tree-node${isActive ? " active" : ""}`}
         style={{ paddingLeft: `${6 + level * 14}px` }}
         onClick={handleClick}
-        onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, node); }}
+        onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, { type: "category", node }); }}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData("categoryId", node.id);
@@ -113,8 +113,8 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
             aria-label={isExpanded ? "Collapse" : "Expand"}
           >
             {isExpanded
-              ? <IconChevronDown size={11} color="#8b949e" />
-              : <IconChevronRight size={11} color="#8b949e" />}
+              ? <IconChevronDown size={11} color="var(--crm-text-dim)" />
+              : <IconChevronRight size={11} color="var(--crm-text-dim)" />}
           </button>
         ) : (
           <span className="tree-node-arrow-placeholder" />
@@ -122,7 +122,7 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
 
         <span className="tree-node-icon">
           {node.isLeaf
-            ? <IconPackage size={14} color={isActive ? "#58a6ff" : "#8b949e"} />
+            ? <IconPackage size={14} color={isActive ? "var(--crm-primary)" : "var(--crm-text-dim)"} />
             : <IconFolder size={14} color={folderColor} open={isExpanded} />}
         </span>
 
@@ -148,8 +148,8 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
           {/* Brand nodes under leaf categories */}
           {node.isLeaf && (
             loadingNodeBrands
-              ? <div className="tree-node" style={{ paddingLeft: `${6 + (level + 1) * 14}px`, color: "#484f58", fontSize: 11 }}>
-                  <IconSpinner size={11} color="#484f58" /> Loading brands…
+              ? <div className="tree-node" style={{ paddingLeft: `${6 + (level + 1) * 14}px`, color: "var(--crm-text-muted)", fontSize: 11 }}>
+                  <IconSpinner size={11} color="var(--crm-text-muted)" /> Loading brands…
                 </div>
               : brands && brands.length > 0
                 ? brands.map((b) => (
@@ -184,13 +184,13 @@ export default function FolderTreePanel({ onContextMenu, style }) {
           onClick={() => setCurrentCategoryId(null)}
           onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, null); }}
         >
-          <IconHome size={14} color={currentCategoryId === null ? "#58a6ff" : "#8b949e"} />
+          <IconHome size={14} color={currentCategoryId === null ? "var(--crm-primary)" : "var(--crm-text-dim)"} />
           <span className="tree-root-item-label">All Categories</span>
         </div>
 
         {loadingTree ? (
           <div className="tree-loading">
-            <IconSpinner size={14} color="#484f58" />
+            <IconSpinner size={14} color="var(--crm-text-muted)" />
             Loading tree…
           </div>
         ) : (

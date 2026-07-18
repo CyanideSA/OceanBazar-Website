@@ -10,6 +10,10 @@ import { ordersApi, authApi } from '@/lib/api';
 import type { OrderDetail, OrderShipment, PaymentMethod, SavedAddress, ShipmentStatus } from '@/types';
 import { cn } from '@/lib/utils';
 import { OrderTrackingTimeline, getFulfillmentTimelineIndex, type TrackingData } from '@/components/orders/OrderTrackingTimeline';
+import { useAuthStore } from '@/stores/authStore';
+import { connectSocket } from '@/lib/socket';
+import { canRetryOnlinePayment, startOrderPayment } from '@/lib/orderPayment';
+import { trackAbOutcome } from '@/lib/abTest';
 
 const CARRIER_LABELS: Record<string, string> = {
   pathao: 'Pathao Courier',
@@ -137,23 +141,22 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
   const [copied, setCopied] = useState<string | null>(null);
 
   const paymentFlag = searchParams.get('payment');
+  const { user } = useAuthStore();
+  const [liveTrackingNote, setLiveTrackingNote] = useState<string | null>(null);
 
   const { data: order, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['order', orderId],
     queryFn: async () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a8d503'},body:JSON.stringify({sessionId:'a8d503',runId:'pre-fix',hypothesisId:'D',location:'OrderDetailClient.tsx:queryFn',message:'order_fetch_start',data:{orderId,paymentFlag,hasToken:!!localStorage.getItem('ob_access_token')},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       try {
         const r = await ordersApi.get(orderId);
         return parseOrder((r.data as { order: unknown }).order);
       } catch (err: unknown) {
         const ax = err as { response?: { status?: number; data?: { code?: string } } };
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a8d503'},body:JSON.stringify({sessionId:'a8d503',runId:'pre-fix',hypothesisId:'D',location:'OrderDetailClient.tsx:queryFn',message:'order_fetch_error',data:{orderId,status:ax.response?.status,code:ax.response?.data?.code??null,paymentFlag},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         // After SSL return, access token may be stale — refresh once then retry
         if (ax.response?.status === 401 || ax.response?.status === 404) {
+          // #region agent log
+          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A',location:'frontend/components/orders/OrderDetailClient.tsx:manual-refresh',message:'Order detail triggering manual auth refresh',data:{orderId,status:ax.response?.status??null,code:ax.response?.data?.code??null},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           try {
             await authApi.refresh();
             const r2 = await ordersApi.get(orderId);
@@ -177,6 +180,23 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
     }
   }, [searchParams, order]);
 
+  useEffect(() => {
+    if (!order) return;
+    const retryVisible =
+      order.paymentStatus === 'unpaid' &&
+      !['cancelled', 'returned'].includes(order.status) &&
+      canRetryOnlinePayment(order.paymentMethod);
+  }, [order]);
+
+  useEffect(() => {
+    if (!order || paymentFlag !== 'success') return;
+    void trackAbOutcome('payment_success', {
+      value: order.total,
+      idempotencyKey: order.id,
+      metadata: { paymentMethod: order.paymentMethod },
+    });
+  }, [order, paymentFlag]);
+
   const cancelMut = useMutation({
     mutationFn: () => ordersApi.cancel(orderId),
     onSuccess: () => {
@@ -184,6 +204,46 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
+
+  const retryPaymentMut = useMutation({
+    mutationFn: async () => {
+      if (!order || !canRetryOnlinePayment(order.paymentMethod)) {
+        throw new Error(t('paymentRetryUnavailable'));
+      }
+      return startOrderPayment(order.id, order.paymentMethod);
+    },
+    onSuccess: (payment) => {
+      if (payment.redirectUrl) {
+        window.location.href = payment.redirectUrl;
+        return;
+      }
+      throw new Error(t('paymentRetryUnavailable'));
+    },
+  });
+
+  // Live delivery tracking updates pushed from courier webhooks — refetch this order in real time.
+  useEffect(() => {
+    if (!user?.id) return;
+    const socket = connectSocket();
+    socket.emit('join:user', user.id);
+
+    const handleDeliveryUpdate = (payload: { orderId?: string; orderNumber?: string; status?: string; courier?: string }) => {
+      const matches =
+        payload?.orderId === orderId ||
+        (order?.orderNumber && payload?.orderNumber === order.orderNumber);
+      if (!matches) return;
+      setLiveTrackingNote(
+        `Tracking updated: ${(payload.status || '').replace(/_/g, ' ')}${payload.courier ? ` via ${payload.courier}` : ''}`
+      );
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
+      window.setTimeout(() => setLiveTrackingNote(null), 8000);
+    };
+
+    socket.on('delivery:update', handleDeliveryUpdate);
+    return () => {
+      socket.off('delivery:update', handleDeliveryUpdate);
+    };
+  }, [user?.id, orderId, order?.orderNumber, queryClient]);
 
   async function copyText(value: string) {
     try {
@@ -248,6 +308,10 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
   }
 
   const canCancel = order.status === 'pending' || order.status === 'confirmed';
+  const canRetryPayment =
+    order.paymentStatus === 'unpaid' &&
+    !['cancelled', 'returned'].includes(order.status) &&
+    canRetryOnlinePayment(order.paymentMethod);
   const dateLocale = locale === 'bn' ? 'bn-BD' : 'en-US';
 
   const latestShipment = order?.shipments?.[order.shipments.length - 1] ?? null;
@@ -289,6 +353,12 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 px-3 py-4 sm:space-y-6 sm:px-6 sm:py-8 lg:px-8">
+      {paymentFlag === 'failed' || paymentFlag === 'cancelled' || paymentFlag === 'error' ? (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
+          <p className="font-semibold">{t('paymentStillPending')}</p>
+          <p className="mt-1 opacity-80">{t('paymentRetryFromOrderHint')}</p>
+        </div>
+      ) : null}
       <div>
         <Link
           href={`/${locale}/account/orders`}
@@ -327,6 +397,17 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
             >
               🖨️ Invoice
             </Link>
+            {canRetryPayment ? (
+              <button
+                type="button"
+                disabled={retryPaymentMut.isPending}
+                onClick={() => retryPaymentMut.mutate()}
+                className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-sm transition-opacity hover:opacity-95 disabled:opacity-60"
+              >
+                <CreditCard className="h-4 w-4" />
+                {retryPaymentMut.isPending ? t('paymentRetrying') : t('payNow')}
+              </button>
+            ) : null}
             {canCancel ? (
               <button
                 type="button"
@@ -432,6 +513,26 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
                 </dd>
               </div>
             </dl>
+            {canRetryPayment ? (
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="text-sm font-semibold text-foreground">{t('paymentStillPending')}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('paymentRetryFromOrderHint')}</p>
+                <button
+                  type="button"
+                  disabled={retryPaymentMut.isPending}
+                  onClick={() => retryPaymentMut.mutate()}
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-95 disabled:opacity-60"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  {retryPaymentMut.isPending ? t('paymentRetrying') : t('payNow')}
+                </button>
+                {retryPaymentMut.isError ? (
+                  <p className="mt-2 text-xs font-medium text-destructive">
+                    {retryPaymentMut.error instanceof Error ? retryPaymentMut.error.message : t('paymentRetryUnavailable')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-4 border-t border-border pt-4">
               <h3 className="mb-2 text-sm font-semibold text-foreground">{t('orderSummary')}</h3>
               <dl className="space-y-1.5 text-sm">
@@ -501,6 +602,16 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
               <Truck className="h-4 w-4 text-primary sm:h-5 sm:w-5" />
               {t('trackingHeading')}
             </h2>
+
+            {liveTrackingNote ? (
+              <div className="mb-3 flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                </span>
+                {liveTrackingNote}
+              </div>
+            ) : null}
 
             {order.shipments.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t('noShipmentYet')}</p>

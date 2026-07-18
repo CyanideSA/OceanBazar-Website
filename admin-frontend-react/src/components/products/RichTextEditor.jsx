@@ -21,8 +21,8 @@ function ToolbarBtn({ title, active, onClick, children, disabled }) {
       onMouseDown={(e) => { e.preventDefault(); onClick(); }}
       className={`px-1.5 py-1 rounded text-xs font-medium transition-colors select-none disabled:opacity-30 ${
         active
-          ? "bg-blue-600 text-white"
-          : "text-gray-300 hover:bg-gray-700 hover:text-white"
+          ? "bg-crm-primary text-white"
+          : "text-crm-text hover:bg-crm-bg-hover hover:text-crm-text-bright"
       }`}
     >
       {children}
@@ -31,7 +31,7 @@ function ToolbarBtn({ title, active, onClick, children, disabled }) {
 }
 
 function ToolbarSep() {
-  return <div className="w-px h-5 bg-gray-600 mx-1 self-center" />;
+  return <div className="w-px h-5 bg-crm-border mx-1 self-center" />;
 }
 
 export default function RichTextEditor({ value, onChange, placeholder = "Write product description…", minHeight = 240 }) {
@@ -151,9 +151,9 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
   }, [exec]);
 
   return (
-    <div className="border border-gray-600 rounded-xl overflow-hidden bg-gray-900">
+    <div className="border border-crm-border-strong rounded-xl overflow-hidden bg-crm-bg">
       {/* Toolbar Row 1: Format */}
-      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-700 bg-gray-800">
+      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-crm-border bg-crm-bg-alt">
         <ToolbarBtn title="Undo (Ctrl+Z)" onClick={() => exec("undo")}>↩</ToolbarBtn>
         <ToolbarBtn title="Redo (Ctrl+Y)" onClick={() => exec("redo")}>↪</ToolbarBtn>
         <ToolbarSep />
@@ -185,10 +185,10 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
       </div>
 
       {/* Toolbar Row 2: Font, Size, Color, Table, Spacing */}
-      <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-gray-700 bg-gray-800">
+      <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-crm-border bg-crm-bg-alt">
         <select
           title="Font Family"
-          className="text-xs bg-gray-700 border border-gray-600 text-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="text-xs bg-crm-bg-hover border border-crm-border-strong text-crm-text rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-crm-primary"
           defaultValue=""
           onChange={(e) => { if (e.target.value) applyFontFamily(e.target.value); }}
         >
@@ -198,7 +198,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
 
         <select
           title="Font Size"
-          className="text-xs bg-gray-700 border border-gray-600 text-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="text-xs bg-crm-bg-hover border border-crm-border-strong text-crm-text rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-crm-primary"
           defaultValue=""
           onChange={(e) => { if (e.target.value) applyFontSize(e.target.value); }}
         >
@@ -209,7 +209,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
         <ToolbarSep />
 
         <label title="Text Color" className="flex items-center gap-1 cursor-pointer">
-          <span className="text-xs text-gray-300">A</span>
+          <span className="text-xs text-crm-text">A</span>
           <input
             type="color"
             className="w-6 h-6 border-0 bg-transparent cursor-pointer rounded"
@@ -218,7 +218,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
         </label>
 
         <label title="Highlight Color" className="flex items-center gap-1 cursor-pointer">
-          <span className="text-xs text-gray-300">🖊</span>
+          <span className="text-xs text-crm-text">🖊</span>
           <input
             type="color"
             className="w-6 h-6 border-0 bg-transparent cursor-pointer rounded"
@@ -234,7 +234,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
 
         <select
           title="Line Spacing"
-          className="text-xs bg-gray-700 border border-gray-600 text-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="text-xs bg-crm-bg-hover border border-crm-border-strong text-crm-text rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-crm-primary"
           defaultValue=""
           onChange={(e) => { if (e.target.value) applyLineSpacing(e.target.value); }}
         >
@@ -245,26 +245,26 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
 
       {/* Table Dialog */}
       {showTableDialog && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-gray-700 border-b border-gray-600 text-xs">
-          <span className="text-gray-300 font-medium">Insert Table:</span>
-          <label className="text-gray-400">Rows:</label>
+        <div className="flex items-center gap-2 px-3 py-2 bg-crm-bg-hover border-b border-crm-border-strong text-xs">
+          <span className="text-crm-text font-medium">Insert Table:</span>
+          <label className="text-crm-text-dim">Rows:</label>
           <input
             type="number" min="1" max="20" value={tableRows}
             onChange={(e) => setTableRows(e.target.value)}
-            className="w-14 bg-gray-800 border border-gray-600 text-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none"
+            className="w-14 bg-crm-bg-alt border border-crm-border-strong text-crm-text rounded px-2 py-0.5 text-xs focus:outline-none"
           />
-          <label className="text-gray-400">Cols:</label>
+          <label className="text-crm-text-dim">Cols:</label>
           <input
             type="number" min="1" max="10" value={tableCols}
             onChange={(e) => setTableCols(e.target.value)}
-            className="w-14 bg-gray-800 border border-gray-600 text-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none"
+            className="w-14 bg-crm-bg-alt border border-crm-border-strong text-crm-text rounded px-2 py-0.5 text-xs focus:outline-none"
           />
           <button type="button" onMouseDown={(e) => { e.preventDefault(); insertTable(); }}
-            className="px-3 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold">
+            className="px-3 py-0.5 bg-crm-primary hover:bg-crm-primary-hover text-white rounded text-xs font-semibold">
             Insert
           </button>
           <button type="button" onMouseDown={(e) => { e.preventDefault(); setShowTableDialog(false); }}
-            className="px-3 py-0.5 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs">
+            className="px-3 py-0.5 bg-crm-bg-hover hover:bg-crm-bg-alt text-crm-text rounded text-xs">
             Cancel
           </button>
         </div>
@@ -291,7 +291,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
         onInput={triggerChange}
         data-placeholder={placeholder}
         style={{ minHeight }}
-        className="px-4 py-3 text-sm text-gray-100 outline-none overflow-y-auto focus:ring-0 rte-editor"
+        className="px-4 py-3 text-sm text-crm-text-bright outline-none overflow-y-auto focus:ring-0 rte-editor"
         onPaste={(e) => {
           e.preventDefault();
           const html = e.clipboardData.getData("text/html");
@@ -304,11 +304,11 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
       <style>{`
         .rte-editor:empty:before {
           content: attr(data-placeholder);
-          color: #6b7280;
+          color: var(--crm-text-muted);
           pointer-events: none;
         }
         .rte-editor table { border-collapse: collapse; width: 100%; }
-        .rte-editor td, .rte-editor th { border: 1px solid #4b5563; padding: 6px 10px; }
+        .rte-editor td, .rte-editor th { border: 1px solid var(--crm-border-strong); padding: 6px 10px; }
         .rte-editor ul { list-style: disc; padding-left: 1.5rem; }
         .rte-editor ol { list-style: decimal; padding-left: 1.5rem; }
         .rte-editor p { margin: 0 0 0.5em 0; }
@@ -318,7 +318,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write p
         .rte-editor i, .rte-editor em { font-style: italic; }
         .rte-editor u { text-decoration: underline; }
         .rte-editor s { text-decoration: line-through; }
-        .rte-editor a { color: #60a5fa; text-decoration: underline; }
+        .rte-editor a { color: var(--crm-primary); text-decoration: underline; }
         .rte-editor img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0; }
       `}</style>
     </div>

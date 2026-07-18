@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
+
 
 export async function ensureCustomerForUser(userId: string): Promise<void> {
   await prisma.customer.upsert({

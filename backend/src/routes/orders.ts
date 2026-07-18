@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { requireAuth } from '../middleware/auth';
 import {
   validateCheckoutWithCore,
@@ -14,10 +15,14 @@ import { emitAdminEvent } from '../lib/adminEvents';
 import { publishDomainEvent } from '../events/publisher';
 import { COD_FEE } from '../utils/codRules';
 import { appLog } from '../lib/appLog';
+import { v4 as uuidv4 } from 'uuid';
+import { notifyCustomer } from '../services/customerNotify';
 
+/** Orders may be cancelled for free within this window; after that (if paid) a return request is required. */
+const FREE_CANCEL_WINDOW_HOURS = 12;
+const PAID_STATUSES = ['paid', 'under_verification', 'pending_verification'];
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(requireAuth);
 
@@ -39,17 +44,7 @@ router.post('/place', async (req: Request, res: Response) => {
     notes?: string;
   };
 
-  // #region agent log
-  const _dbg = (message: string, hypothesisId: string, data: Record<string, unknown>) => {
-    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId,location:'orders.ts:place',message,data,timestamp:Date.now()})}).catch(()=>{});
-  };
-  _dbg('place entry', 'C', { paymentMethod, shippingAddressId, userId: req.user?.userId, hasCoupon: !!(couponCode || couponId) });
-  // #endregion
-
   if (shippingAddressId == null || !Number.isFinite(Number(shippingAddressId))) {
-    // #region agent log
-    _dbg('place reject missing address', 'B', { shippingAddressId });
-    // #endregion
     res.status(400).json({ error: 'Shipping address is required' });
     return;
   }
@@ -106,17 +101,11 @@ router.post('/place', async (req: Request, res: Response) => {
     });
   } catch (err: unknown) {
     const ax = err as { response?: { status?: number; data?: unknown } };
-    // #region agent log
-    _dbg('place core validation unavailable', 'C', { status: ax.response?.status, detail: ax.response?.data });
-    // #endregion
     res.status(ax.response?.status || 502).json(ax.response?.data ?? { error: 'Checkout validation unavailable' });
     return;
   }
 
   if (!coreValidation.valid) {
-    // #region agent log
-    _dbg('place core validation invalid', 'C', { errors: coreValidation.errors, paymentMethod });
-    // #endregion
     res.status(400).json({ errors: coreValidation.errors });
     return;
   }
@@ -145,6 +134,21 @@ router.post('/place', async (req: Request, res: Response) => {
     obDiscount = rd.bdtValue;
   }
 
+  // ── Snapshot product images onto order items (primary asset, else first) ──
+  const lineProductIds = [...new Set(coreValidation.lines.map((l) => l.productId))];
+  const productAssets = lineProductIds.length
+    ? await prisma.productAsset.findMany({
+        where: { productId: { in: lineProductIds }, assetType: 'image' },
+        orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+      })
+    : [];
+  const imageByProductId = new Map<string, string>();
+  for (const asset of productAssets) {
+    if (!imageByProductId.has(asset.productId)) imageByProductId.set(asset.productId, asset.url);
+  }
+
+  // Omit productImage from Prisma create — Docker @prisma/client may lag schema.
+  // Snapshot images via raw SQL after create (column exists on order_items).
   const orderItems = coreValidation.lines.map((line) => ({
     productId: line.productId,
     variantId: line.variantId ?? undefined,
@@ -157,50 +161,63 @@ router.post('/place', async (req: Request, res: Response) => {
 
   const orderId = generateEntityId();
   // ── Persist order/coupon/stock/cart atomically ──────────────────────────
-  const order = await prisma.$transaction(async (tx) => {
-    if (resolvedCouponId) {
-      await tx.coupon.update({
-        where: { id: resolvedCouponId },
-        data: { usedCount: { increment: 1 } },
-      });
-    }
+  let order;
+  try {
+    order = await prisma.$transaction(async (tx) => {
+      if (resolvedCouponId) {
+        await tx.coupon.update({
+          where: { id: resolvedCouponId },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
 
-    const createdOrder = await tx.order.create({
-      data: {
-        id: orderId,
-        orderNumber: formatOrderNumber(orderId),
-        userId: req.user!.userId,
-        customerType: req.user!.userType,
-        subtotal: result.totals.subtotal,
-        discount: result.totals.discount,
-        gst: result.totals.gst,
-        shippingFee: result.totals.shippingFee,
-        serviceFee: result.totals.serviceFee,
-        obPointsUsed: obPointsToRedeem,
-        obDiscount: result.totals.obDiscount,
-        couponId: resolvedCouponId,
-        total: finalTotal,
-        paymentMethod: paymentMethod as
-          | 'cod' | 'bkash' | 'nagad' | 'rocket' | 'upay' | 'sslcommerz' | 'installment',
-        shippingAddressId,
-        notes,
-        ...(codFeeAmount > 0 ? { codFee: codFeeAmount } : {}),
-        items: { create: orderItems },
-        timeline: {
-          create: {
-            status: 'pending',
-            note: 'Order placed',
-            actorType: 'customer',
-            actorId: req.user!.userId,
+      const createdOrder = await tx.order.create({
+        data: {
+          id: orderId,
+          orderNumber: formatOrderNumber(orderId),
+          userId: req.user!.userId,
+          customerType: req.user!.userType,
+          subtotal: result.totals.subtotal,
+          discount: result.totals.discount,
+          gst: result.totals.gst,
+          shippingFee: result.totals.shippingFee,
+          serviceFee: result.totals.serviceFee,
+          obPointsUsed: obPointsToRedeem,
+          obDiscount: result.totals.obDiscount,
+          couponId: resolvedCouponId,
+          total: finalTotal,
+          paymentMethod: paymentMethod as
+            | 'cod' | 'bkash' | 'nagad' | 'rocket' | 'upay' | 'sslcommerz' | 'installment',
+          shippingAddressId,
+          notes,
+          ...(codFeeAmount > 0 ? { codFee: codFeeAmount } : {}),
+          items: { create: orderItems },
+          timeline: {
+            create: {
+              status: 'pending',
+              note: 'Order placed',
+              actorType: 'customer',
+              actorId: req.user!.userId,
+            },
           },
         },
-      },
-      include: { items: true, timeline: true },
-    });
+        include: { items: true, timeline: true },
+      });
 
-    await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-    return createdOrder;
-  });
+      for (const item of createdOrder.items) {
+        const url = imageByProductId.get(item.productId);
+        if (!url) continue;
+        await tx.$executeRaw`
+          UPDATE order_items SET product_image = ${url} WHERE id = ${item.id}
+        `;
+      }
+
+      await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+      return createdOrder;
+    });
+  } catch (persistErr) {
+    throw persistErr;
+  }
 
   try {
     await fulfillInventoryForOrder(
@@ -229,7 +246,6 @@ router.post('/place', async (req: Request, res: Response) => {
       sendOrderConfirmationWhatsApp(user.phone, order.orderNumber, Number(order.total), order.items.map(i => ({ productTitle: i.productTitle, quantity: i.quantity }))).catch(() => {});
     }
   } catch { /* non-fatal */ }
-
 
   // ── OB points: earn + tier upgrade ──────────────────────────────────────
   const onlineMethods = ['bkash', 'nagad', 'rocket', 'upay', 'sslcommerz'];
@@ -344,31 +360,6 @@ router.get('/:id', async (req: Request, res: Response) => {
     },
   });
   if (!order) {
-    // #region agent log
-    const ownedByOther = await prisma.order.findUnique({
-      where: { id },
-      select: { id: true, userId: true, paymentStatus: true, status: true },
-    });
-    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8d503' },
-      body: JSON.stringify({
-        sessionId: 'a8d503',
-        runId: process.env.DEBUG_RUN_ID || 'pre-fix',
-        hypothesisId: 'D',
-        location: 'orders.ts:GET/:id',
-        message: 'order_get_404',
-        data: {
-          orderId: id,
-          requesterId,
-          exists: !!ownedByOther,
-          ownerMismatch: !!(ownedByOther && ownedByOther.userId !== requesterId),
-          paymentStatus: ownedByOther?.paymentStatus ?? null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     res.status(404).json({
       error: 'Order not found',
       code: ownedByOther && ownedByOther.userId !== requesterId ? 'ORDER_OWNER_MISMATCH' : 'ORDER_NOT_FOUND',
@@ -386,9 +377,63 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
     include: { items: true },
   });
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
-  if (!['pending', 'confirmed'].includes(order.status)) {
+  if (!['pending', 'confirmed', 'processing'].includes(order.status)) {
     res.status(400).json({ error: 'Order cannot be cancelled at this stage' }); return;
   }
+
+  const hoursSinceOrder = (Date.now() - order.createdAt.getTime()) / (60 * 60 * 1000);
+  const isPaid = PAID_STATUSES.includes(order.paymentStatus);
+
+  // Paid orders older than the free-cancel window must go through the return/refund flow.
+  if (isPaid && hoursSinceOrder > FREE_CANCEL_WINDOW_HOURS) {
+    res.status(400).json({
+      error: 'This order was paid more than 12 hours ago. Please submit a return request to cancel it.',
+      code: 'CANCEL_WINDOW_EXPIRED',
+    });
+    return;
+  }
+
+  // Paid orders within the window still require admin review — create a return/cancellation request.
+  if (isPaid) {
+    const existing = await prisma.return_requests.findFirst({
+      where: { order_id: order.id, user_id: req.user!.userId },
+    });
+    if (existing) {
+      res.status(409).json({
+        error: 'A cancellation request for this order already exists',
+        returnRequest: existing,
+      });
+      return;
+    }
+
+    const returnReq = await prisma.return_requests.create({
+      data: {
+        id: uuidv4(),
+        order_id: order.id,
+        user_id: req.user!.userId,
+        reason: 'cancel',
+        reason_category: 'order_cancellation',
+        description: 'Customer requested cancellation after payment was received.',
+        items: JSON.stringify(order.items.map((i) => ({
+          productId: i.productId,
+          title: i.productTitle,
+          quantity: i.quantity,
+          unitPrice: Number(i.unitPrice),
+        }))),
+        status: 'pending',
+        timeline: JSON.stringify([{ status: 'pending', timestamp: new Date().toISOString(), actor: 'customer', note: 'Cancellation requested' }]),
+      },
+    });
+
+    res.status(202).json({
+      message: 'Your order is already paid — a cancellation request has been created and is awaiting admin review.',
+      code: 'CANCEL_CONVERTED_TO_RETURN',
+      returnRequest: returnReq,
+    });
+    return;
+  }
+
+  // Unpaid orders within stage — free cancel.
   await prisma.order.update({ where: { id: order.id }, data: { status: 'cancelled' } });
   await prisma.orderTimeline.create({
     data: { orderId: order.id, status: 'cancelled', note: 'Cancelled by customer', actorType: 'customer', actorId: req.user!.userId },
@@ -404,6 +449,9 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
       } catch { /* non-fatal */ }
     })
   );
+  try {
+    await notifyCustomer({ userId: req.user!.userId, event: 'order_cancelled', vars: { orderNumber: order.orderNumber } });
+  } catch { /* non-fatal */ }
   res.json({ message: 'Order cancelled' });
 });
 

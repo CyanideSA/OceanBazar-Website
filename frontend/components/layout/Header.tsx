@@ -17,6 +17,7 @@ import { usePathname } from 'next/navigation';
 import { useShopRouter } from '@/lib/shopNavigation';
 import { cn } from '@/lib/utils';
 import FlashSaleBanner from '@/components/flash-sale/FlashSaleBanner';
+import LiveChatLink from '@/components/chat/LiveChatLink';
 
 export default function Header() {
   const t = useTranslations('nav');
@@ -201,16 +202,26 @@ export default function Header() {
               { href: `/${locale}/products`,  label: t('products')     },
               { href: `/${locale}/products/best-rated`, label: tp('bestRated') },
               { href: `/${locale}/wholesale`, label: t('wholesaleHub') },
-              { href: `/${locale}/chat`,      label: t('chat')         },
+              { href: `/${locale}/chat`,      label: t('chat'), liveChat: true },
               ...(isAuthenticated ? [{ href: `/${locale}/account/orders`, label: t('orders') }] : []),
             ].map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="rounded px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                {link.label}
-              </Link>
+              link.liveChat ? (
+                <LiveChatLink
+                  key={link.href}
+                  href={link.href}
+                  className="rounded px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  {link.label}
+                </LiveChatLink>
+              ) : (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="rounded px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  {link.label}
+                </Link>
+              )
             ))}
           </nav>
         </div>

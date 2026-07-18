@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { generateEntityId } from '../../utils/hexId';
 import { emitToRoom } from '../../lib/adminEvents';
@@ -12,7 +13,6 @@ import type {
 import { DEFAULT_QUICK_REPLIES } from './types';
 import { acknowledge, buildTextMessage, buildTypedMessage, fallback, greeting } from './responseVariator';
 
-const prisma = new PrismaClient();
 
 function toNum(v: unknown): number {
   return Number(v ?? 0);
@@ -48,7 +48,7 @@ async function searchProducts(query: string, budget?: number, limit = 5): Promis
       rating: p.ratingAvg ? toNum(p.ratingAvg) : undefined,
       stock: p.stock,
       image: p.productAssets[0]?.url,
-      url: `/en/products/${p.id}`,
+      url: `/en/product/${p.id}`,
     });
   }
   return cards.slice(0, limit);
@@ -261,8 +261,10 @@ export async function runIntentHandler(opts: {
     }
     const query = entities.productQuery || (ctx.slots.productQuery as string) || text;
     const budget = entities.budget || (ctx.slots.budget as number | undefined);
+    // Empty query = no title/brand filter → best sellers by rating (a literal
+    // "popular" term matches nothing in product titles).
     const cards = intent === 'product_recommendation'
-      ? await searchProducts('popular', budget, 4)
+      ? await searchProducts('', budget, 4)
       : await searchProducts(query, budget, 5);
     if (!cards.length) {
       return {
@@ -497,7 +499,17 @@ export async function runActionHandler(opts: {
   }
 
   if (action === 'browse_products') {
-    const cards = await searchProducts('popular', undefined, 4);
+    const cards = await searchProducts('', undefined, 4);
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'BOT-A',location:'backend/src/services/chat/handlers.ts:browse_products',message:'Browse products action executed',data:{cardCount:cards.length,firstCard:cards[0]?.name??null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    if (!cards.length) {
+      return {
+        messages: [buildTextMessage('No products are available right now. Please try again later or talk to our team.', { quickReplies: DEFAULT_QUICK_REPLIES })],
+        contextPatch: {},
+        escalate: false,
+      };
+    }
     return {
       messages: [buildTypedMessage('Popular picks for you:', 'product_card', cards, { quickReplies: ['Add to cart'] })],
       contextPatch: {},

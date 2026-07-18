@@ -8,11 +8,9 @@
  *
  * Install: npm install web-push @types/web-push
  */
+import { prisma } from '../lib/prisma';
 
 import webpush from 'web-push';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
 
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';

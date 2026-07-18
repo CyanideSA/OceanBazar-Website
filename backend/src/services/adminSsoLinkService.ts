@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import type { GoogleIdTokenClaims } from './googleSsoService';
 import type { MicrosoftIdTokenClaims } from './microsoftSsoService';
 
-const prisma = new PrismaClient();
 
 type AdminRow = {
   id: number;

@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { routeParam } from '../../utils/params';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const normalizeDispute = (d: any) => ({
   id: d.id,

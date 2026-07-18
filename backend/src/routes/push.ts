@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { requireAdminReauth } from '../middleware/adminReauth';
 
@@ -7,7 +8,6 @@ import { generateEntityId } from '../utils/hexId';
 import { isVapidConfigured, broadcast } from '../services/pushNotificationService';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 /** GET /api/push/vapid-key — public key for frontend subscription */
 router.get('/vapid-key', (_req, res) => {

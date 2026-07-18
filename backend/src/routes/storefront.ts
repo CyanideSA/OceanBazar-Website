@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { getRedisClient } from '../cache/redisClient';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import axios from 'axios';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const CORE_API = process.env.CORE_API_URL || 'http://127.0.0.1:8000';
 const CACHE_KEY = 'storefront:settings';

@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { sendMail, emailWrapper } from '../services/emailService';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const SUBSCRIBER_KEY = 'newsletter_subscribers';
 

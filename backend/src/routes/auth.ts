@@ -10,7 +10,8 @@ import {
 import { requireAuth } from '../middleware/auth';
 import { emitAdminEvent } from '../lib/adminEvents';
 import { authLimiter, otpLimiter } from '../middleware/rateLimiter';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
@@ -20,10 +21,10 @@ import {
   issueRefreshSession,
   rotateRefreshSession,
   revokeRefreshSessionByToken,
+  getLoginVerificationDecision,
 } from '../services/userSessionService';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // ─── Setup Passport strategies (only if real OAuth creds are configured) ─────
 
@@ -91,8 +92,19 @@ router.post(
   '/register',
   [
     body('name').trim().notEmpty().withMessage('Name required'),
-    body('email').optional().isEmail(),
-    body('phone').optional().isMobilePhone('any'),
+    body('email').optional({ values: 'falsy' }).isEmail(),
+    body('phone').optional({ values: 'falsy' }).customSanitizer((v) => {
+      if (typeof v !== 'string' || !v.trim()) return v;
+      // Normalize BD local formats before mobile validation
+      const t = v.trim();
+      if (t.includes('@')) return t;
+      let digits = t.replace(/[^\d+]/g, '');
+      if (digits.startsWith('+')) return digits;
+      if (digits.startsWith('00')) digits = digits.slice(2);
+      if (digits.startsWith('88') && digits.length >= 11) return `+${digits}`;
+      if (digits.startsWith('0')) return `+880${digits.slice(1)}`;
+      return `+880${digits}`;
+    }).isMobilePhone('any'),
     body('password').notEmpty(),
   ],
   async (req: Request, res: Response) => {
@@ -105,7 +117,7 @@ router.post(
       const recaptchaToken = (req.body as { recaptchaToken?: string }).recaptchaToken;
       const captcha = await verifyRecaptchaToken(recaptchaToken || '', 'register');
       if (!captcha.ok) {
-        res.status(403).json({ error: 'reCAPTCHA verification failed' });
+        res.status(403).json({ error: 'reCAPTCHA verification failed', reason: captcha.reason });
         return;
       }
       console.log(`[AUTH] Register attempt for email: ${req.body.email}, phone: ${req.body.phone}`);
@@ -130,9 +142,6 @@ router.post(
 router.post('/send-otp', otpLimiter, async (req: Request, res: Response) => {
   const { target, type = 'login' } = req.body as { target: string; type: string };
   if (!target) { res.status(400).json({ error: 'target (email or phone) required' }); return; }
-  // #region agent log
-  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'E',location:'auth.ts:send-otp',message:'send otp',data:{type,isEmail:target.includes('@'),startsWithPlus:target.trim().startsWith('+'),len:target.length},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   await sendOtp(target, type as 'login' | 'forgot_password' | 'verify_email');
   res.json({ message: 'Verification code sent to your configured email or phone channel.' });
 });
@@ -145,10 +154,15 @@ router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
 
   const otpType = (type === 'verify_email' ? 'verify_email' : 'login') as 'login' | 'verify_email';
   const ok = await verifyOtp(target, code, otpType);
-  // #region agent log
-  fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'74a2e3'},body:JSON.stringify({sessionId:'74a2e3',hypothesisId:'D',location:'auth.ts:verify-otp',message:'verify otp result',data:{type:otpType,ok,isEmail:target.includes('@')},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (!ok) { res.status(401).json({ error: 'Invalid or expired OTP' }); return; }
+
+  // Any successful email OTP proves ownership of that address.
+  if (target.includes('@')) {
+    await prisma.user.updateMany({
+      where: { email: target },
+      data: { emailVerified: true },
+    });
+  }
 
   // For verify_email type, just confirm verification without creating a session
   if (otpType === 'verify_email') {
@@ -162,7 +176,7 @@ router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
     : await findOrCreateUserByPhone(target);
 
   const access = issueAccessToken(user.id, user.userType);
-  const refresh = await issueRefreshSession(user.id, req);
+  const refresh = await issueRefreshSession(user.id, req, { verified: true });
   res
     .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
     .json({ access, user: sanitizeUser(user) });
@@ -185,6 +199,18 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     console.log(`[AUTH] Login attempt for identifier: ${identifier}`);
     const user = await loginWithPassword(identifier, password);
     console.log(`[AUTH] Login successful for user: ${user.id}, email: ${user.email}, phone: ${user.phone}`);
+    if (user.email) {
+      const verification = await getLoginVerificationDecision(user.id, req);
+      if (verification.required) {
+        await sendOtp(user.email, 'login');
+        res.status(202).json({
+          requiresEmailOtp: true,
+          verificationTarget: user.email,
+          reason: verification.reason,
+        });
+        return;
+      }
+    }
     const access = issueAccessToken(user.id, user.userType);
     const refresh = await issueRefreshSession(user.id, req);
     res
@@ -342,16 +368,12 @@ if (hasGoogle) {
     socialCallback
   );
 } else {
-  // Dev mock: create/find a social user and redirect with real token
-  router.get('/social/google', async (req: Request, res: Response) => {
-    try {
-      const user = await upsertSocialUser({ provider: 'google', providerId: 'mock-google-001', name: 'Google Demo User', email: 'google-demo@oceanbazar.com', accessToken: 'mock' });
-      const access = issueAccessToken(user.id, user.userType);
-      const refresh = await issueRefreshSession(user.id, req);
-      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-      res.cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
-         .redirect(`${clientUrl}/auth/callback?token=${access}`);
-    } catch { res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/login?error=social`); }
+  // OAuth credentials not configured — do NOT mint demo users (that leaked into storefront login).
+  router.get('/social/google', (_req: Request, res: Response) => {
+    res.status(501).json({
+      error: 'Google OAuth is not configured on the API. Use Firebase social login from the storefront.',
+      code: 'SOCIAL_OAUTH_NOT_CONFIGURED',
+    });
   });
 }
 
@@ -363,15 +385,11 @@ if (hasFacebook) {
     socialCallback
   );
 } else {
-  router.get('/social/facebook', async (req: Request, res: Response) => {
-    try {
-      const user = await upsertSocialUser({ provider: 'facebook', providerId: 'mock-fb-001', name: 'Facebook Demo User', email: 'facebook-demo@oceanbazar.com', accessToken: 'mock' });
-      const access = issueAccessToken(user.id, user.userType);
-      const refresh = await issueRefreshSession(user.id, req);
-      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-      res.cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
-         .redirect(`${clientUrl}/auth/callback?token=${access}`);
-    } catch { res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/login?error=social`); }
+  router.get('/social/facebook', (_req: Request, res: Response) => {
+    res.status(501).json({
+      error: 'Facebook OAuth is not configured on the API. Use Firebase social login from the storefront.',
+      code: 'SOCIAL_OAUTH_NOT_CONFIGURED',
+    });
   });
 }
 

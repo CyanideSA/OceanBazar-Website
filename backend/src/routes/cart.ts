@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { requireAuth } from '../middleware/auth';
 import { proxyCartToCore, validateCheckoutWithCore, toNumber } from '../clients/commerce-client';
 import { getBalance } from '../services/obPointsService';
@@ -8,7 +9,6 @@ import { routeParam } from '../utils/params';
 import { appLog } from '../lib/appLog';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(requireAuth);
 

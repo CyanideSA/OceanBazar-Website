@@ -99,11 +99,17 @@ export default function middleware(request: NextRequest) {
     }
   }
 
-  const defaultLocale = request.cookies.get('NEXT_LOCALE')?.value || 'bn';
+  const cookieLocale = request.cookies.get('NEXT_LOCALE')?.value;
+  const defaultLocale =
+    cookieLocale && locales.includes(cookieLocale as (typeof locales)[number])
+      ? cookieLocale
+      : 'bn';
   return createMiddleware({
     locales: [...locales],
     defaultLocale: defaultLocale as 'en' | 'bn',
     localePrefix: 'always',
+    // Prefer Bangla for first-time visitors; do not follow Accept-Language to English.
+    localeDetection: false,
   })(request);
 }
 

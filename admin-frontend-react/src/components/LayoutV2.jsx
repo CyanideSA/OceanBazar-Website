@@ -157,8 +157,8 @@ function CommandPalette({ isOpen, onClose, onSelect, allItems }) {
         className="relative w-full max-w-lg rounded-xl border border-crm-border bg-crm-bg-alt shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-crm-border">
-          <FiSearch size={18} className="text-crm-text-muted shrink-0" />
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-crm-border bg-crm-bg-alt">
+          <FiSearch size={18} className="text-crm-primary shrink-0" />
           <input
             ref={inputRef}
             value={query}
@@ -170,9 +170,9 @@ function CommandPalette({ isOpen, onClose, onSelect, allItems }) {
               }
             }}
             placeholder="Search pages, commands…"
-            className="flex-1 bg-transparent text-sm text-crm-text-bright placeholder:text-crm-text-muted outline-none"
+            className="flex-1 bg-transparent text-sm font-semibold text-crm-text-bright placeholder:text-crm-text-dim outline-none"
           />
-          <kbd className="text-[10px] bg-crm-bg px-1.5 py-0.5 rounded border border-crm-border text-crm-text-muted font-mono">ESC</kbd>
+          <kbd className="text-[10px] bg-crm-bg-hover px-1.5 py-0.5 rounded border border-crm-border text-crm-text font-mono font-bold">ESC</kbd>
         </div>
         <div className="max-h-[320px] overflow-y-auto custom-scrollbar py-1">
           {results.length === 0 ? (
@@ -184,9 +184,9 @@ function CommandPalette({ isOpen, onClose, onSelect, allItems }) {
                 onClick={() => onSelect(item.key)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-crm-bg-hover transition-colors"
               >
-                <item.icon size={16} className="text-crm-text-muted shrink-0" />
-                <span className="text-sm text-crm-text-bright font-medium">{item.label}</span>
-                <span className="ml-auto text-[10px] text-crm-text-muted">Navigate</span>
+                <item.icon size={16} className="text-crm-primary shrink-0" />
+                <span className="text-sm text-crm-text-bright font-semibold">{item.label}</span>
+                <span className="ml-auto text-[10px] text-crm-text-dim font-semibold">Navigate</span>
               </button>
             ))
           )}
@@ -212,7 +212,7 @@ export default function Layout({
   liveConnected = false, wsConnected = false,
   connMeta = null,
   soundEnabled = true, onToggleSound,
-  theme = "dark", onToggleTheme,
+  theme = "light", onToggleTheme,
   children
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -232,30 +232,6 @@ export default function Layout({
     NAV_GROUPS.forEach(g => g.items.forEach(i => { if (accessibleNavKeys.has(i.key)) items.push(i); }));
     return items;
   }, [accessibleNavKeys]);
-
-  useEffect(() => {
-    // #region agent log
-    fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
-      body: JSON.stringify({
-        sessionId: "9a9989",
-        runId: "crm-visibility-check",
-        hypothesisId: "H4",
-        location: "src/components/LayoutV2.jsx:visible-nav",
-        message: "Computed visible navigation",
-        data: {
-          role: String(admin?.role || ""),
-          active,
-          navKeys: allNavItems.map((i) => i.key),
-          hasSecurityNav: allNavItems.some((i) => i.key === "security"),
-          hasThemeToggle: typeof onToggleTheme === "function",
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [admin?.role, active, allNavItems, onToggleTheme]);
 
   const onSelectAndClose = useCallback((key) => {
     onSelect(key);
@@ -302,16 +278,16 @@ export default function Layout({
               <span className="text-[9px] font-semibold text-crm-text-muted align-top">CRM</span>
             </motion.div>
           )}
-          <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-md hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-text-bright transition-colors">
+          <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-md hover:bg-crm-bg-hover text-crm-primary hover:text-crm-primary-hover transition-colors">
             {collapsed ? <FiChevronRight size={18} /> : <FiChevronLeft size={18} />}
           </button>
         </div>
 
         {!collapsed && (
           <div className="px-3 mb-3">
-            <button onClick={() => setCmdOpen(true)} className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-crm-text-muted text-xs hover:bg-crm-bg-hover transition-colors border border-crm-border">
-              <FiSearch size={14} /><span className="flex-1 text-left">Quick find…</span>
-              <kbd className="text-[10px] bg-crm-bg px-1.5 py-0.5 rounded border border-crm-border font-mono">⌘K</kbd>
+            <button onClick={() => setCmdOpen(true)} className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-crm-text font-semibold text-xs bg-crm-bg-alt hover:bg-crm-bg-hover transition-colors border border-crm-border-strong shadow-sm">
+              <FiSearch size={14} className="text-crm-primary" /><span className="flex-1 text-left">Quick find…</span>
+              <kbd className="text-[10px] bg-crm-bg-hover px-1.5 py-0.5 rounded border border-crm-border font-mono font-bold text-crm-text">⌘K</kbd>
             </button>
           </div>
         )}
@@ -319,18 +295,18 @@ export default function Layout({
         <nav className="flex-1 px-3 space-y-5 custom-scrollbar overflow-y-auto pb-2">
           {visibleGroups.map((group, idx) => (
             <div key={idx} className="space-y-0.5">
-              {!collapsed && <h3 className="px-3 text-[10px] font-bold uppercase tracking-widest text-crm-text-muted mb-1.5">{group.title}</h3>}
+              {!collapsed && <h3 className="px-3 text-[10px] font-black uppercase tracking-widest text-crm-text mb-1.5">{group.title}</h3>}
               {group.items.map(item => {
                 const isActive = active === item.key;
                 const badgeVal = item.badgeKey ? liveCounters[item.badgeKey] : null;
                 return (
                   <button key={item.key} onClick={() => onSelectAndClose(item.key)} title={collapsed ? item.label : ""}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all relative ${isActive ? "bg-crm-primary text-white shadow-lg shadow-crm-primary/20" : "text-crm-text-dim hover:bg-crm-bg-hover hover:text-crm-text-bright"}`}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all relative font-semibold ${isActive ? "bg-crm-primary text-white shadow-lg shadow-crm-primary/20" : "text-crm-text-bright hover:bg-crm-bg-hover"}`}
                   >
-                    <item.icon size={collapsed ? 22 : 16} className="shrink-0" />
+                    <item.icon size={collapsed ? 22 : 16} className={`shrink-0 ${isActive ? "text-white" : "text-crm-primary"}`} />
                     {!collapsed && (
                       <>
-                        <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
+                        <span className="text-sm font-semibold flex-1 text-left">{item.label}</span>
                         {badgeVal > 0 && (
                           <span className={`flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${isActive ? "bg-white/20 text-white" : "bg-crm-danger text-white"}`}>
                             {badgeVal > 99 ? "99+" : badgeVal}
@@ -379,17 +355,17 @@ export default function Layout({
             >
               <div className="flex items-center justify-between p-4">
                 <img src="/ob-brand-logo.png?v=5" alt="OceanBazar" className="h-11 w-auto object-contain drop-shadow-md" />
-                <button onClick={() => setMobileNavOpen(false)} className="p-1.5 text-crm-text-dim hover:text-crm-text-bright"><FiX size={20} /></button>
+                <button onClick={() => setMobileNavOpen(false)} className="p-1.5 text-crm-primary hover:text-crm-primary-hover"><FiX size={20} /></button>
               </div>
               <nav className="flex-1 px-3 space-y-5 overflow-y-auto pb-4">
                 {visibleGroups.map((group, idx) => (
                   <div key={idx} className="space-y-0.5">
-                    <h3 className="px-3 text-[10px] font-bold uppercase tracking-widest text-crm-text-muted mb-1.5">{group.title}</h3>
+                    <h3 className="px-3 text-[10px] font-black uppercase tracking-widest text-crm-text mb-1.5">{group.title}</h3>
                     {group.items.map(item => (
                       <button key={item.key} onClick={() => onSelectAndClose(item.key)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${active === item.key ? "bg-crm-primary text-white" : "text-crm-text-dim hover:bg-crm-bg-hover hover:text-crm-text-bright"}`}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-all font-semibold ${active === item.key ? "bg-crm-primary text-white" : "text-crm-text-bright hover:bg-crm-bg-hover"}`}
                       >
-                        <item.icon size={18} className="shrink-0" /><span className="text-sm font-medium">{item.label}</span>
+                        <item.icon size={18} className={`shrink-0 ${active === item.key ? "text-white" : "text-crm-primary"}`} /><span className="text-sm font-semibold">{item.label}</span>
                       </button>
                     ))}
                   </div>
@@ -402,7 +378,7 @@ export default function Layout({
                     <p className="text-sm font-semibold truncate text-crm-text-bright">{admin?.name}</p>
                     <p className="text-[10px] text-crm-text-dim uppercase tracking-wider">{admin?.roleLabel || admin?.role}</p>
                   </div>
-                  <button onClick={onLogout} className="p-1.5 text-crm-text-dim hover:text-crm-danger"><FiLogOut size={16} /></button>
+                  <button onClick={onLogout} className="p-1.5 text-crm-primary hover:text-crm-danger"><FiLogOut size={16} /></button>
                 </div>
               </div>
             </motion.aside>
@@ -415,20 +391,20 @@ export default function Layout({
         {/* Topbar */}
         <header className="crm-topbar">
           <div className="flex items-center gap-3">
-            <button className="lg:hidden p-2 rounded-md text-crm-text-dim hover:bg-crm-bg-hover" onClick={() => setMobileNavOpen(true)}>
+            <button className="lg:hidden p-2 rounded-md text-crm-primary hover:bg-crm-bg-hover" onClick={() => setMobileNavOpen(true)}>
               <FiMenu size={22} />
             </button>
             <div className="hidden sm:flex items-center gap-1.5 text-sm">
-              <span className="text-crm-text-muted">Admin</span>
-              <FiChevronRight size={12} className="text-crm-text-muted" />
-              <span className="text-crm-text-bright font-semibold">{currentModuleLabel}</span>
+              <span className="text-crm-text-dim font-semibold">Admin</span>
+              <FiChevronRight size={12} className="text-crm-primary" />
+              <span className="text-crm-text-bright font-bold">{currentModuleLabel}</span>
             </div>
           </div>
 
           <div className="relative max-w-sm w-full mx-4 hidden md:block">
-            <button onClick={() => setCmdOpen(true)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-crm-border bg-crm-bg text-crm-text-muted text-sm hover:border-crm-border-strong transition-colors">
-              <FiSearch size={14} /><span className="flex-1 text-left text-xs">Search anything…</span>
-              <kbd className="text-[10px] bg-crm-bg-alt px-1.5 py-0.5 rounded border border-crm-border font-mono">⌘K</kbd>
+            <button onClick={() => setCmdOpen(true)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-crm-border-strong bg-crm-bg-alt text-crm-text text-sm font-semibold hover:border-crm-primary/40 hover:bg-crm-bg-hover transition-colors shadow-sm">
+              <FiSearch size={14} className="text-crm-primary" /><span className="flex-1 text-left text-xs">Search anything…</span>
+              <kbd className="text-[10px] bg-crm-bg-hover px-1.5 py-0.5 rounded border border-crm-border font-mono font-bold text-crm-text">⌘K</kbd>
             </button>
           </div>
 
@@ -455,24 +431,9 @@ export default function Layout({
 
             <button
               onClick={() => {
-                // #region agent log
-                fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
-                  body: JSON.stringify({
-                    sessionId: "9a9989",
-                    runId: "color-debug",
-                    hypothesisId: "H2",
-                    location: "src/components/LayoutV2.jsx:theme-toggle",
-                    message: "Theme toggle button clicked",
-                    data: { themeBefore: theme, hasHandler: typeof onToggleTheme === "function" },
-                    timestamp: Date.now(),
-                  }),
-                }).catch(() => {});
-                // #endregion
                 onToggleTheme?.();
               }}
-              className="p-2 rounded-lg text-crm-text-dim hover:bg-crm-bg-hover transition-colors"
+              className="p-2 rounded-lg text-crm-primary hover:bg-crm-bg-hover hover:text-crm-primary-hover transition-colors"
               title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             >
               {theme === "dark" ? <FiSun size={18} /> : <FiMoon size={18} />}
@@ -480,7 +441,7 @@ export default function Layout({
 
             {/* Notification bell + dropdown */}
             <div className="relative" ref={notifRef}>
-              <button onClick={() => setNotifOpen(o => !o)} className="p-2 rounded-lg text-crm-text-dim hover:bg-crm-bg-hover transition-colors relative">
+              <button onClick={() => setNotifOpen(o => !o)} className="p-2 rounded-lg text-crm-primary hover:bg-crm-bg-hover hover:text-crm-primary-hover transition-colors relative">
                 <FiBell size={18} />
                 {adminUnreadCount > 0 && (
                   <span className="absolute top-1 right-1 h-4 min-w-[1rem] px-1 bg-crm-danger text-[10px] font-bold text-white rounded-full flex items-center justify-center">
@@ -525,18 +486,18 @@ export default function Layout({
             const badgeVal = tab.key === "chat" ? liveCounters.messages : tab.key === "notifications" ? adminUnreadCount : 0;
             return (
               <button key={tab.key} onClick={() => onSelect(tab.key)}
-                className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors relative ${isActive ? "text-crm-primary" : "text-crm-text-dim"}`}
+                className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors relative font-semibold ${isActive ? "text-crm-primary" : "text-crm-text-bright"}`}
               >
-                <tab.icon size={20} />
-                <span className="text-[10px] font-semibold">{tab.label}</span>
+                <tab.icon size={20} className="text-crm-primary" />
+                <span className="text-[10px] font-bold">{tab.label}</span>
                 {badgeVal > 0 && (
                   <span className="absolute -top-0.5 right-1 h-4 min-w-[1rem] px-1 bg-crm-danger text-[9px] font-bold text-white rounded-full flex items-center justify-center">{badgeVal > 9 ? "9+" : badgeVal}</span>
                 )}
               </button>
             );
           })}
-          <button onClick={() => setMobileNavOpen(true)} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-crm-text-dim">
-            <FiMenu size={20} /><span className="text-[10px] font-semibold">More</span>
+          <button onClick={() => setMobileNavOpen(true)} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-crm-text">
+            <FiMenu size={20} className="text-crm-primary" /><span className="text-[10px] font-bold">More</span>
           </button>
         </nav>
       </div>

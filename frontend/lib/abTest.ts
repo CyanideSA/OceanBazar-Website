@@ -1,38 +1,66 @@
 'use client';
 
-/**
- * OceanBazar A/B Testing Framework
- *
- * Cookie-based, deterministic per user-session.
- * Variant assignment: stable hash of (testId + sessionId) → 'A' | 'B'
- *
- * Usage:
- *   const variant = useAbVariant('checkout-cta-test'); // returns 'A' | 'B'
- *   // Impression is auto-tracked on mount (deduped per session)
- *
- * To track a conversion:
- *   trackAbConversion('checkout-cta-test');
- */
-
 import { useEffect, useState } from 'react';
 
 const COOKIE_PREFIX = 'ob_ab_';
+const SEEN_PREFIX = 'ob_ab_seen_';
+
+export const AB_TESTS = {
+  CHECKOUT_CTA: 'checkout-cta-v1',
+  PAYMENT_ORDER: 'payment-order-v1',
+  PRODUCT_PRICE_DISPLAY: 'price-display-v1',
+  OB_POINTS: 'ob-points-v1',
+  HERO_BANNER: 'hero-banner-v1',
+  SHIPPING_BADGE: 'shipping-badge-v1',
+  FLASH_URGENCY: 'flash-urgency-v1',
+  COUPON_DISCOVERY: 'coupon-discovery-v1',
+  PDP_AUDIENCE: 'pdp-audience-v1',
+  CHECKOUT_LOGIN: 'checkout-login-v1',
+  FLASH_SCARCITY: 'flash-scarcity-v1',
+} as const;
+
+export type AbTestId = (typeof AB_TESTS)[keyof typeof AB_TESTS];
+export type AbVariant = 'A' | 'B';
+
+type ExperimentConfig = {
+  id: string;
+  name: string;
+  tier: number;
+  surface: string;
+  primary_metric: string;
+  traffic_allocation: number;
+  variant_a?: Record<string, unknown>;
+  variant_b?: Record<string, unknown>;
+};
+
+type EventOptions = {
+  value?: number;
+  idempotencyKey?: string;
+  metadata?: Record<string, unknown>;
+};
+
+let configCache: ExperimentConfig[] | null = null;
+let configPromise: Promise<ExperimentConfig[]> | null = null;
+
+function apiBase(): string {
+  return String(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+}
 
 function getOrCreateSessionId(): string {
   if (typeof window === 'undefined') return 'ssr';
   const key = 'ob_session_id';
   let id = sessionStorage.getItem(key);
   if (!id) {
-    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    id = crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36);
     sessionStorage.setItem(key, id);
   }
   return id;
 }
 
-function simpleHash(str: string): number {
+function simpleHash(input: string): number {
   let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(index);
     hash |= 0;
   }
   return Math.abs(hash);
@@ -44,74 +72,128 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function setCookie(name: string, value: string, days = 365) {
+function setCookie(name: string, value: string, days = 365): void {
   if (typeof document === 'undefined') return;
-  const expires = new Date(Date.now() + days * 86400_000).toUTCString();
+  const expires = new Date(Date.now() + days * 86_400_000).toUTCString();
   document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires};path=/;SameSite=Lax`;
 }
 
-export function getVariant(testId: string): 'A' | 'B' {
+async function loadConfig(): Promise<ExperimentConfig[]> {
+  if (configCache) return configCache;
+  if (configPromise) return configPromise;
+  if (!apiBase()) return [];
+  configPromise = fetch(`${apiBase()}/api/ab/config`, { credentials: 'omit' })
+    .then((response) => response.ok ? response.json() : { experiments: [] })
+    .then((data) => {
+      configCache = Array.isArray(data?.experiments) ? data.experiments : [];
+      return configCache as ExperimentConfig[];
+    })
+    .catch(() => [])
+    .finally(() => { configPromise = null; });
+  return configPromise;
+}
+
+export function getVariant(testId: string): AbVariant {
   if (typeof window === 'undefined') return 'A';
   const cookieName = COOKIE_PREFIX + testId;
   const stored = getCookie(cookieName);
   if (stored === 'A' || stored === 'B') return stored;
-
-  const sessionId = getOrCreateSessionId();
-  const variant: 'A' | 'B' = simpleHash(testId + sessionId) % 2 === 0 ? 'A' : 'B';
+  const variant: AbVariant = simpleHash(testId + getOrCreateSessionId()) % 2 === 0 ? 'A' : 'B';
   setCookie(cookieName, variant);
   return variant;
 }
 
-/** Track an impression (view) — fires once per test per session. */
+function isEnrolled(test: ExperimentConfig): boolean {
+  const allocation = Math.min(100, Math.max(1, Number(test.traffic_allocation || 100)));
+  return simpleHash(`${test.id}:allocation:${getOrCreateSessionId()}`) % 100 < allocation;
+}
+
+async function sendEvent(
+  test: ExperimentConfig,
+  eventType: string,
+  options: EventOptions = {},
+): Promise<void> {
+  if (!apiBase() || !isEnrolled(test)) return;
+  const variant = getVariant(test.id);
+  try {
+    await fetch(`${apiBase()}/api/ab/${eventType === 'impression' ? 'impression' : 'event'}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': getOrCreateSessionId() },
+      body: JSON.stringify({
+        testId: test.id,
+        variant,
+        sessionId: getOrCreateSessionId(),
+        eventType,
+        value: options.value,
+        idempotencyKey: options.idempotencyKey,
+        metadata: options.metadata,
+      }),
+      keepalive: true,
+    });
+  } catch {
+    // Experiment telemetry must never block shopping.
+  }
+}
+
 export async function trackAbImpression(testId: string): Promise<void> {
   if (typeof window === 'undefined') return;
+  const test = (await loadConfig()).find((item) => item.id === testId);
+  if (!test || !isEnrolled(test)) return;
   const dedupKey = `ob_ab_imp_${testId}`;
   if (sessionStorage.getItem(dedupKey)) return;
   sessionStorage.setItem(dedupKey, '1');
-
-  const variant = getVariant(testId);
-  const apiBase = process.env.NEXT_PUBLIC_API_URL;
-  if (!apiBase) return;
-  try {
-    await fetch(`${apiBase}/api/ab/impression`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ testId, variant, sessionId: getOrCreateSessionId() }),
-      keepalive: true,
-    });
-  } catch { /* non-fatal */ }
+  sessionStorage.setItem(SEEN_PREFIX + testId, '1');
+  await sendEvent(test, 'impression', {
+    idempotencyKey: `impression:${getOrCreateSessionId()}`,
+    metadata: {
+      locale: document.documentElement.lang || undefined,
+      viewport: window.innerWidth < 768 ? 'mobile' : 'desktop',
+    },
+  });
 }
 
-export function useAbVariant(testId: string): 'A' | 'B' {
-  const [variant, setVariant] = useState<'A' | 'B'>('A');
+export function useAbVariant(testId: string): AbVariant {
+  const [variant, setVariant] = useState<AbVariant>('A');
   useEffect(() => {
-    const v = getVariant(testId);
-    setVariant(v);
-    // Auto-track impression on first render (deduped per session via sessionStorage)
-    trackAbImpression(testId);
+    let cancelled = false;
+    loadConfig().then((tests) => {
+      const test = tests.find((item) => item.id === testId);
+      if (!cancelled && test && isEnrolled(test)) {
+        setVariant(getVariant(testId));
+        void trackAbImpression(testId);
+      }
+    });
+    return () => { cancelled = true; };
   }, [testId]);
   return variant;
 }
 
-/** Track a conversion event — sends to backend. */
-export async function trackAbConversion(testId: string): Promise<void> {
-  const variant = getVariant(testId);
-  const apiBase = process.env.NEXT_PUBLIC_API_URL;
-  if (!apiBase) return;
-  try {
-    await fetch(`${apiBase}/api/ab/conversion`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ testId, variant }),
-      keepalive: true,
-    });
-  } catch { /* non-fatal */ }
+export async function trackAbEvent(
+  testId: string,
+  eventType: string,
+  options: EventOptions = {},
+): Promise<void> {
+  const test = (await loadConfig()).find((item) => item.id === testId);
+  if (!test || (typeof window !== 'undefined' && !sessionStorage.getItem(SEEN_PREFIX + testId))) return;
+  await sendEvent(test, eventType, options);
 }
 
-/** All active A/B tests — edit this list to create new tests. */
-export const AB_TESTS = {
-  CHECKOUT_CTA: 'checkout-cta-v1',           // A: "Place Order", B: "Complete Purchase"
-  PRODUCT_PRICE_DISPLAY: 'price-display-v1', // A: ৳1,200, B: ৳1,200.00
-  HERO_BANNER: 'hero-banner-v1',             // A: image, B: video
-  SHIPPING_BADGE: 'shipping-badge-v1',       // A: "Free Shipping", B: "Free Delivery Today"
-} as const;
+/** Track the primary outcome for every active experiment the shopper actually saw. */
+export async function trackAbOutcome(eventType: string, options: EventOptions = {}): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const tests = await loadConfig();
+  await Promise.all(tests
+    .filter((test) => test.primary_metric === eventType && sessionStorage.getItem(SEEN_PREFIX + test.id))
+    .map((test) => sendEvent(test, eventType, {
+      ...options,
+      idempotencyKey: `${eventType}:${options.idempotencyKey || getOrCreateSessionId()}`,
+    })));
+}
+
+export async function trackAbConversion(testId: string, options: EventOptions = {}): Promise<void> {
+  await trackAbEvent(testId, 'conversion', options);
+}
+
+export function clearAbConfigCache(): void {
+  configCache = null;
+}

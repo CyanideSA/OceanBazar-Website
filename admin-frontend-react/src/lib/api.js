@@ -107,28 +107,6 @@ function isPublicAdminAuthRequest(url) {
 
 api.interceptors.request.use((config) => {
   config.baseURL = resolveAdminApiBase();
-  // #region agent log
-  if (typeof window !== "undefined" && String(config.url || "").includes("/api/admin/auth")) {
-    fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
-      body: JSON.stringify({
-        sessionId: "9a9989",
-        runId: "port-login-color-debug",
-        hypothesisId: "H3",
-        location: "src/lib/api.js:request-interceptor",
-        message: "Auth API request base resolution",
-        data: {
-          pageOrigin: window.location.origin,
-          pagePort: window.location.port,
-          resolvedBaseURL: config.baseURL,
-          requestUrl: String(config.url || ""),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
   const token = getToken();
   if (token && !isPublicAdminAuthRequest(config.url)) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -178,38 +156,23 @@ api.interceptors.response.use(
     return res;
   },
   (err) => {
-    if (err?.response?.status === 401) {
-      // #region agent log
-      if (typeof window !== "undefined" && String(err?.config?.url || "").includes("/api/admin/auth")) {
-        fetch("http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9a9989" },
-          body: JSON.stringify({
-            sessionId: "9a9989",
-            runId: "port-login-color-debug",
-            hypothesisId: "H4",
-            location: "src/lib/api.js:response-error",
-            message: "Auth API 401 response details",
-            data: {
-              pageOrigin: window.location.origin,
-              pagePort: window.location.port,
-              resolvedBaseURL: err?.config?.baseURL,
-              requestUrl: String(err?.config?.url || ""),
-              status: err?.response?.status,
-              contentType: String(err?.response?.headers?.["content-type"] || ""),
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-      }
-      // #endregion
-      const url = err.config?.url || '';
+    const url = err?.config?.url || '';
+    const status = err?.response?.status || 0;
+    const body = err?.response?.data;
+    const errText = String(body?.detail || body?.error || body?.message || err?.message || '').slice(0, 200);
+    // After the first logout, suppress duplicate 401 noise from in-flight parallel requests.
+    if (status === 401 && authErrorHandled) {
+      return Promise.reject(err);
+    }
+    if (status === 401) {
       const isSilent =
         url.includes('/auth/login') ||
         url.includes('/auth/login-2fa') ||
         url.includes('/auth/onboarding/') ||
         url.includes('/auth/realtime-token') ||
-        url.includes('/auth/forgot-password');
+        url.includes('/auth/forgot-password') ||
+        url.includes('/auth/me') ||
+        url.includes('/live/stream');
       const withinLoginGrace = Date.now() - lastLoginSuccessAt < 8000;
       if (!isSilent && !withinLoginGrace) {
         handleAuthError();
@@ -227,6 +190,14 @@ function withReauthHeader(reauthToken) {
   return reauthToken
     ? { headers: { "x-admin-reauth-token": reauthToken } }
     : {};
+}
+
+function newIdempotencyKey() {
+  return (typeof crypto !== "undefined" && crypto.randomUUID?.()) || `idem-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function withIdempotencyKey() {
+  return { headers: { "x-idempotency-key": newIdempotencyKey() } };
 }
 
 export const adminApi = {
@@ -250,6 +221,7 @@ export const adminApi = {
   ssoExchange: (payload) => api.post("/api/admin/auth/sso/exchange", payload).then((r) => r.data),
 
   overview: () => api.get("/api/admin/overview").then((r) => r.data),
+  activity: (params) => api.get("/api/admin/activity", { params: params || {} }).then((r) => r.data),
   salesAnalytics: (params) => api.get("/api/admin/analytics/sales", { params: params || {} }).then((r) => r.data),
   customerGrowth: (params) => api.get("/api/admin/analytics/customer-growth", { params: params || {} }).then((r) => r.data),
   topProducts: (params) => api.get("/api/admin/analytics/top-products", { params: params || {} }).then((r) => r.data),
@@ -263,6 +235,7 @@ export const adminApi = {
   createProduct: (payload) => api.post("/api/admin/products", payload).then((r) => r.data),
   updateProduct: (id, payload) => api.put(`/api/admin/products/${id}`, payload).then((r) => r.data),
   deleteProduct: (id) => api.delete(`/api/admin/products/${id}`).then((r) => r.data),
+  duplicateProduct: (id) => api.post(`/api/admin/products/${id}/duplicate`).then((r) => r.data),
   uploadMedia: (file, folder) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -533,6 +506,7 @@ export const adminApi = {
   deals: (params) => api.get("/api/admin/intelligence/deals", { params: params || {} }).then((r) => r.data),
   createDeal: (payload) => api.post("/api/admin/intelligence/deals", payload).then((r) => r.data),
   updateDeal: (id, payload) => api.patch(`/api/admin/intelligence/deals/${id}`, payload).then((r) => r.data),
+  deleteDeal: (id) => api.delete(`/api/admin/intelligence/deals/${id}`).then((r) => r.data),
 
   // ─── AI marketing automation ───────────────────────────────────────────
   campaigns: (params) => api.get("/api/admin/marketing/campaigns", { params: params || {} }).then((r) => r.data),
@@ -592,9 +566,12 @@ export const adminApi = {
   deleteShipment: (id) => api.delete(`/api/admin/fulfillment/shipments/${id}`).then((r) => r.data),
 
   // Courier Delivery Management
-  assignCourier: (payload) => api.post("/api/admin/delivery/assign", payload).then((r) => r.data),
+  deliveries: (params) => api.get("/api/admin/delivery", { params: params || {} }).then((r) => r.data),
+  deliveryDetail: (id) => api.get(`/api/admin/delivery/${id}`).then((r) => r.data),
+  assignCourier: (payload) => api.post("/api/admin/delivery/assign", payload, withIdempotencyKey()).then((r) => r.data),
+  manualTracking: (payload) => api.post("/api/admin/delivery/manual", payload).then((r) => r.data),
   trackDelivery: (orderId) => api.get(`/api/admin/delivery/track/${orderId}`).then((r) => r.data),
-  cancelDelivery: (orderId) => api.post(`/api/admin/delivery/cancel/${orderId}`).then((r) => r.data),
+  cancelDelivery: (orderId) => api.post(`/api/admin/delivery/cancel/${orderId}`, {}, withIdempotencyKey()).then((r) => r.data),
   availableCouriers: () => api.get("/api/admin/delivery/couriers").then((r) => r.data),
   deliveryHealthSummary: () => api.get("/api/admin/delivery/health/summary").then((r) => r.data),
   deliveryPriceEstimate: (payload) => api.post("/api/admin/delivery/price-estimate", payload).then((r) => r.data),
@@ -605,8 +582,12 @@ export const adminApi = {
   steadfastBalance: () => api.get("/api/admin/delivery/steadfast/balance").then((r) => r.data),
 
   // Payments extras
+  markPaymentPaid: (id) => api.post(`/api/admin/payments/${id}/mark-paid`).then((r) => r.data),
   refundPayment: (id, payload, reauthToken) =>
-    api.post(`/api/admin/payments/${id}/refund`, payload, withReauthHeader(reauthToken)).then((r) => r.data),
+    api.post(`/api/admin/payments/${id}/refund`, payload, {
+      ...withReauthHeader(reauthToken),
+      headers: { ...withReauthHeader(reauthToken).headers, ...withIdempotencyKey().headers },
+    }).then((r) => r.data),
   orderInvoice: (orderId) => api.get(`/api/admin/payments/invoice/${orderId}`).then((r) => r.data),
 
   // Disputes extras

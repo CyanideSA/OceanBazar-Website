@@ -1,5 +1,7 @@
 'use client';
 
+import { getUserFromToken } from '@/lib/auth';
+
 type ClientErrorPayload = {
   digest?: string;
   message?: string;
@@ -45,6 +47,10 @@ export function reportClientError(payload: ClientErrorPayload): void {
   lastSentKey = key;
   lastSentAt = now;
 
+  // JWT payload carries userId/user_id claims, not the full User shape.
+  const tokenUser = getUserFromToken() as { userId?: string; user_id?: string; id?: string } | null;
+  const userId = tokenUser?.userId ?? tokenUser?.user_id ?? tokenUser?.id;
+
   const body = JSON.stringify({
     digest: payload.digest,
     message: payload.message,
@@ -52,6 +58,7 @@ export function reportClientError(payload: ClientErrorPayload): void {
     url: payload.url ?? window.location.href,
     locale: payload.locale,
     userAgent: navigator.userAgent,
+    userId: userId ?? undefined,
     snapshot: buildSnapshot(payload.snapshot),
   });
 

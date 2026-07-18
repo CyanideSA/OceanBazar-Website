@@ -1,9 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { appLog } from '../lib/appLog';
 import { sendMail, emailWrapper } from '../services/emailService';
 import { logCommunication } from '../services/communicationLogService';
 
-const prisma = new PrismaClient();
 
 const BATCH = 100;
 
@@ -53,8 +53,16 @@ export async function runCampaignJourney(): Promise<void> {
     if (user?.email && step.channel === 'email') {
       const vars = { name: user.name ?? 'there', email: user.email };
       const subject = renderTemplate(step.subject, vars) || campaign.name;
-      const bodyText = renderTemplate(step.body, vars);
-      const html = emailWrapper(`<p>${bodyText.replace(/\n/g, '<br/>')}</p>`);
+      const meta = (step.metadata && typeof step.metadata === 'object' ? step.metadata : {}) as {
+        bodyHtml?: string | null;
+      };
+      const rawBody = meta.bodyHtml ?? step.body ?? '';
+      const rendered = renderTemplate(rawBody, vars);
+      const looksHtml = /<\s*[a-z][\s\S]*>/i.test(rendered);
+      const html = looksHtml
+        ? emailWrapper(rendered)
+        : emailWrapper(`<p>${rendered.replace(/\n/g, '<br/>')}</p>`);
+      const bodyText = looksHtml ? rendered.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : rendered;
       try {
         const ok = await sendMail(user.email, subject, html, `campaign_${campaign.id}`);
         await logCommunication({

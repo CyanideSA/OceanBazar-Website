@@ -8,11 +8,13 @@ import { useCartStore } from '@/stores/cartStore';
 import { getRedemptionOptions, MIN_REDEEMABLE_POINTS } from '@/lib/ob-points';
 import type { OBTier } from '@/types';
 import { cn } from '@/lib/utils';
+import { AB_TESTS, useAbVariant } from '@/lib/abTest';
 
 export default function CheckoutObPointsPanel() {
   const t = useTranslations('checkout');
   const tp = useTranslations('obPoints');
   const tc = useTranslations('common');
+  const obPointsVariant = useAbVariant(AB_TESTS.OB_POINTS);
   const { appliedObPoints, setAppliedObPoints } = useCartStore();
 
   const { data: balanceData } = useQuery({
@@ -27,6 +29,7 @@ export default function CheckoutObPointsPanel() {
 
   const balance = balanceData?.balance ?? 0;
   const options = getRedemptionOptions(balance);
+  const recommended = [...options].reverse().find((option) => option.canRedeem);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -66,6 +69,12 @@ export default function CheckoutObPointsPanel() {
         </p>
       ) : (
         <>
+          {obPointsVariant === 'B' && recommended && (
+            <div className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-foreground">
+              Recommended: use {recommended.points.toLocaleString()} OB and save {tc('taka')}
+              {recommended.bdtValue.toLocaleString()} today.
+            </div>
+          )}
           <p className="mb-3 text-sm text-muted-foreground">{tp('selectPackage')}</p>
           <div className="grid gap-2 sm:grid-cols-3">
             {options.map((opt) => (
@@ -77,7 +86,10 @@ export default function CheckoutObPointsPanel() {
                 className={cn(
                   'rounded-xl border-2 px-3 py-3 text-left text-sm transition-colors',
                   opt.canRedeem
-                    ? 'border-border hover:border-primary/50 hover:bg-muted/50'
+                    ? cn(
+                        'border-border hover:border-primary/50 hover:bg-muted/50',
+                        obPointsVariant === 'B' && opt.points === recommended?.points && 'border-amber-400/60 bg-amber-400/5',
+                      )
                     : 'cursor-not-allowed border-border opacity-50'
                 )}
               >

@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { formatProduct } from '../routes/products';
 
-const prisma = new PrismaClient();
 let schemaReady = false;
 
 export const MAX_FLASH_UNITS = 15;
@@ -86,7 +86,65 @@ function rowToSnap(row: Record<string, unknown> | undefined): PricingRowSnap | n
 
 export async function ensureFlashSaleSchema(): Promise<void> {
   if (schemaReady) return;
-  schemaReady = true;
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS flash_sales (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        slug VARCHAR(255),
+        description TEXT,
+        starts_at TIMESTAMPTZ NOT NULL,
+        ends_at TIMESTAMPTZ NOT NULL,
+        status VARCHAR(40) NOT NULL DEFAULT 'draft',
+        campaign_status VARCHAR(40) DEFAULT 'draft',
+        banner_url VARCHAR(1000),
+        priority INT DEFAULT 0,
+        created_by VARCHAR(100),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS flash_sale_items (
+        id VARCHAR(255) PRIMARY KEY,
+        flash_sale_id VARCHAR(255) NOT NULL REFERENCES flash_sales(id) ON DELETE CASCADE,
+        product_id CHAR(8) NOT NULL,
+        variant_id CHAR(8),
+        discount_type VARCHAR(20) NOT NULL DEFAULT 'percent',
+        discount_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+        sale_price DECIMAL(12,2),
+        stock_limit INT,
+        sold_count INT NOT NULL DEFAULT 0,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_flash_sale_items_sale ON flash_sale_items(flash_sale_id)`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_flash_sale_items_product ON flash_sale_items(product_id)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sales ADD COLUMN IF NOT EXISTS discount_type VARCHAR(20)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sales ADD COLUMN IF NOT EXISTS discount_value DECIMAL(12,2)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sales ADD COLUMN IF NOT EXISTS banner_text VARCHAR(500)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sales ADD COLUMN IF NOT EXISTS banner_color VARCHAR(20)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sales ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT FALSE`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sales ADD COLUMN IF NOT EXISTS campaign_status VARCHAR(40) DEFAULT 'draft'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS flash_price NUMERIC(12,2)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS flash_compare_at NUMERIC(12,2)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS original_price NUMERIC(12,2)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS original_compare_at NUMERIC(12,2)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS include_delivery BOOLEAN NOT NULL DEFAULT TRUE`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS pricing_applied BOOLEAN NOT NULL DEFAULT FALSE`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS pricing_mode VARCHAR(20)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS original_pricing_snapshot JSONB`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS flash_pricing_snapshot JSONB`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS per_customer_limit INT NOT NULL DEFAULT 15`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS max_units INT NOT NULL DEFAULT 15`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS reserved INT NOT NULL DEFAULT 0`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE flash_sale_items ADD COLUMN IF NOT EXISTS sold INT NOT NULL DEFAULT 0`);
+    schemaReady = true;
+  } catch (err) {
+    console.warn('[flash-sales] ensureFlashSaleSchema:', (err as Error).message);
+    // Do NOT mark schemaReady — allow retry on next request
+  }
 }
 
 export function computeCampaignStatus(
@@ -254,7 +312,7 @@ export async function syncCampaignStatuses(): Promise<void> {
   await ensureFlashSaleSchema();
   const now = new Date();
   await prisma.$executeRaw`
-    UPDATE flash_sales SET campaign_status = 'completed'
+    UPDATE flash_sales SET campaign_status = 'completed', is_active = FALSE
     WHERE ends_at < ${now} AND campaign_status != 'draft'
   `;
   await prisma.$executeRaw`
@@ -423,6 +481,8 @@ export async function loadProductsForSale(
     (formatted as { flashDeal?: boolean }).flashDeal = true;
     (formatted as { flashFreeDelivery?: boolean }).flashFreeDelivery = meta.include_delivery === false;
     (formatted as { flashSaleId?: string }).flashSaleId = sale.id;
+    (formatted as { flashAvailable?: number }).flashAvailable =
+      Math.max(0, Number(meta.max_units || 0) - Number(meta.reserved || 0) - Number(meta.sold || 0));
     (formatted as { flashPerCustomerLimit?: number }).flashPerCustomerLimit =
       meta.per_customer_limit ?? MAX_PER_CUSTOMER_QTY;
     return formatted;
@@ -568,6 +628,12 @@ export async function scheduleFlashCampaign(saleId: string) {
   await ensureFlashSaleSchema();
   const sale = await fetchSaleById(saleId);
   if (!sale) throw new Error('Campaign not found');
+  const itemCount = await prisma.$queryRaw<Array<{ c: bigint }>>`
+    SELECT COUNT(*)::bigint AS c FROM flash_sale_items WHERE flash_sale_id = ${saleId}
+  `;
+  if (Number(itemCount?.[0]?.c ?? 0) < 1) {
+    throw new Error('Add at least one product');
+  }
   const now = new Date();
   if (new Date(sale.ends_at) < now) throw new Error('End date is in the past');
   const campaign_status: CampaignStatus =

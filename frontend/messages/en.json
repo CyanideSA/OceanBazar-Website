@@ -305,7 +305,8 @@
     "couponApplied": "Coupon applied successfully!",
     "couponInvalid": "Invalid or expired coupon code.",
     "decreaseQty": "Decrease quantity",
-    "increaseQty": "Increase quantity"
+    "increaseQty": "Increase quantity",
+    "maxQtyReached": "Max limit reached"
   },
   "checkout": {
     "title": "Checkout",
@@ -316,6 +317,10 @@
     "shippingAddress": "Shipping address",
     "paymentMethod": "Payment method",
     "cod": "Cash on delivery",
+    "payNow": "Pay now",
+    "payNowSub": "bKash, Nagad, Upay, cards & banks via SSLCommerz",
+    "payLater": "Pay later",
+    "payLaterSub": "Cash on delivery — pay when your order arrives",
     "bkash": "bKash",
     "nagad": "Nagad",
     "rocket": "Rocket (DBBL)",
@@ -356,7 +361,11 @@
     "removeCoupon": "Remove coupon",
     "paymentRetryTitle": "Payment didn’t open?",
     "paymentRetryCta": "Try payment again",
+    "paymentRetrying": "Opening secure payment…",
     "paymentInitFailed": "Could not start payment. You can retry from your order.",
+    "paymentReturnedFailed": "Your payment was not completed. Your order is saved and still awaiting payment.",
+    "paymentRecoveryHint": "Your order is safely saved. Continue to the secure payment page when you’re ready.",
+    "viewPendingOrder": "View the pending order",
     "emptyCartTitle": "Your cart is empty",
     "emptyCartHint": "Add items before checkout.",
     "loginRequiredTitle": "Sign in to checkout",
@@ -433,6 +442,9 @@
     "phoneRequired": "Phone number is required",
     "bothRequired": "Both email and phone are required",
     "verifyBothRequired": "Please verify both your email and phone number",
+    "verifyEmailRequired": "Please verify your email to create an account",
+    "verifyOptional": "Verify (optional)",
+    "phoneVerifyOptionalHint": "Phone verification is optional at signup. You’ll verify when signing in with your phone.",
     "forgotPasswordTitle": "Reset Password",
     "forgotPasswordChoose": "Choose how to receive your reset code:",
     "viaEmail": "Via Email",
@@ -603,7 +615,13 @@
     "orderLevelTracking": "Order tracking ID",
     "notFound": "We could not find this order.",
     "cancelling": "Cancelling…",
-    "quantity": "Qty"
+    "quantity": "Qty",
+    "awaitingPayment": "Awaiting payment",
+    "paymentStillPending": "Payment is still pending",
+    "paymentRetryFromOrderHint": "Your order is saved. Complete payment securely to continue processing.",
+    "payNow": "Complete payment",
+    "paymentRetrying": "Opening secure payment…",
+    "paymentRetryUnavailable": "Payment could not be opened. Please try again or contact support."
   },
   "tickets": {
     "title": "Support Tickets",

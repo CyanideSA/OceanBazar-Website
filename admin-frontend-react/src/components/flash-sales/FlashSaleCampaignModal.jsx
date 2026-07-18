@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+﻿import React, { useState, useEffect, useCallback } from "react";
 import { FiZap, FiX, FiCheck, FiTrash2 } from "react-icons/fi";
 import { api } from "../../lib/api";
 import { useToast } from "../ToastProvider";
@@ -354,7 +354,7 @@ export default function FlashSaleCampaignModal({ saleId, onClose, onSaved }) {
                     className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${
                       item.include_delivery !== false
                         ? "border-crm-border text-crm-text-dim"
-                        : "border-green-500/40 text-green-400 bg-green-500/10"
+                        : "border-green-500/40 text-crm-success bg-green-500/10"
                     }`}
                   >
                     {item.include_delivery !== false ? "Delivery: customer pays" : "Delivery: FREE for customer"}

@@ -28,7 +28,8 @@ export default function SeoCenterPage() {
   const loadOverview = useCallback(async () => {
     try {
       setOverview(await adminApi.seoOverview());
-    } catch { /* ignore */ }
+    } catch (err) {
+    }
   }, []);
 
   const loadList = useCallback(async () => {
@@ -37,8 +38,8 @@ export default function SeoCenterPage() {
       const r = await adminApi.seoList({ entityType: filterType || undefined, limit: 100 });
       setItems(r?.items || []);
       setTotal(r?.total || 0);
-    } catch {
-      toast.error("Failed to load SEO metadata");
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to load SEO metadata");
     } finally {
       setLoading(false);
     }

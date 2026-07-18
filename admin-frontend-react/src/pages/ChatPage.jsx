@@ -1,11 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   FiSend, FiSearch, FiCheckCircle,
   FiMessageSquare, FiSlash, FiHeadphones, FiAlertCircle,
   FiEdit3, FiRefreshCw, FiZap, FiChevronDown,
 } from "react-icons/fi";
 import { adminApi, resolveAdminApiBase } from "../lib/api";
+import { getAdminRealtimeToken } from "../lib/realtimeAuth";
 import { useToast } from "../components/ToastProvider";
+import { isRealUserId } from "../lib/deepLink";
 import { format, formatDistanceToNow } from "date-fns";
 import { io } from "socket.io-client";
 
@@ -47,7 +49,7 @@ function channelBadge(channel) {
   if (c === "facebook") return { label: "FB", cls: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300" };
   if (c === "instagram") return { label: "IG", cls: "bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300" };
   if (c === "whatsapp") return { label: "WA", cls: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" };
-  return { label: "Web", cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" };
+  return { label: "Web", cls: "bg-crm-bg-hover text-crm-text-dim" };
 }
 
 /* ─── Greeting Setup Modal ─────────────────────────────────────────────────── */
@@ -172,7 +174,48 @@ function TypingDots({ name }) {
   );
 }
 
-export default function ChatPage({ liveTick, wsConnected }) {
+function ContextSection({ title, items, renderItem, empty = "None" }) {
+  const rows = Array.isArray(items) ? items : [];
+  return (
+    <details className="rounded-xl border border-crm-border bg-crm-bg/40" open={title === "Orders"}>
+      <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[11px] font-bold text-crm-text-bright">
+        <span>{title}</span>
+        <span className="rounded-full bg-crm-bg-hover px-2 py-0.5 text-[10px] text-crm-text-dim">{rows.length}</span>
+      </summary>
+      <div className="max-h-48 space-y-1.5 overflow-y-auto border-t border-crm-border p-2">
+        {rows.length ? rows.map(renderItem) : <p className="p-2 text-xs text-crm-text-muted">{empty}</p>}
+      </div>
+    </details>
+  );
+}
+
+function CustomerContextPanel({ data, loading }) {
+  if (loading) return <div className="m-4 h-28 animate-pulse rounded-xl bg-crm-bg-hover" />;
+  if (!data) return <p className="p-4 text-xs text-crm-text-muted">Account context is unavailable for this visitor.</p>;
+  const applications = [
+    ...(data.applications?.wholesale || []).map((a) => ({ ...a, kind: "Wholesale" })),
+    ...(data.applications?.businessInquiries || []).map((a) => ({ ...a, kind: "Business inquiry" })),
+  ];
+  const row = (primary, secondary, key) => (
+    <div key={key} className="rounded-lg bg-crm-bg-hover/70 p-2">
+      <p className="truncate text-xs font-semibold text-crm-text-bright">{primary}</p>
+      <p className="mt-0.5 truncate text-[10px] text-crm-text-dim">{secondary}</p>
+    </div>
+  );
+  return (
+    <div className="space-y-2 px-3 pb-4">
+      <ContextSection title="Orders" items={data.recentOrders} renderItem={(o) => row(o.orderNumber || o.id, `৳${Number(o.total || 0).toLocaleString()} · ${o.status}`, o.id)} />
+      <ContextSection title="Payments" items={data.recentPayments} renderItem={(p) => row(p.method, `৳${Number(p.amount || 0).toLocaleString()} · ${p.status}`, p.id)} />
+      <ContextSection title="Returns" items={data.recentReturns} renderItem={(r) => row(r.reason_category || "Return", r.status, r.id)} />
+      <ContextSection title="Reviews" items={data.recentReviews} renderItem={(r) => row(`${r.rating}★ · ${r.product?.titleEn || "Product"}`, r.title || r.body || r.status, r.id)} />
+      <ContextSection title="Tickets" items={data.recentTickets} renderItem={(t) => row(t.subject, `${t.status} · ${t.priority}`, t.id)} />
+      <ContextSection title="Disputes" items={data.recentDisputes} renderItem={(d) => row(d.title, `${d.status} · ${d.priority}`, d.id)} />
+      <ContextSection title="Applications" items={applications} renderItem={(a) => row(a.kind, `${a.business_name || a.full_name || ""} · ${a.status}`, `${a.kind}-${a.id}`)} />
+    </div>
+  );
+}
+
+export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpenCustomer, onOpenTimeline }) {
   const toast = useToast();
 
   /* ── State ─────────────────────────────────────────────────────────────── */
@@ -189,6 +232,8 @@ export default function ChatPage({ liveTick, wsConnected }) {
   const [showGreetingModal, setShowGreetingModal] = useState(false);
   const [showCanned, setShowCanned] = useState(false);
   const [myAgentId, setMyAgentId] = useState(null);
+  const [customerContext, setCustomerContext] = useState(null);
+  const [customerContextLoading, setCustomerContextLoading] = useState(false);
   const bottomRef = useRef(null);
   const typingTimer = useRef(null);
   const lastTypingEmit = useRef(0);
@@ -198,6 +243,22 @@ export default function ChatPage({ liveTick, wsConnected }) {
   // Keep ref in sync with state so socket handlers always read the latest value
   useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
 
+  useEffect(() => {
+    const userId = activeSession?.user_id;
+    if (!isRealUserId(userId)) {
+      setCustomerContext(null);
+      setCustomerContextLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCustomerContextLoading(true);
+    adminApi.customer360(userId)
+      .then((data) => { if (!cancelled) setCustomerContext(data); })
+      .catch(() => { if (!cancelled) setCustomerContext(null); })
+      .finally(() => { if (!cancelled) setCustomerContextLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeSession?.user_id]);
+
   /* ── Scroll to bottom ─────────────────────────────────────────────────── */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -205,12 +266,35 @@ export default function ChatPage({ liveTick, wsConnected }) {
 
   /* ── Socket.IO connection ─────────────────────────────────────────────── */
   useEffect(() => {
-    const socket = io(BFF_URL, { withCredentials: true, transports: ["websocket", "polling"] });
-    socketRef.current = socket;
+    let socket = null;
+    let cancelled = false;
 
-    socket.emit("join", "admin:chat");
-    socket.emit("join:admin-chat");
+    const setup = async () => {
+      // The BFF only allows joining admin rooms for sockets that present a
+      // valid admin JWT in handshake auth — cookies alone are not checked.
+      const token = await getAdminRealtimeToken().catch(() => "");
+      if (cancelled) return;
 
+      socket = io(BFF_URL, {
+        withCredentials: true,
+        transports: ["websocket", "polling"],
+        auth: { token: token || "" },
+      });
+      socketRef.current = socket;
+
+      // Join on every (re)connect — server-side room membership is lost on reconnect
+      socket.on("connect", () => {
+        socket.emit("join", "admin:chat");
+        socket.emit("join:admin-chat");
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'CHAT-A',location:'admin ChatPage.jsx:socket-connect',message:'Admin chat socket connected and join emitted',data:{hasToken:Boolean(token)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      });
+
+      registerHandlers(socket);
+    };
+
+    const registerHandlers = (socket) => {
     const onNewHuman = (payload) => {
       setSessions((prev) => {
         const exists = prev.find((s) => s.id === payload.sessionId);
@@ -222,7 +306,11 @@ export default function ChatPage({ liveTick, wsConnected }) {
     const onMsg = (payload) => {
       if (activeSessionRef.current?.id === payload.sessionId) {
         setMessages((p) => {
-          if (p.find((m) => m.id === payload.message?.id)) return p;
+          const alreadyPresent = p.some((m) => m.id === payload.message?.id);
+          // #region agent log
+          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'duplicate-pre-fix',hypothesisId:'DUP-A,DUP-B',location:'admin ChatPage.jsx:onMsg',message:'Admin socket message received',data:{messageId:String(payload.message?.id||''),sender:String(payload.message?.sender||''),alreadyPresent,messageCount:p.length},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+          if (alreadyPresent) return p;
           return [...p, payload.message];
         });
         // Mark as read
@@ -261,10 +349,17 @@ export default function ChatPage({ liveTick, wsConnected }) {
     socket.on("chat:agent_claimed", onClaimed);
     socket.on("chat:session_finished", onFinished);
     socket.on("chat:customer_typing", onCustomerTyping);
+    };
+
+    setup();
 
     return () => {
-      socket.emit("leave", "admin:chat");
-      socket.disconnect();
+      cancelled = true;
+      if (socket) {
+        socket.emit("leave", "admin:chat");
+        socket.disconnect();
+      }
+      socketRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -293,6 +388,13 @@ export default function ChatPage({ liveTick, wsConnected }) {
   }, [statusFilter, toast]);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions, liveTick]);
+
+  // Allow App-level BFF socket to trigger an immediate refresh
+  useEffect(() => {
+    if (!chatInboundRef) return undefined;
+    chatInboundRef.current = () => { fetchSessions(); };
+    return () => { chatInboundRef.current = null; };
+  }, [chatInboundRef, fetchSessions]);
 
   /* ── Open session ─────────────────────────────────────────────────────── */
   const openSession = async (session) => {
@@ -329,7 +431,14 @@ export default function ChatPage({ liveTick, wsConnected }) {
     try {
       const res = await adminApi.chatSendMessage(activeSession.id, { message: draft.trim() });
       const newMsg = res?.message;
-      if (newMsg) setMessages((p) => [...p, newMsg]);
+      if (newMsg) {
+        setMessages((p) => {
+          // #region agent log
+          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'duplicate-pre-fix',hypothesisId:'DUP-A',location:'admin ChatPage.jsx:handleSend',message:'Admin HTTP send response appended',data:{messageId:String(newMsg.id||''),alreadyPresent:p.some((m)=>m.id===newMsg.id),messageCount:p.length},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+          return [...p, newMsg];
+        });
+      }
       setDraft("");
     } catch (err) {
       toast.error(err?.response?.data?.error || "Failed to send");
@@ -567,7 +676,7 @@ export default function ChatPage({ liveTick, wsConnected }) {
                 {showCanned && canWrite && (
                   <div className="mb-3 rounded-xl border border-crm-border bg-crm-bg shadow-lg overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2 border-b border-crm-border bg-crm-bg-hover">
-                      <span className="text-[11px] font-bold text-crm-text-muted uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="text-[11px] font-black text-crm-text-bright uppercase tracking-wider flex items-center gap-1.5">
                         <FiZap size={11} className="text-crm-primary" /> Quick Replies
                       </span>
                       <button type="button" onClick={() => setShowCanned(false)}
@@ -639,7 +748,7 @@ export default function ChatPage({ liveTick, wsConnected }) {
 
       {/* ── RIGHT: Customer details ───────────────────────────────────────── */}
       {activeSession && (
-        <div className="w-64 shrink-0 crm-card p-0 overflow-y-auto custom-scrollbar hidden xl:flex flex-col">
+        <div className="w-80 shrink-0 crm-card p-0 overflow-y-auto custom-scrollbar hidden xl:flex flex-col">
           <div className="border-b border-crm-border px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-wider text-crm-text-muted">Customer Info</p>
           </div>
@@ -655,6 +764,30 @@ export default function ChatPage({ liveTick, wsConnected }) {
                 <p className="text-sm text-crm-text-bright break-words">{val}</p>
               </div>
             ) : null)}
+            {activeSession.user_id && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-crm-text-muted">User ID</p>
+                <p className="text-xs font-mono text-crm-text-dim break-all">{activeSession.user_id}</p>
+                {isRealUserId(activeSession.user_id) && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {onOpenCustomer && (
+                      <button type="button" onClick={() => onOpenCustomer(activeSession.user_id)} className="crm-btn crm-btn-secondary text-xs">
+                        View profile
+                      </button>
+                    )}
+                    {onOpenTimeline && (
+                      <button type="button" onClick={() => onOpenTimeline(activeSession.user_id)} className="crm-btn crm-btn-secondary text-xs">
+                        Timeline
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="border-t border-crm-border pt-3">
+            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-crm-text-muted">Account snapshot</p>
+            <CustomerContextPanel data={customerContext} loading={customerContextLoading} />
           </div>
           <div className="border-t border-crm-border px-4 py-3 space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-crm-text-muted">Session</p>

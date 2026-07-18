@@ -1,7 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { publishMetaPost } from '../services/meta/metaClient';
 
-const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 
 export async function runMetaPostScheduler(): Promise<void> {

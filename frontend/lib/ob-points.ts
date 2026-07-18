@@ -80,7 +80,19 @@ export function getNextTierInfo(lifetimeSpend: number) {
 }
 
 export const TIER_COLORS: Record<OBTier, { bg: string; text: string; border: string }> = {
-  Bronze: { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300' },
-  Silver: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300' },
-  Gold: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-400' },
+  Bronze: {
+    bg: 'bg-amber-100 dark:bg-amber-950/40',
+    text: 'text-amber-800 dark:text-amber-300',
+    border: 'border-amber-300 dark:border-amber-700/60',
+  },
+  Silver: {
+    bg: 'bg-slate-100 dark:bg-slate-800/50',
+    text: 'text-slate-700 dark:text-slate-300',
+    border: 'border-slate-300 dark:border-slate-600/60',
+  },
+  Gold: {
+    bg: 'bg-yellow-100 dark:bg-yellow-950/40',
+    text: 'text-yellow-800 dark:text-yellow-300',
+    border: 'border-yellow-400 dark:border-yellow-700/60',
+  },
 };

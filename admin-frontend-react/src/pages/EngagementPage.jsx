@@ -1,9 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { FiMail, FiBell, FiMessageCircle, FiCheck, FiX } from "react-icons/fi";
+import { FiMail, FiBell, FiMessageCircle, FiCheck, FiX, FiUser } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
+import { isRealUserId } from "../lib/deepLink";
 
-export default function EngagementPage() {
+function CustomerLink({ userId, onOpenCustomer, label }) {
+  if (!userId || !isRealUserId(userId) || !onOpenCustomer) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenCustomer(userId)}
+      className="mt-1 inline-flex items-center gap-1 text-xs text-crm-primary hover:underline"
+    >
+      <FiUser size={12} />
+      {label || `View customer ${userId}`}
+    </button>
+  );
+}
+
+export default function EngagementPage({ onOpenCustomer }) {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [newsletter, setNewsletter] = useState([]);
@@ -84,6 +99,12 @@ export default function EngagementPage() {
                   <div key={item.id} className="rounded-xl border border-crm-border bg-crm-bg p-3">
                     <p className="text-xs text-crm-text-dim">{item.product_title || item.product_id}</p>
                     <p className="mt-1 text-sm font-semibold text-crm-text-bright">{item.question}</p>
+                    {(item.asker_name || item.asker_email) && (
+                      <p className="text-xs text-crm-text-dim mt-1">
+                        {item.asker_name || "Anonymous"}{item.asker_email ? ` · ${item.asker_email}` : ""}
+                      </p>
+                    )}
+                    <CustomerLink userId={item.user_id} onOpenCustomer={onOpenCustomer} label="View asker profile" />
                     <textarea
                       className="crm-input mt-2 min-h-[70px] w-full"
                       value={answerDraft[item.id] || ""}
@@ -111,6 +132,7 @@ export default function EngagementPage() {
                 {newsletter.map((n, i) => (
                   <div key={`${n.email}-${i}`} className="border-b border-crm-border py-2 text-sm">
                     <p className="font-medium text-crm-text-bright">{n.email}</p>
+                    <CustomerLink userId={n.user_id} onOpenCustomer={onOpenCustomer} />
                   </div>
                 ))}
                 {newsletter.length === 0 && <p className="text-sm text-crm-text-dim">No subscribers yet.</p>}
@@ -124,6 +146,7 @@ export default function EngagementPage() {
                   <div key={`${a.email}-${a.product_id}-${i}`} className="border-b border-crm-border py-2 text-sm">
                     <p className="font-medium text-crm-text-bright">{a.email}</p>
                     <p className="text-xs text-crm-text-dim">{a.product_title || a.product_id}</p>
+                    <CustomerLink userId={a.user_id} onOpenCustomer={onOpenCustomer} />
                   </div>
                 ))}
                 {stockAlerts.length === 0 && <p className="text-sm text-crm-text-dim">No stock alert subscriptions.</p>}

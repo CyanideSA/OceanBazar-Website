@@ -6,6 +6,10 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+/**
+ * OB Points rules — must stay in sync with backend/src/utils/obPoints.ts
+ * Cumulative slab redemption (not the old fixed 1000/5000/10000 packages).
+ */
 @Service
 public class ObPointsRulesService {
 
@@ -17,13 +21,10 @@ public class ObPointsRulesService {
             OBTier.Gold, BigDecimal.valueOf(50_000)
     );
 
-    public static final Map<OBTier, Map<Integer, Integer>> REDEMPTION_TABLE = Map.of(
-            OBTier.Bronze, Map.of(1000, 10, 5000, 75, 10000, 180),
-            OBTier.Silver, Map.of(1000, 15, 5000, 100, 10000, 250),
-            OBTier.Gold, Map.of(1000, 20, 5000, 125, 10000, 300)
-    );
-
-    public static final Set<Integer> REDEMPTION_AMOUNTS = Set.of(1000, 5000, 10000);
+    public static final int SLAB_SIZE = 10_000;
+    public static final int SLAB_BASE_VALUE = 500;
+    public static final int SLAB_INCREMENT = 250;
+    public static final int MIN_REDEEMABLE_POINTS = 1000;
     public static final int POINTS_EXPIRY_DAYS = 365;
 
     public OBTier getTier(BigDecimal lifetimeSpend) {
@@ -37,6 +38,27 @@ public class ObPointsRulesService {
         return orderTotal.intValue();
     }
 
+    /** Slab 1 = 500, Slab 2 = 750, Slab 3 = 1000, ... */
+    public int slabValue(int slabIndex) {
+        return SLAB_BASE_VALUE + (slabIndex - 1) * SLAB_INCREMENT;
+    }
+
+    /** Full slabs + proportional remainder — matches Node calculateSlabRedemptionValue. */
+    public int calculateSlabRedemptionValue(int points) {
+        if (points <= 0) return 0;
+        int fullSlabs = points / SLAB_SIZE;
+        int remainder = points % SLAB_SIZE;
+        int total = 0;
+        for (int i = 1; i <= fullSlabs; i++) {
+            total += slabValue(i);
+        }
+        if (remainder > 0) {
+            int nextSlabFull = slabValue(fullSlabs + 1);
+            total += (int) Math.round((remainder / (double) SLAB_SIZE) * nextSlabFull);
+        }
+        return total;
+    }
+
     public static class RedemptionResult {
         public boolean valid;
         public int bdtValue;
@@ -45,14 +67,18 @@ public class ObPointsRulesService {
 
     public RedemptionResult validateRedemption(OBTier tier, int balance, int pointsToRedeem) {
         RedemptionResult r = new RedemptionResult();
-        if (!REDEMPTION_AMOUNTS.contains(pointsToRedeem)) {
-            r.valid = false; r.error = "Invalid redemption amount. Choose from: 1000, 5000, 10000 OB."; return r;
+        if (pointsToRedeem < MIN_REDEEMABLE_POINTS) {
+            r.valid = false;
+            r.error = "Minimum " + MIN_REDEEMABLE_POINTS + " OB Points required for redemption.";
+            return r;
         }
         if (balance < pointsToRedeem) {
-            r.valid = false; r.error = "Insufficient OB Points. Have " + balance + ", need " + pointsToRedeem + "."; return r;
+            r.valid = false;
+            r.error = "Insufficient OB Points. Have " + balance + ", need " + pointsToRedeem + ".";
+            return r;
         }
         r.valid = true;
-        r.bdtValue = REDEMPTION_TABLE.get(tier).getOrDefault(pointsToRedeem, 0);
+        r.bdtValue = calculateSlabRedemptionValue(pointsToRedeem);
         return r;
     }
 

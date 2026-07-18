@@ -8,6 +8,7 @@ import type { Product, ProductPricing } from '@/types';
 import { calculatePrice, parseTierBands, RETAIL_MAX_UNITS, FREE_FEES_THRESHOLD } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
+import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
 
 interface Props {
   product: Product;
@@ -243,6 +244,8 @@ export default function PricingBlock({
   const locale = useLocale();
   const router = useShopRouter();
   const [qty, setQty] = useState(1);
+  const priceVariant = useAbVariant(AB_TESTS.PRODUCT_PRICE_DISPLAY);
+  const audienceVariant = useAbVariant(AB_TESTS.PDP_AUDIENCE);
 
   const { user } = useAuthStore();
   const isWholesaleUser = user?.userType === 'wholesale';
@@ -316,6 +319,17 @@ export default function PricingBlock({
         td={td}
         tp={tpr}
       />
+      {priceVariant === 'B' && activeResult.discountPct > 0 && (
+        <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+          Best value: save {activeResult.discountPct}% at this quantity.
+        </p>
+      )}
+
+      {audienceVariant === 'B' && product.pricing.wholesale && !isWholesaleUser && (
+        <p className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-sm text-foreground">
+          Buying for your business? Wholesale pricing is available for approved OceanBazar accounts.
+        </p>
+      )}
 
       {/* MOQ badge */}
       {isWholesale && (
@@ -347,7 +361,13 @@ export default function PricingBlock({
       <div className="flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
-          onClick={() => onAddToCart?.(qty, variantId ?? null)}
+          onClick={() => {
+            onAddToCart?.(qty, variantId ?? null);
+            void trackAbOutcome('add_to_cart', {
+              value: activeResult.lineTotal,
+              metadata: { productId: product.id, quantity: qty, mode: activeMode },
+            });
+          }}
           disabled={effectiveStock === 0}
           className="flex-1 rounded-lg bg-primary py-3.5 font-semibold text-primary-foreground shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground min-h-[48px]"
         >

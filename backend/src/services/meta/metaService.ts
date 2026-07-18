@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { generateEntityId } from '../../utils/hexId';
 import { processMessage } from '../chat/chatEngine';
@@ -6,7 +7,6 @@ import { getWelcomeMessages } from '../chat/chatEngine';
 import { sendMessengerText } from './metaClient';
 import { sendWhatsAppText } from './whatsappClient';
 
-const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 
 type ChatPlatform = 'facebook' | 'instagram' | 'whatsapp';

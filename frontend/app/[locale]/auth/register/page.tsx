@@ -205,7 +205,8 @@ function RegisterPageInner() {
     setError('');
 
     if (!email || !phone) { setError(t('bothRequired')); return; }
-    if (!emailVerified || !phoneVerified) { setError(t('verifyBothRequired')); return; }
+    // Email verification required at signup; phone OTP is optional (required only for phone login).
+    if (!emailVerified) { setError(t('verifyEmailRequired')); return; }
 
     const { valid, errors } = validatePassword(password);
     if (!valid) { setPwErrors(errors); return; }
@@ -227,7 +228,7 @@ function RegisterPageInner() {
 
       router.push(`/${locale}`);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: string } } };
+      const err = e as { response?: { status?: number; data?: { error?: string; reason?: string; errors?: unknown } } };
       setError(err.response?.data?.error ?? tc('error'));
     } finally { setLoading(false); }
   }
@@ -256,7 +257,7 @@ function RegisterPageInner() {
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     emailVerified &&
-    phoneVerified &&
+    phone.trim().length > 0 &&
     pwErrors.length === 0 &&
     password.length > 0 &&
     password === confirmPw &&
@@ -388,7 +389,7 @@ function RegisterPageInner() {
               )}
             </div>
 
-            {/* ── Phone + Verify ─────────────────────────────── */}
+            {/* ── Phone + optional Verify ────────────────────── */}
             <div>
               <div className="relative">
                 <input
@@ -398,7 +399,7 @@ function RegisterPageInner() {
                   onChange={(e) => { setPhone(e.target.value); setPhoneVerified(false); setPhoneOtpSent(false); setPhoneOtp(''); }}
                   required
                   disabled={phoneVerified}
-                  className={cn(INPUT_CLS, 'pr-24', phoneVerified && 'border-emerald-500/50 bg-emerald-500/5')}
+                  className={cn(INPUT_CLS, 'pr-28', phoneVerified && 'border-emerald-500/50 bg-emerald-500/5')}
                 />
                 {phoneVerified ? (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-semibold text-emerald-600">
@@ -409,7 +410,7 @@ function RegisterPageInner() {
                     type="button"
                     onClick={() => handleSendOtp('phone')}
                     disabled={phoneSending || phoneCooldown > 0 || phoneLocked || !phone}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary/90 px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50"
                   >
                     {phoneSending ? (
                       <span className="animate-spin inline-block h-3 w-3 border-2 border-primary-foreground border-t-transparent rounded-full" />
@@ -418,11 +419,12 @@ function RegisterPageInner() {
                     ) : phoneOtpSent ? (
                       t('resendOtp')
                     ) : (
-                      t('verify')
+                      t('verifyOptional')
                     )}
                   </button>
                 )}
               </div>
+              <p className="mt-1 text-xs text-muted-foreground">{t('phoneVerifyOptionalHint')}</p>
               {phoneLocked && (
                 <p className="mt-1 text-xs text-destructive animate-in fade-in duration-200">{t('phoneLocked')}</p>
               )}

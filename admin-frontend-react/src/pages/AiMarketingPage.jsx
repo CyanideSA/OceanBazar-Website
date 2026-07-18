@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { FiZap, FiPlus, FiSend, FiUsers, FiTrash2, FiCpu, FiRefreshCw, FiX } from "react-icons/fi";
+import { FiZap, FiPlus, FiSend, FiUsers, FiTrash2, FiCpu, FiRefreshCw, FiX, FiEdit2 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
+import EmailBuilder from "../components/email/EmailBuilder";
 
 const STATUS_STYLES = {
   draft: "bg-crm-bg-hover text-crm-text-dim",
@@ -18,18 +19,38 @@ const AUDIENCE_TYPES = [
   { value: "high_value", label: "High value (LTV)" },
 ];
 
+function plainTextToHtml(text) {
+  if (!text?.trim()) return "";
+  return text
+    .split(/\n\n+/)
+    .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+}
+
+function mapStepFromApi(step) {
+  const meta = step.metadata && typeof step.metadata === "object" ? step.metadata : {};
+  return {
+    subject: step.subject || "",
+    body: step.body || "",
+    bodyHtml: meta.bodyHtml || step.body || "",
+    designJson: meta.designJson ?? null,
+    delayHours: step.delayHours ?? 0,
+  };
+}
+
 const emptyForm = () => ({
   name: "",
   description: "",
   audience: { type: "all", segments: [], minChurnScore: 0.6, minLtv: 0 },
-  steps: [{ subject: "", body: "", delayHours: 0 }],
+  steps: [{ subject: "", body: "", bodyHtml: "", designJson: null, delayHours: 0 }],
 });
 
 export default function AiMarketingPage() {
   const toast = useToast();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [segments, setSegments] = useState([]);
   const [preview, setPreview] = useState(null);
@@ -52,6 +73,39 @@ export default function AiMarketingPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(emptyForm());
+    setPreview(null);
+    setShowEditor(true);
+  };
+
+  const openEdit = async (id) => {
+    try {
+      const res = await adminApi.campaign(id);
+      const c = res?.campaign;
+      if (!c) throw new Error("not_found");
+      setEditingId(c.id);
+      setForm({
+        name: c.name || "",
+        description: c.description || "",
+        audience: c.audience || { type: "all", segments: [], minChurnScore: 0.6, minLtv: 0 },
+        steps: (c.steps?.length ? c.steps : [{ subject: "", body: "", delayHours: 0 }]).map(mapStepFromApi),
+      });
+      setPreview(null);
+      setShowEditor(true);
+    } catch {
+      toast.error("Failed to load campaign");
+    }
+  };
+
+  const closeEditor = () => {
+    setShowEditor(false);
+    setEditingId(null);
+    setForm(emptyForm());
+    setPreview(null);
+  };
+
   const refreshPreview = async (audience) => {
     try {
       setPreview(await adminApi.campaignAudiencePreview(audience));
@@ -63,9 +117,16 @@ export default function AiMarketingPage() {
     setGenerating(true);
     try {
       const r = await adminApi.marketingGenerate({ kind: "email", topic: genTopic.trim(), audience: form.audience.type });
+      const plainBody = r.body || "";
       setForm((f) => {
         const steps = [...f.steps];
-        steps[0] = { ...steps[0], subject: r.subject || steps[0].subject, body: r.body || steps[0].body };
+        steps[0] = {
+          ...steps[0],
+          subject: r.subject || steps[0].subject,
+          body: plainBody || steps[0].body,
+          bodyHtml: plainBody ? plainTextToHtml(plainBody) : steps[0].bodyHtml,
+          designJson: plainBody ? null : steps[0].designJson,
+        };
         return { ...f, steps };
       });
       toast.success(r.source === "heuristic" ? "Generated (heuristic fallback)" : "AI copy generated");
@@ -76,7 +137,10 @@ export default function AiMarketingPage() {
     }
   };
 
-  const addStep = () => setForm((f) => ({ ...f, steps: [...f.steps, { subject: "", body: "", delayHours: 24 }] }));
+  const addStep = () => setForm((f) => ({
+    ...f,
+    steps: [...f.steps, { subject: "", body: "", bodyHtml: "", designJson: null, delayHours: 24 }],
+  }));
   const removeStep = (i) => setForm((f) => ({ ...f, steps: f.steps.filter((_, idx) => idx !== i) }));
   const updateStep = (i, patch) => setForm((f) => {
     const steps = [...f.steps];
@@ -84,24 +148,36 @@ export default function AiMarketingPage() {
     return { ...f, steps };
   });
 
+  const buildStepsPayload = () => form.steps.map((s) => ({
+    subject: s.subject,
+    body: s.body,
+    bodyHtml: s.bodyHtml || plainTextToHtml(s.body) || s.body,
+    designJson: s.designJson ?? null,
+    delayHours: Number(s.delayHours) || 0,
+  }));
+
   const save = async () => {
     if (!form.name.trim()) { toast.error("Campaign name required"); return; }
     setSaving(true);
     try {
-      await adminApi.createCampaign({
+      const payload = {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
         audience: form.audience,
         triggerType: "manual",
-        steps: form.steps.map((s) => ({ subject: s.subject, body: s.body, delayHours: Number(s.delayHours) || 0 })),
-      });
-      toast.success("Campaign created");
-      setShowCreate(false);
-      setForm(emptyForm());
-      setPreview(null);
+        steps: buildStepsPayload(),
+      };
+      if (editingId) {
+        await adminApi.updateCampaign(editingId, payload);
+        toast.success("Campaign updated");
+      } else {
+        await adminApi.createCampaign(payload);
+        toast.success("Campaign created");
+      }
+      closeEditor();
       load();
     } catch {
-      toast.error("Failed to create campaign");
+      toast.error(editingId ? "Failed to update campaign" : "Failed to create campaign");
     } finally {
       setSaving(false);
     }
@@ -133,7 +209,7 @@ export default function AiMarketingPage() {
             <p className="text-crm-text-dim text-sm">AI-generated campaigns, audience builder &amp; email automation journeys</p>
           </div>
         </div>
-        <button onClick={() => setShowCreate(true)} className="crm-btn crm-btn-primary flex items-center gap-2"><FiPlus size={16} /> New campaign</button>
+        <button onClick={openCreate} className="crm-btn crm-btn-primary flex items-center gap-2"><FiPlus size={16} /> New campaign</button>
       </div>
 
       {loading ? (
@@ -153,6 +229,7 @@ export default function AiMarketingPage() {
               </div>
               <div className="flex gap-2 mt-4 pt-3 border-t border-crm-border">
                 <button onClick={() => enroll(c.id)} disabled={c.status === "completed"} className="crm-btn text-xs flex items-center gap-1 flex-1 justify-center"><FiSend size={12} /> Enroll &amp; run</button>
+                <button onClick={() => openEdit(c.id)} className="crm-btn text-xs text-crm-primary" title="Edit"><FiEdit2 size={14} /></button>
                 <button onClick={() => remove(c.id)} className="crm-btn text-xs text-crm-danger"><FiTrash2 size={14} /></button>
               </div>
             </div>
@@ -165,12 +242,12 @@ export default function AiMarketingPage() {
         </div>
       )}
 
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={() => setShowCreate(false)}>
-          <div className="w-full max-w-lg bg-crm-bg h-full overflow-y-auto p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      {showEditor && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={closeEditor}>
+          <div className="w-full max-w-3xl bg-crm-bg h-full overflow-y-auto p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold text-crm-text-bright">New Campaign</h3>
-              <button onClick={() => setShowCreate(false)} className="text-crm-text-dim hover:text-crm-text-bright"><FiX size={20} /></button>
+              <h3 className="text-lg font-bold text-crm-text-bright">{editingId ? "Edit Campaign" : "New Campaign"}</h3>
+              <button onClick={closeEditor} className="text-crm-text-dim hover:text-crm-text-bright"><FiX size={20} /></button>
             </div>
 
             <div className="space-y-4">
@@ -223,7 +300,7 @@ export default function AiMarketingPage() {
                     {generating ? <FiRefreshCw size={14} className="animate-spin" /> : <FiZap size={14} />} Generate
                   </button>
                 </div>
-                <p className="text-[11px] text-crm-text-dim mt-1">Fills the first step. Use {"{{name}}"} for personalization.</p>
+                <p className="text-[11px] text-crm-text-dim mt-1">Fills the first step with plain HTML. Use {"{{name}}"} for personalization.</p>
               </div>
 
               <div>
@@ -231,7 +308,7 @@ export default function AiMarketingPage() {
                   <label className="text-xs text-crm-text-dim uppercase font-bold">Journey steps</label>
                   <button type="button" onClick={addStep} className="text-crm-primary text-xs flex items-center gap-1"><FiPlus size={12} /> Add step</button>
                 </div>
-                <div className="space-y-3 mt-2">
+                <div className="space-y-4 mt-2">
                   {form.steps.map((s, i) => (
                     <div key={i} className="crm-card bg-crm-bg-alt space-y-2">
                       <div className="flex items-center justify-between">
@@ -244,15 +321,32 @@ export default function AiMarketingPage() {
                         </div>
                       </div>
                       <input className="crm-input w-full text-sm" placeholder="Subject" value={s.subject} onChange={(e) => updateStep(i, { subject: e.target.value })} />
-                      <textarea className="crm-input w-full text-sm" rows={4} placeholder="Email body" value={s.body} onChange={(e) => updateStep(i, { body: e.target.value })} />
+                      <EmailBuilder
+                        key={`${editingId || "new"}-step-${i}-${Boolean(s.designJson)}`}
+                        designJson={s.designJson}
+                        htmlFallback={s.bodyHtml || s.body}
+                        minHeight={420}
+                        onChange={({ html, design }) => updateStep(i, { bodyHtml: html, designJson: design, body: html ? undefined : s.body })}
+                      />
+                      {!s.bodyHtml && !s.designJson && (
+                        <textarea
+                          className="crm-input w-full text-sm"
+                          rows={3}
+                          placeholder="Plain-text fallback (used if no visual design)"
+                          value={s.body}
+                          onChange={(e) => updateStep(i, { body: e.target.value })}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="flex gap-2 pt-2">
-                <button onClick={save} disabled={saving} className="crm-btn crm-btn-primary flex-1">{saving ? "Saving…" : "Create campaign"}</button>
-                <button onClick={() => setShowCreate(false)} className="crm-btn">Cancel</button>
+                <button onClick={save} disabled={saving} className="crm-btn crm-btn-primary flex-1">
+                  {saving ? "Saving…" : editingId ? "Save changes" : "Create campaign"}
+                </button>
+                <button onClick={closeEditor} className="crm-btn">Cancel</button>
               </div>
             </div>
           </div>

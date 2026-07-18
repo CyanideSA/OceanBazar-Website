@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { 
   FiSearch, FiPlus, FiBox, FiTrendingUp, FiCheckCircle, 
-  FiMoreVertical, FiEdit2, FiTrash2,
+  FiMoreVertical, FiEdit2, FiTrash2, FiCopy, FiArchive, FiFolder,
   FiImage, FiRefreshCw, FiChevronRight,
   FiChevronLeft, FiDownload, FiSquare, FiCheckSquare,
 } from "react-icons/fi";
@@ -16,7 +16,11 @@ import EditProductDrawer from "../components/products/EditProductDrawer";
 
 const PAGE_LIMIT = 50;
 
-export default function ProductsPage({ initialSearch = "" }) {
+function apiErrorMessage(err, fallback) {
+  return err?.response?.data?.error || err?.response?.data?.message || err?.message || fallback;
+}
+
+export default function ProductsPage({ initialSearch = "", onOpenInExplorer }) {
   const toast = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +36,8 @@ export default function ProductsPage({ initialSearch = "" }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkAction, setBulkAction] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const menuRef = useRef(null);
 
   const adminRole = useMemo(() => String(getAdminUser()?.role || "STAFF").toUpperCase(), []);
   const canEdit = adminRole === "SUPER_ADMIN" || adminRole === "ADMIN";
@@ -71,6 +77,15 @@ export default function ProductsPage({ initialSearch = "" }) {
     fetchProducts(1, activeTab, initialSearch);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setOpenMenuId(null);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openMenuId]);
+
 
   const handleSearchChange = (e) => {
     const val = e.target.value;
@@ -96,7 +111,56 @@ export default function ProductsPage({ initialSearch = "" }) {
       fetchProducts(page, activeTab, search);
       toast.success("Product deleted successfully");
     } catch (err) {
-      toast.error("Failed to delete product");
+      toast.error(apiErrorMessage(err, "Failed to delete product"));
+    }
+  };
+
+  const handleDuplicate = async (id) => {
+    try {
+      await adminApi.duplicateProduct(id);
+      toast.success("Product duplicated as draft");
+      fetchProducts(page, activeTab, search);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to duplicate product"));
+    }
+  };
+
+  const handleArchive = async (id) => {
+    try {
+      await adminApi.updateProduct(id, { status: "archived" });
+      toast.success("Product archived");
+      fetchProducts(page, activeTab, search);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to archive product"));
+    }
+  };
+
+  const handleViewInExplorer = (product) => {
+    const categoryId = product.productCategories?.[0]?.categoryId || product.categoryId || null;
+    onOpenInExplorer?.(product.id, categoryId);
+    setOpenMenuId(null);
+  };
+
+  const runMenuAction = (action, product) => {
+    setOpenMenuId(null);
+    switch (action) {
+      case "edit":
+        setEditProductId(product.id);
+        break;
+      case "duplicate":
+        handleDuplicate(product.id);
+        break;
+      case "explorer":
+        handleViewInExplorer(product);
+        break;
+      case "archive":
+        handleArchive(product.id);
+        break;
+      case "delete":
+        handleDelete(product.id);
+        break;
+      default:
+        break;
     }
   };
 
@@ -337,9 +401,35 @@ export default function ProductsPage({ initialSearch = "" }) {
                             <button onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-danger transition-colors" title="Delete">
                               <FiTrash2 size={16} />
                             </button>
-                            <button className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-text-bright">
-                              <FiMoreVertical size={16} />
-                            </button>
+                            <div className="relative" ref={openMenuId === p.id ? menuRef : null}>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === p.id ? null : p.id); }}
+                                className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-text-bright"
+                                title="More actions"
+                              >
+                                <FiMoreVertical size={16} />
+                              </button>
+                              {openMenuId === p.id && (
+                                <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-crm-border bg-crm-bg-card shadow-lg py-1">
+                                  {[
+                                    { key: "edit", label: "Edit", icon: FiEdit2 },
+                                    { key: "duplicate", label: "Duplicate", icon: FiCopy },
+                                    { key: "explorer", label: "View in Explorer", icon: FiFolder },
+                                    { key: "archive", label: "Archive", icon: FiArchive },
+                                    { key: "delete", label: "Delete", icon: FiTrash2, danger: true },
+                                  ].map(({ key, label, icon: Icon, danger }) => (
+                                    <button
+                                      key={key}
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); runMenuAction(key, p); }}
+                                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-crm-bg-hover ${danger ? "text-crm-danger" : "text-crm-text-bright"}`}
+                                    >
+                                      <Icon size={14} /> {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>

@@ -128,7 +128,8 @@ services:
       # Local Docker: set true for password-only login. false = real Google Authenticator (default).
       ADMIN_2FA_ONBOARDING_BYPASS: ${ADMIN_2FA_ONBOARDING_BYPASS:-false}
       PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar
+      # connection_limit caps each Prisma engine; with a process-wide singleton this stays small.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar?connection_limit=10&pool_timeout=20
       # Prisma schema declares directUrl; must be set or the client throws P6001 and can crash the process.
       DIRECT_URL: postgresql://${POSTGRES_USER:-oceanbazar}:${POSTGRES_PASSWORD:-secret}@postgres:5432/oceanbazar
       REDIS_URL: redis://redis:6379
@@ -319,6 +320,7 @@ services:
       - api
     profiles:
       - full
+      - production
     restart: unless-stopped
 
   # ─── Vite Admin CRM ────────────────────────────────────────────────────────
@@ -341,6 +343,7 @@ services:
         condition: service_healthy
     profiles:
       - full
+      - production
     restart: unless-stopped
 
   # ─── Nginx Reverse Proxy (production) ──────────────────────────────────────

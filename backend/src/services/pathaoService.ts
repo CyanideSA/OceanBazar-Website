@@ -1,8 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
-import { PrismaClient } from '@prisma/client';
-import { v4 as uuidv4 } from 'uuid';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
+import { v4 as uuidv4 } from 'uuid';
 
 function getConfig() {
   const isSandbox = (process.env.PATHAO_ENV || 'sandbox') === 'sandbox';

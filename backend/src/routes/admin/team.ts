@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import bcrypt from 'bcryptjs';
 import { requireRole } from '../../middleware/auth';
 import { routeParam } from '../../utils/params';
@@ -7,7 +8,6 @@ import { recordAdminAudit } from '../../lib/adminAudit';
 import { requireAdminReauth } from '../../middleware/adminReauth';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/admin/team/members
 router.get('/members', async (req: Request, res: Response) => {

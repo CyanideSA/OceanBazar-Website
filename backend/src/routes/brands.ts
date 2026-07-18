@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { routeParam } from '../utils/params';
 import { cacheResponse } from '../cache/cacheMiddleware';
 import { BrandListResponseSchema } from '../contracts/brand.contract';
 import { parseContract } from '../lib/contractValidate';
 
 const router = Router();
-const prisma = new PrismaClient();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prismaAny = prisma as any;
 const brandCache = cacheResponse({ ttlSeconds: 1800, keyPrefix: 'bff:brands' });

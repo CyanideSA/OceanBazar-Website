@@ -31,6 +31,7 @@ public final class PaymentParsing {
         String s = raw.trim().toLowerCase(Locale.ROOT);
         return switch (s) {
             case "paid", "success" -> PaymentStatus.paid;
+            case "under_verification" -> PaymentStatus.under_verification;
             case "refunded" -> PaymentStatus.refunded;
             case "partial" -> PaymentStatus.partial;
             default -> PaymentStatus.unpaid;

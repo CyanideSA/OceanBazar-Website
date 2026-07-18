@@ -8,13 +8,20 @@ export async function verifyRecaptchaToken(
   token: string,
   expectedAction?: string,
 ): Promise<{ ok: boolean; score?: number; reason?: string }> {
-  if (!token) return { ok: false, reason: 'missing_token' };
-
+  // Check configuration first — missing browser tokens must not block local/dev
+  // when Enterprise keys are absent.
   if (!isRecaptchaConfigured()) {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' || process.env.RECAPTCHA_ENFORCE === 'true') {
       return { ok: false, reason: 'not_configured' };
     }
-    return { ok: true, score: 1 };
+    return { ok: true, score: 1, reason: 'skipped_unconfigured' };
+  }
+
+  if (!token) {
+    if (process.env.NODE_ENV === 'production' || process.env.RECAPTCHA_ENFORCE === 'true') {
+      return { ok: false, reason: 'missing_token' };
+    }
+    return { ok: true, score: 1, reason: 'skipped_missing_token_dev' };
   }
 
   try {
@@ -34,7 +41,12 @@ export async function verifyRecaptchaToken(
     const action = data?.tokenProperties?.action;
     const score = data?.riskAnalysis?.score as number | undefined;
 
-    if (!valid) return { ok: false, reason: 'invalid_token' };
+    if (!valid) {
+      if (process.env.NODE_ENV !== 'production' && process.env.RECAPTCHA_ENFORCE !== 'true') {
+        return { ok: true, score: 1, reason: 'skipped_invalid_token_dev' };
+      }
+      return { ok: false, reason: 'invalid_token' };
+    }
     if (expectedAction && action && action !== expectedAction) {
       return { ok: false, reason: 'action_mismatch' };
     }
@@ -45,6 +57,9 @@ export async function verifyRecaptchaToken(
     return { ok: true, score };
   } catch (err: unknown) {
     console.error('[recaptcha] verify failed:', (err as Error)?.message);
+    if (process.env.NODE_ENV !== 'production' && process.env.RECAPTCHA_ENFORCE !== 'true') {
+      return { ok: true, score: 1, reason: 'skipped_verify_error_dev' };
+    }
     return { ok: false, reason: 'verify_error' };
   }
 }

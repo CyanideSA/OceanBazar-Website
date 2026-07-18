@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+﻿import React, { useState, useEffect, useCallback } from "react";
 import { FiStar, FiTarget, FiSearch, FiX, FiRefreshCw } from "react-icons/fi";
 import { adminApi } from "../../lib/api";
 import { useCatalogStore } from "../../stores/catalogStore";
@@ -129,7 +129,7 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
     return (
       <div className="product-detail-panel">
         <div className="detail-loading">
-          <IconSpinner size={16} color="#484f58" />
+          <IconSpinner size={16} color="var(--crm-text-muted)" />
           Loading product…
         </div>
       </div>
@@ -234,7 +234,7 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
                 <label className="flex items-start gap-3 cursor-pointer group p-3 rounded-lg bg-crm-bg border border-crm-border hover:border-crm-primary/40 transition-colors">
                   <input type="checkbox" className="mt-0.5 w-4 h-4 accent-crm-primary" checked={form.isBestSeller} onChange={e => setField("isBestSeller", e.target.checked)} />
                   <div>
-                    <p className="text-xs font-bold text-orange-400">Best Seller</p>
+                    <p className="text-xs font-bold text-crm-warning">Best Seller</p>
                     <p className="text-[10px] text-crm-text-dim">Badge on product card</p>
                   </div>
                 </label>
@@ -303,7 +303,7 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
               </div>
 
               <div className="pt-6 border-t border-crm-border space-y-4">
-                <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest flex items-center gap-2"><FiTarget size={13} /> SEO Optimization</h4>
+                <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest flex items-center gap-2"><FiTarget size={13} /> SEO Optimization</h4>
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-crm-text-dim uppercase">SEO Title</label>
@@ -478,7 +478,7 @@ function PricingTab({ productId, productDetail, onRefresh }) {
             <input className="form-input" type="number" step="0.01" value={ef.compareAt} onChange={(e) => setEf("compareAt", e.target.value)} placeholder="Optional" />
           </div>
         </div>
-        <div style={{ fontSize: 10, color: "#484f58", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Bulk Tiers</div>
+        <div style={{ fontSize: 10, color: "var(--crm-text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Bulk Tiers</div>
         {[1, 2, 3].map((n) => (
           <div key={n} className="form-row" style={{ marginBottom: 6 }}>
             <div className="form-group">
@@ -508,12 +508,12 @@ function PricingTab({ productId, productDetail, onRefresh }) {
         <div key={p.id}>
           <div className="pricing-type-header">
             <span className="pricing-type-label">
-              <IconPricing size={12} color={(p.customerType || "").toLowerCase() === "retail" ? "#56d364" : "#79c0ff"} />
+              <IconPricing size={12} color={(p.customerType || "").toLowerCase() === "retail" ? "var(--crm-success)" : "var(--crm-primary)"} />
               {p.customerType}
             </span>
             <div style={{ display: "flex", gap: 4 }}>
               <button className="btn-icon-sm" onClick={() => startEdit(p)} title="Edit"><IconEdit size={11} /></button>
-              <button className="btn-icon-sm" style={{ color: "#f85149" }} onClick={() => handleDelete(p.id)} title="Delete"><IconTrash size={11} /></button>
+              <button className="btn-icon-sm" style={{ color: "var(--crm-danger)" }} onClick={() => handleDelete(p.id)} title="Delete"><IconTrash size={11} /></button>
             </div>
           </div>
           {editingId !== p.id && (
@@ -539,7 +539,7 @@ function PricingTab({ productId, productDetail, onRefresh }) {
         <div>
           <div className="pricing-type-header">
             <span className="pricing-type-label">
-              <IconPlus size={12} color="#58a6ff" />
+              <IconPlus size={12} color="var(--crm-primary)" />
               New — {addingType}
             </span>
           </div>
@@ -549,7 +549,7 @@ function PricingTab({ productId, productDetail, onRefresh }) {
 
       {!addingType && unusedTypes.length > 0 && (
         <div style={{ marginTop: pricing.length > 0 ? 12 : 0 }}>
-          <div style={{ fontSize: 10, color: "#484f58", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Add Pricing</div>
+          <div style={{ fontSize: 10, color: "var(--crm-text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Add Pricing</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {unusedTypes.map((t) => (
               <button key={t} className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => startAdd(t)}>
@@ -613,7 +613,7 @@ function MediaTab({ productId, onRefresh }) {
           {uploading ? <><IconSpinner size={13} />Uploading…</> : <><IconUpload size={13} />Upload Image / Video</>}
           <input type="file" accept="image/*,video/*" onChange={handleUpload} disabled={uploading} hidden />
         </label>
-        <span style={{ fontSize: 11, color: "#484f58" }}>{assets.length} file{assets.length !== 1 ? "s" : ""}</span>
+        <span style={{ fontSize: 11, color: "var(--crm-text-muted)" }}>{assets.length} file{assets.length !== 1 ? "s" : ""}</span>
       </div>
       {assets.length === 0 ? (
         <div className="tab-empty">No media yet. Upload images or videos above.</div>
@@ -650,7 +650,7 @@ function KVEditor({ rows, onChange, label, addLabel }) {
   const update = (i, field, val) => { const next = [...rows]; next[i] = { ...next[i], [field]: val }; onChange(next); };
   return (
     <div className="tab-section">
-      <div style={{ fontSize: 10, color: "#484f58", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 10, color: "var(--crm-text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{label}</div>
       <table className="attr-table" style={{ marginBottom: 6 }}>
         <thead><tr><th>Key</th><th>Value</th><th style={{ width: 28 }} /></tr></thead>
         <tbody>
@@ -658,7 +658,7 @@ function KVEditor({ rows, onChange, label, addLabel }) {
             <tr key={i}>
               <td><input className="form-input" value={row.key || ""} onChange={e => update(i, "key", e.target.value)} placeholder="e.g. Material" /></td>
               <td><input className="form-input" value={row.value || ""} onChange={e => update(i, "value", e.target.value)} placeholder="e.g. Cotton" /></td>
-              <td><button type="button" onClick={() => remove(i)} className="btn-icon-sm" style={{ color: "#f85149" }}><IconTrash size={11} /></button></td>
+              <td><button type="button" onClick={() => remove(i)} className="btn-icon-sm" style={{ color: "var(--crm-danger)" }}><IconTrash size={11} /></button></td>
             </tr>
           ))}
         </tbody>
@@ -848,7 +848,7 @@ function VariantsTab({ productDetail }) {
       </div>
 
       {adding && (
-        <div className="form-group" style={{ background: "var(--bg-tertiary)", padding: 12, borderRadius: 6, marginBottom: 10 }}>
+        <div className="form-group" style={{ background: "var(--crm-bg-hover)", padding: 12, borderRadius: 6, marginBottom: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <div>
               <label className="form-label">Name EN *</label>
@@ -880,7 +880,7 @@ function VariantsTab({ productDetail }) {
             <input className="form-input" value={form.attributes} onChange={(e) => setForm((f) => ({ ...f, attributes: e.target.value }))} placeholder="color: red, size: XL, material: cotton" />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--crm-text-dim)", cursor: "pointer" }}>
               <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} />
               Active
             </label>
@@ -905,7 +905,7 @@ function VariantsTab({ productDetail }) {
             <div className="v-name">{v.nameEn || "Variant"}</div>
             <div className="v-meta">SKU: {v.sku || "—"} · Stock: {v.stock ?? 0} {v.priceOverride != null ? `· ৳${v.priceOverride}` : ""}</div>
             {v.attributes && v.attributes !== "{}" && (
-              <div className="v-meta" style={{ color: "var(--accent)" }}>{attrsToString(v.attributes)}</div>
+              <div className="v-meta" style={{ color: "var(--crm-primary)" }}>{attrsToString(v.attributes)}</div>
             )}
           </div>
           <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>

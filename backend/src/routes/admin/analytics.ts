@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/admin/analytics/sales — sales over time
 router.get('/sales', async (req: Request, res: Response) => {
@@ -10,21 +9,36 @@ router.get('/sales', async (req: Request, res: Response) => {
   const since = new Date(Date.now() - days * 86400_000);
 
   const orders = await prisma.order.findMany({
-    where: { createdAt: { gte: since }, paymentStatus: 'paid' },
-    select: { createdAt: true, total: true },
+    where: {
+      createdAt: { gte: since },
+      paymentStatus: { in: ['paid', 'under_verification', 'pending_verification'] },
+    },
+    select: { createdAt: true, total: true, paymentStatus: true },
     orderBy: { createdAt: 'asc' },
   });
 
   // Group by day
   const salesByDay: Record<string, { date: string; orders: number; revenue: number }> = {};
+  let confirmedRevenue = 0;
+  let confirmedOrders = 0;
   for (const o of orders) {
     const day = o.createdAt.toISOString().slice(0, 10);
     if (!salesByDay[day]) salesByDay[day] = { date: day, orders: 0, revenue: 0 };
     salesByDay[day].orders++;
     salesByDay[day].revenue += Number(o.total);
+    if (o.paymentStatus === 'paid') {
+      confirmedRevenue += Number(o.total);
+      confirmedOrders++;
+    }
   }
 
-  res.json({ sales: Object.values(salesByDay), totalOrders: orders.length, totalRevenue: orders.reduce((s, o) => s + Number(o.total), 0) });
+  res.json({
+    sales: Object.values(salesByDay),
+    totalOrders: orders.length,
+    totalRevenue: orders.reduce((s, o) => s + Number(o.total), 0),
+    confirmedOrders,
+    confirmedRevenue,
+  });
 });
 
 // GET /api/admin/analytics/customer-growth
@@ -108,7 +122,10 @@ router.get('/order-funnel', async (_req: Request, res: Response) => {
 router.get('/live-snapshot', async (_req: Request, res: Response) => {
   const [totalOrders, totalRevenue, totalUsers, pendingOrders, activeChats, openTickets, pendingReturns] = await Promise.all([
     prisma.order.count(),
-    prisma.order.aggregate({ _sum: { total: true }, where: { paymentStatus: 'paid' } }),
+    prisma.order.aggregate({
+      _sum: { total: true },
+      where: { paymentStatus: { in: ['paid', 'under_verification', 'pending_verification'] } },
+    }),
     prisma.user.count(),
     prisma.order.count({ where: { status: 'pending' } }),
     prisma.chat_sessions.count({ where: { is_active: true } }),

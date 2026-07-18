@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -50,7 +51,6 @@ import {
   verifyAdminTotp,
   verifySetupTotp,
 } from '../../utils/totp';
-import { agentDebugLog } from '../../utils/debug-agent-log';
 import { trackAdminSession } from '../../services/adminSessionService';
 import { getRedisClient } from '../../cache/redisClient';
 import {
@@ -70,9 +70,9 @@ import { exchangeAndStoreMetaAccount } from '../../services/meta/metaOAuthServic
 import { requireAdminPolicy } from '../../middleware/adminPolicy';
 import { recordAdminAudit } from '../../lib/adminAudit';
 import { requireAdminReauth, signReauthToken } from '../../middleware/adminReauth';
+import { notifyCustomer } from '../../services/customerNotify';
 
 const router = Router();
-const prisma = new PrismaClient();
 const enforceAdminPolicy = requireAdminPolicy();
 
 type Pending2faSetup = {
@@ -202,6 +202,8 @@ router.use((req, res, next) => {
   if (base.startsWith('/auth/forgot-password')) return next();
   if (base.startsWith('/auth/sso/')) return next();
   if (base === '/meta/oauth/callback' && req.method === 'GET') return next();
+  // EventSource cannot send Authorization — /live/stream authenticates via ?token=
+  if (base === '/live/stream' || base.startsWith('/live/stream?')) return next();
   return requireAdmin(req, res, () => enforceAdminPolicy(req, res, next));
 });
 
@@ -211,13 +213,17 @@ router.use((req, res, next) => {
   const startedAt = Date.now();
   res.on('finish', () => {
     if (res.statusCode < 200 || res.statusCode >= 400) return;
+    // target_id is VARCHAR(50); full path stored in details.fullPath by recordAdminAudit.
+    const pathParts = String(req.path || '').split('/').filter(Boolean);
+    const shortTarget = pathParts[0] || req.path || 'route';
     void recordAdminAudit(req, {
       action: `${req.method} ${req.path}`,
       targetType: 'admin_route',
-      targetId: req.path,
+      targetId: shortTarget,
       details: {
         statusCode: res.statusCode,
         durationMs: Date.now() - startedAt,
+        fullPath: req.path,
       },
     }).catch(() => {});
   });
@@ -267,14 +273,6 @@ async function verifyAndConsumeAdminTotp(
   const normalizedSecret = normalizeTotpSecret(secret);
   const check = verifyAdminTotp(normalizedSecret, otp);
   if (!check.valid || check.periodCounter === undefined) {
-    // #region agent log
-    agentDebugLog('admin/index.ts:verifyAndConsumeAdminTotp', 'invalid_totp', {
-      adminId,
-      secretLen: normalizedSecret.length,
-      otpLen: otp.length,
-      skipReplay: Boolean(options?.skipReplayCheck),
-    }, 'A');
-    // #endregion
     return { ok: false, reason: 'invalid' };
   }
 
@@ -289,13 +287,6 @@ async function verifyAndConsumeAdminTotp(
       /* column may not exist until migration applied */
     }
     if (lastCounter != null && check.periodCounter <= lastCounter) {
-      // #region agent log
-      agentDebugLog('admin/index.ts:verifyAndConsumeAdminTotp', 'replay_blocked', {
-        adminId,
-        lastCounter,
-        periodCounter: check.periodCounter,
-      }, 'C');
-      // #endregion
       return { ok: false, reason: 'replay' };
     }
     try {
@@ -475,7 +466,6 @@ router.post('/auth/login', async (req: Request, res: Response) => {
   const profile = adminPublicProfile(admin);
 
   if (isAdmin2faDevMode()) {
-    agentDebugLog('admin/index.ts:login', 'dev_mode_password_only', { adminId: admin.id }, 'F');
     await finalizeAdminLogin(admin.id, admin.role, req, res);
     return;
   }
@@ -537,18 +527,9 @@ router.post('/auth/login-2fa', async (req: Request, res: Response) => {
     res.status(400).json({ error: '2FA is not enabled for this account' });
     return;
   }
-  // #region agent log
-  agentDebugLog('admin/index.ts:login-2fa', 'attempt', {
-    adminId: payload.adminId,
-    otpLen: otp.length,
-    secretLen: row.two_fa_secret?.length ?? 0,
-    twoFaEnabled: row.two_fa_enabled,
-  }, 'B');
-  // #endregion
   const totp = await verifyAndConsumeAdminTotp(payload.adminId, row.two_fa_secret, otp);
   if (!totp.ok) {
     if (isAdmin2faDevMode()) {
-      agentDebugLog('admin/index.ts:login-2fa', 'dev_mode_bypass', { adminId: payload.adminId }, 'F');
       await finalizeAdminLogin(payload.adminId, payload.role, req, res);
       return;
     }
@@ -556,18 +537,9 @@ router.post('/auth/login-2fa', async (req: Request, res: Response) => {
       totp.reason === 'replay'
         ? 'This code was already used or has expired. Enter the latest code from your authenticator app.'
         : 'Invalid authenticator code';
-    // #region agent log
-    agentDebugLog('admin/index.ts:login-2fa', 'failed', {
-      adminId: payload.adminId,
-      reason: totp.reason,
-    }, 'C');
-    // #endregion
     res.status(401).json({ error: msg });
     return;
   }
-  // #region agent log
-  agentDebugLog('admin/index.ts:login-2fa', 'success', { adminId: payload.adminId }, 'B');
-  // #endregion
   await finalizeAdminLogin(payload.adminId, payload.role, req, res);
 });
 
@@ -684,16 +656,6 @@ router.post('/auth/onboarding/2fa/setup', async (req: Request, res: Response) =>
   const accountLabel = admin.username || admin.email;
   const pending = await getOrCreatePending2faSetup(admin.id, accountLabel);
   const body = pendingSetupResponse(pending, accountLabel);
-  // #region agent log
-  agentDebugLog('admin/index.ts:2fa-setup', 'issued', {
-    adminId: admin.id,
-    secretLen: pending.secret.length,
-    secretFp: secretFingerprint(pending.secret),
-    secretHint: totpSecretHint(pending.secret),
-    cacheHit: pending.cacheHit,
-    urlSecretMatches: body.urlSecretMatches,
-  }, 'B');
-  // #endregion
   res.json(body);
 });
 
@@ -722,12 +684,6 @@ router.post('/auth/onboarding/2fa/refresh', async (req: Request, res: Response) 
   const accountLabel = admin.username || admin.email;
   const pending = await getOrCreatePending2faSetup(admin.id, accountLabel, true);
   const body = pendingSetupResponse(pending, accountLabel);
-  agentDebugLog('admin/index.ts:2fa-refresh', 'issued', {
-    adminId: admin.id,
-    secretFp: secretFingerprint(pending.secret),
-    secretHint: totpSecretHint(pending.secret),
-    urlSecretMatches: body.urlSecretMatches,
-  }, 'B');
   res.json(body);
 });
 
@@ -800,30 +756,14 @@ router.post('/auth/onboarding/2fa/enable', async (req: Request, res: Response) =
   const pending = await loadPendingSetup(onboardPayload.adminId);
   const tokenMatch = pending?.setupToken?.trim() === setupToken.trim();
   if (!pending || pending.expiresAt <= Date.now() || !tokenMatch) {
-    agentDebugLog('admin/index.ts:2fa-enable', 'pending_mismatch', {
-      adminId: onboardPayload.adminId,
-      hasPending: Boolean(pending),
-      tokenMatch: Boolean(tokenMatch),
-    }, 'E');
     res.status(401).json({
       error: '2FA setup expired or QR was regenerated. Click Regenerate QR, scan the new code, then try again.',
     });
     return;
   }
   const enrollSecret = pending.secret;
-  // #region agent log
-  agentDebugLog('admin/index.ts:2fa-enable', 'attempt', {
-    adminId: onboardPayload.adminId,
-    otpLen: otp.length,
-    secretLen: enrollSecret.length,
-    secretFp: secretFingerprint(enrollSecret),
-    pendingMatch: true,
-    devMode: isAdmin2faDevMode(),
-  }, 'B');
-  // #endregion
   const setupCheck = verifySetupTotp(enrollSecret, otp);
   if (!setupCheck.valid && isAdmin2faDevMode()) {
-    agentDebugLog('admin/index.ts:2fa-enable', 'dev_mode_skip_2fa', { adminId: onboardPayload.adminId }, 'F');
     pending2faSetupByAdmin.delete(onboardPayload.adminId);
     try {
       const redis = await getRedisClient();
@@ -835,12 +775,6 @@ router.post('/auth/onboarding/2fa/enable', async (req: Request, res: Response) =
     return;
   }
   if (!setupCheck.valid) {
-    // #region agent log
-    agentDebugLog('admin/index.ts:2fa-enable', 'failed', {
-      adminId: onboardPayload.adminId,
-      reason: 'invalid',
-    }, 'B');
-    // #endregion
     res.status(401).json({
       error:
         'Invalid authenticator code. Delete every old OceanBazar entry in Google Authenticator, refresh this page, scan the new QR, then enter the current code. Check that the setup key ends with the 4 characters shown below the QR.',
@@ -965,6 +899,8 @@ router.get('/auth/me', requireAdmin, async (req: Request, res: Response) => {
   if (!admin) { res.status(404).json({ error: 'Admin not found' }); return; }
   let profileImage: string | null = null;
   try {
+    const { ensureAdminGovernanceSchema } = await import('../../lib/adminGovernance');
+    await ensureAdminGovernanceSchema();
     const rows = await prisma.$queryRaw<{ profile_image: string | null }[]>`
       SELECT profile_image FROM admin_users WHERE id = ${admin.id} LIMIT 1
     `;
@@ -1107,22 +1043,32 @@ router.use('/communications', requireAdmin, communicationsRouter);
 router.use('/integrations', requireAdmin, integrationsRouter);
 router.use('/client-errors', requireAdmin, clientErrorsAdminRouter);
 
-
 // ─── Live routes — registered BEFORE studioRouter so the query-param SSE endpoint
 //     is not blocked by studioRouter's router.use(requireAdmin). EventSource cannot
 //     set Authorization headers, so the stream authenticates via ?token query param.
 
 router.get('/live/snapshot', requireAdmin, async (_req: Request, res: Response) => {
-  const [totalOrders, totalRevenue, totalUsers, pendingOrders, activeChats, openTickets, pendingReturns] = await Promise.all([
+  const [totalOrders, totalRevenue, pendingVerificationRevenue, totalUsers, pendingOrders, activeChats, openTickets, pendingReturns] = await Promise.all([
     prisma.order.count(),
-    prisma.order.aggregate({ _sum: { total: true }, where: { paymentStatus: 'paid' } }),
+    prisma.order.aggregate({ _sum: { total: true }, where: { paymentStatus: { in: ['paid', 'under_verification', 'pending_verification'] } } }),
+    prisma.order.aggregate({ _sum: { total: true }, where: { paymentStatus: { in: ['under_verification', 'pending_verification'] } } }),
     prisma.user.count(),
     prisma.order.count({ where: { status: 'pending' } }),
     prisma.chat_sessions.count({ where: { is_active: true } }),
     prisma.ticket.count({ where: { status: { in: ['open', 'in_progress'] } } }),
     prisma.return_requests.count({ where: { status: 'pending' } }),
   ]);
-  res.json({ totalOrders, totalRevenue: Number(totalRevenue._sum.total || 0), totalUsers, pendingOrders, activeChats, openTickets, pendingReturns, timestamp: new Date().toISOString() });
+  res.json({
+    totalOrders,
+    totalRevenue: Number(totalRevenue._sum.total || 0),
+    pendingVerificationRevenue: Number(pendingVerificationRevenue._sum.total || 0),
+    totalUsers,
+    pendingOrders,
+    activeChats,
+    openTickets,
+    pendingReturns,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // SSE — token in query param (EventSource cannot set headers)
@@ -1133,7 +1079,15 @@ router.get('/live/stream', async (req: Request, res: Response) => {
   let isAdminToken = false;
   const isAdminRole = (role: unknown) => {
     const r = String(role || '').toLowerCase();
-    return r === 'super_admin' || r === 'admin' || r === 'staff';
+    return (
+      r === 'super_admin' ||
+      r === 'admin' ||
+      r === 'staff' ||
+      r === 'warehouse' ||
+      r === 'support' ||
+      r === 'finance' ||
+      r === 'viewer'
+    );
   };
   const verifyAndInspect = (secret: string) => {
     const payload = jwt.verify(token, secret) as Record<string, unknown>;
@@ -1153,9 +1107,6 @@ router.get('/live/stream', async (req: Request, res: Response) => {
     } catch { /* invalid */ }
   }
   if (!tokenValid || !isAdminToken) {
-    // #region agent log
-    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9a9989'},body:JSON.stringify({sessionId:'9a9989',location:'admin/index.ts:live/stream',message:'sse_auth_rejected',data:{tokenValid,isAdminToken},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
     res.status(401).end(); return;
   }
 
@@ -1171,7 +1122,10 @@ router.get('/live/stream', async (req: Request, res: Response) => {
     try {
       const [totalOrders, totalRevenue, totalUsers, pendingOrders, activeChats, openTickets, pendingReturns] = await Promise.all([
         prisma.order.count(),
-        prisma.order.aggregate({ _sum: { total: true }, where: { paymentStatus: 'paid' } }),
+        prisma.order.aggregate({
+          _sum: { total: true },
+          where: { paymentStatus: { in: ['paid', 'under_verification', 'pending_verification'] } },
+        }),
         prisma.user.count(),
         prisma.order.count({ where: { status: 'pending' } }),
         prisma.chat_sessions.count({ where: { is_active: true } }),
@@ -1188,14 +1142,16 @@ router.get('/live/stream', async (req: Request, res: Response) => {
   req.on('close', () => clearInterval(interval));
 });
 
-router.use(studioRouter);
-
-// ─── Dashboard overview ───────────────────────────────────────────────────────
-
+// Dashboard routes BEFORE studioRouter — studio is mounted at "/" with requireAdmin and
+// unmatched paths can fall through to the Java coreApiProxy (which returns
+// {"detail":"Invalid admin token"} and triggers CRM logout via the axios 401 interceptor).
 router.get('/overview', requireAdmin, async (_req, res: Response) => {
   const [totalOrders, totalRevenue, totalUsers, pendingTickets, totalProducts] = await Promise.all([
     prisma.order.count(),
-    prisma.order.aggregate({ _sum: { total: true }, where: { paymentStatus: 'paid' } }),
+    prisma.order.aggregate({
+      _sum: { total: true },
+      where: { paymentStatus: { in: ['paid', 'under_verification', 'pending_verification'] } },
+    }),
     prisma.user.count(),
     prisma.ticket.count({ where: { status: { in: ['open', 'in_progress'] } } }),
     prisma.product.count(),
@@ -1208,6 +1164,133 @@ router.get('/overview', requireAdmin, async (_req, res: Response) => {
     totalProducts,
   });
 });
+
+router.get('/activity', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '10'), 10)));
+    const perSourceTake = page * limit + limit;
+
+    const [orders, payments, returns, tickets, customers, orderCount, paymentCount, returnCount, ticketCount, customerCount] =
+      await Promise.all([
+        prisma.order.findMany({
+          include: { user: { select: { name: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: perSourceTake,
+        }),
+        prisma.paymentTransaction.findMany({
+          include: {
+            user: { select: { name: true } },
+            order: { select: { orderNumber: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: perSourceTake,
+        }),
+        prisma.return_requests.findMany({
+          orderBy: { created_at: 'desc' },
+          take: perSourceTake,
+        }),
+        prisma.ticket.findMany({
+          include: { user: { select: { name: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: perSourceTake,
+        }),
+        prisma.user.findMany({
+          select: { id: true, name: true, email: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: perSourceTake,
+        }),
+        prisma.order.count(),
+        prisma.paymentTransaction.count(),
+        prisma.return_requests.count(),
+        prisma.ticket.count(),
+        prisma.user.count(),
+      ]);
+
+    type RawActivity = { id: string; type: string; text: string; time: string; color?: string; sortTime: number };
+    const merged: RawActivity[] = [];
+
+    for (const o of orders) {
+      const label = String(o.orderNumber || o.id).slice(-6).toUpperCase();
+      merged.push({
+        id: `order-${o.id}`,
+        type: 'order',
+        text: `Order #${label} — ${o.user?.name || 'Guest'} — ৳${Number(o.total ?? 0).toLocaleString()}`,
+        time: o.createdAt.toISOString(),
+        color:
+          o.status === 'delivered'
+            ? 'text-crm-success'
+            : o.status === 'cancelled'
+              ? 'text-crm-danger'
+              : 'text-crm-primary',
+        sortTime: o.createdAt.getTime(),
+      });
+    }
+
+    for (const p of payments) {
+      const label = String(p.order?.orderNumber || p.orderId).slice(-6).toUpperCase();
+      merged.push({
+        id: `payment-${p.id}`,
+        type: 'payment',
+        text: `Payment ${p.status} — ${p.method.toUpperCase()} — Order #${label} — ৳${Number(p.amount).toLocaleString()}`,
+        time: p.createdAt.toISOString(),
+        color:
+          p.status === 'success'
+            ? 'text-crm-success'
+            : p.status === 'failed'
+              ? 'text-crm-danger'
+              : 'text-crm-warning',
+        sortTime: p.createdAt.getTime(),
+      });
+    }
+
+    for (const r of returns) {
+      merged.push({
+        id: `return-${r.id}`,
+        type: 'return',
+        text: `Return request ${r.status} — Order #${String(r.order_id).slice(-6).toUpperCase()}`,
+        time: r.created_at.toISOString(),
+        color: r.status === 'approved' || r.status === 'completed' ? 'text-crm-success' : 'text-crm-warning',
+        sortTime: r.created_at.getTime(),
+      });
+    }
+
+    for (const t of tickets) {
+      merged.push({
+        id: `ticket-${t.id}`,
+        type: 'ticket',
+        text: `Ticket: ${t.subject.slice(0, 60)}${t.subject.length > 60 ? '…' : ''} — ${t.user?.name || 'Customer'}`,
+        time: t.createdAt.toISOString(),
+        color: t.status === 'resolved' || t.status === 'closed' ? 'text-crm-success' : 'text-crm-purple',
+        sortTime: t.createdAt.getTime(),
+      });
+    }
+
+    for (const u of customers) {
+      merged.push({
+        id: `customer-${u.id}`,
+        type: 'customer',
+        text: `New customer — ${u.name}${u.email ? ` (${u.email})` : ''}`,
+        time: u.createdAt.toISOString(),
+        color: 'text-crm-purple',
+        sortTime: u.createdAt.getTime(),
+      });
+    }
+
+    merged.sort((a, b) => b.sortTime - a.sortTime);
+
+    const total = orderCount + paymentCount + returnCount + ticketCount + customerCount;
+    const offset = (page - 1) * limit;
+    const items = merged.slice(offset, offset + limit).map(({ sortTime: _sortTime, ...item }) => item);
+    const hasMore = items.length === limit && (offset + items.length < merged.length || perSourceTake < total);
+
+    res.json({ items, page, limit, total, hasMore });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to load activity', detail: String(err?.message || err).slice(0, 200) });
+  }
+});
+
+router.use(studioRouter);
 
 // ─── Products CRUD ────────────────────────────────────────────────────────────
 
@@ -1307,7 +1390,7 @@ router.post('/products', requireAdmin, requireRole('super_admin', 'admin'), asyn
   res.status(201).json({ product });
 });
 
-router.delete('/products/:id', requireAdmin, requireRole('super_admin'), async (req: Request, res: Response) => {
+router.delete('/products/:id', requireAdmin, requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   const id = routeParam(req.params.id);
   const updated = await prisma.product.updateMany({ where: { id }, data: { status: 'archived' } });
   if (!updated.count) {
@@ -1315,6 +1398,150 @@ router.delete('/products/:id', requireAdmin, requireRole('super_admin'), async (
     return;
   }
   res.json({ message: 'Product archived' });
+});
+
+router.post('/products/:id/duplicate', requireAdmin, requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
+  const sourceId = routeParam(req.params.id);
+  const source = await prisma.product.findUnique({
+    where: { id: sourceId },
+    include: {
+      pricing: true,
+      productAssets: { orderBy: { sortOrder: 'asc' } },
+      productCategories: true,
+      productAttributes: true,
+      variants: { orderBy: { sortOrder: 'asc' } },
+      productTags: true,
+    },
+  });
+  if (!source) {
+    res.status(404).json({ error: 'Product not found' });
+    return;
+  }
+
+  const newId = generateEntityId();
+  await prisma.$transaction(async (tx) => {
+    await tx.product.create({
+      data: {
+        id: newId,
+        brandId: source.brandId,
+        sellerId: source.sellerId,
+        titleEn: `${source.titleEn} (Copy)`,
+        titleBn: source.titleBn ? `${source.titleBn} (Copy)` : `${source.titleEn} (Copy)`,
+        descriptionEn: source.descriptionEn,
+        descriptionBn: source.descriptionBn,
+        brand: source.brand,
+        brandLogoUrl: source.brandLogoUrl,
+        sku: source.sku ? `${source.sku}-copy` : null,
+        status: 'draft',
+        weight: source.weight,
+        weightUnit: source.weightUnit,
+        pricingMode: source.pricingMode,
+        moq: source.moq,
+        stock: source.stock,
+        seoTitle: source.seoTitle,
+        seoDescription: source.seoDescription,
+        importSource: source.importSource,
+        specifications: source.specifications ?? undefined,
+        attributesExtra: source.attributesExtra ?? undefined,
+        isFeatured: false,
+        isBestSeller: false,
+        isBestRated: false,
+        reviewCount: 0,
+        ratingAvg: null,
+        reviewsSnapshot: undefined,
+        popularityRank: null,
+        popularityLabelEn: null,
+        popularityLabelBn: null,
+        pricing: {
+          create: source.pricing.map((row) => ({
+            customerType: row.customerType,
+            price: row.price,
+            compareAt: row.compareAt,
+            tier1MinQty: row.tier1MinQty,
+            tier1Discount: row.tier1Discount,
+            tier2MinQty: row.tier2MinQty,
+            tier2Discount: row.tier2Discount,
+            tier3MinQty: row.tier3MinQty,
+            tier3Discount: row.tier3Discount,
+            tierBands: row.tierBands ?? undefined,
+            sortOrder: row.sortOrder,
+          })),
+        },
+      },
+    });
+
+    if (source.productAssets.length) {
+      await tx.productAsset.createMany({
+        data: source.productAssets.map((asset) => ({
+          productId: newId,
+          assetType: asset.assetType,
+          url: asset.url,
+          altEn: asset.altEn,
+          altBn: asset.altBn,
+          sortOrder: asset.sortOrder,
+          isPrimary: asset.isPrimary,
+          colorKey: asset.colorKey,
+          fileSize: asset.fileSize,
+          mimeType: asset.mimeType,
+        })),
+      });
+    }
+
+    if (source.productCategories.length) {
+      await tx.productCategoryMap.createMany({
+        data: source.productCategories.map((map) => ({
+          productId: newId,
+          categoryId: map.categoryId,
+          isPrimary: map.isPrimary,
+          sortOrder: map.sortOrder,
+        })),
+      });
+    }
+
+    if (source.productAttributes.length) {
+      await tx.productAttribute.createMany({
+        data: source.productAttributes.map((attr) => ({
+          productId: newId,
+          attrKey: attr.attrKey,
+          attrValue: attr.attrValue,
+          sortOrder: attr.sortOrder,
+        })),
+      });
+    }
+
+    if (source.variants.length) {
+      await tx.productVariant.createMany({
+        data: source.variants.map((variant) => ({
+          id: generateEntityId(),
+          productId: newId,
+          sku: variant.sku ? `${variant.sku}-copy` : null,
+          nameEn: variant.nameEn,
+          nameBn: variant.nameBn,
+          attributes: variant.attributes as object,
+          priceOverride: variant.priceOverride,
+          stock: variant.stock,
+          weight: variant.weight,
+          isActive: variant.isActive,
+          sortOrder: variant.sortOrder,
+        })),
+      });
+    }
+
+    if (source.productTags.length) {
+      await tx.productTag.createMany({
+        data: source.productTags.map((tag) => ({
+          productId: newId,
+          tagId: tag.tagId,
+        })),
+      });
+    }
+  });
+
+  const product = await prisma.product.findUnique({
+    where: { id: newId },
+    include: { pricing: true, productAssets: { orderBy: { sortOrder: 'asc' } } },
+  });
+  res.status(201).json({ product });
 });
 
 // ─── Categories CRUD ──────────────────────────────────────────────────────────
@@ -1347,33 +1574,112 @@ router.post('/categories', requireAdmin, requireRole('super_admin', 'admin'), as
 
 // ─── Category tree & explorer routes ─────────────────────────────────────────
 
-router.get('/categories/tree', requireAdmin, async (_req: Request, res: Response) => {
-  const roots = await prisma.category.findMany({
-    where: { parentId: null },
-    orderBy: { sortOrder: 'asc' },
-    include: {
-      children: {
-        orderBy: { sortOrder: 'asc' },
-        include: { children: { orderBy: { sortOrder: 'asc' } } },
+const EXPLORER_PRODUCT_STATUSES = ['active', 'draft', 'suspended'] as const;
+const MAX_CATEGORY_TREE_DEPTH = 5;
+
+async function getCategoryCountMaps(categoryIds?: string[]) {
+  const productWhere = {
+    product: { status: { in: [...EXPLORER_PRODUCT_STATUSES] } },
+    ...(categoryIds?.length ? { categoryId: { in: categoryIds } } : {}),
+  };
+
+  const [childCounts, productCounts] = await Promise.all([
+    prisma.category.groupBy({
+      by: ['parentId'],
+      where: {
+        parentId: { not: null },
+        ...(categoryIds?.length ? { parentId: { in: categoryIds } } : {}),
       },
-    },
-  });
-  res.json({ tree: roots });
+      _count: { id: true },
+    }),
+    prisma.productCategoryMap.groupBy({
+      by: ['categoryId'],
+      where: productWhere,
+      _count: { productId: true },
+    }),
+  ]);
+
+  const childCountMap = new Map<string, number>();
+  for (const row of childCounts) {
+    if (row.parentId) childCountMap.set(row.parentId, row._count.id);
+  }
+
+  const productCountMap = new Map<string, number>();
+  for (const row of productCounts) {
+    productCountMap.set(row.categoryId, row._count.productId);
+  }
+
+  return { childCountMap, productCountMap };
+}
+
+function decorateCategoryNode<T extends { id: string; is_leaf?: boolean }>(
+  cat: T,
+  childCountMap: Map<string, number>,
+  productCountMap: Map<string, number>,
+  children: Array<Record<string, unknown>> = [],
+): Record<string, unknown> {
+  const childCount = childCountMap.get(cat.id) ?? children.length;
+  const productCount = productCountMap.get(cat.id) ?? 0;
+  const isLeaf = childCount === 0;
+  return {
+    ...cat,
+    children,
+    childCount,
+    productCount,
+    isLeaf,
+  };
+}
+
+async function buildCategoryTree(): Promise<Array<Record<string, unknown>>> {
+  const allCategories = await prisma.category.findMany({ orderBy: { sortOrder: 'asc' } });
+  const { childCountMap, productCountMap } = await getCategoryCountMaps();
+
+  const childrenByParent = new Map<string | null, typeof allCategories>();
+  for (const cat of allCategories) {
+    const parentKey = cat.parentId ?? null;
+    if (!childrenByParent.has(parentKey)) childrenByParent.set(parentKey, []);
+    childrenByParent.get(parentKey)!.push(cat);
+  }
+
+  const buildNode = (cat: (typeof allCategories)[number], depth: number): Record<string, unknown> => {
+    const rawChildren =
+      depth < MAX_CATEGORY_TREE_DEPTH ? childrenByParent.get(cat.id) || [] : [];
+    const children = rawChildren.map((child) => buildNode(child, depth + 1));
+    return decorateCategoryNode(cat, childCountMap, productCountMap, children);
+  };
+
+  return (childrenByParent.get(null) || []).map((root) => buildNode(root, 0));
+}
+
+async function enrichSubfolders<T extends { id: string; is_leaf?: boolean }>(subfolders: T[]) {
+  if (!subfolders.length) return [];
+  const ids = subfolders.map((s) => s.id);
+  const { childCountMap, productCountMap } = await getCategoryCountMaps(ids);
+  return subfolders.map((folder) => decorateCategoryNode(folder, childCountMap, productCountMap));
+}
+
+router.get('/categories/tree', requireAdmin, async (_req: Request, res: Response) => {
+  const tree = await buildCategoryTree();
+  res.json({ tree });
 });
 
 router.get('/categories/root/contents', requireAdmin, async (_req: Request, res: Response) => {
-  const [subfolders, products] = await Promise.all([
+  const [rawSubfolders, products] = await Promise.all([
     prisma.category.findMany({
       where: { parentId: null },
       orderBy: { sortOrder: 'asc' },
     }),
-    (prismaAny as any).product.findMany({
-      where: { status: 'active', productCategories: { none: {} } },
+    prisma.product.findMany({
+      where: {
+        status: { in: [...EXPLORER_PRODUCT_STATUSES] },
+        productCategories: { none: {} },
+      },
       take: 50,
       orderBy: { createdAt: 'desc' },
       include: { productAssets: { orderBy: { sortOrder: 'asc' } }, pricing: true },
     }),
   ]);
+  const subfolders = await enrichSubfolders(rawSubfolders);
   res.json({ subfolders, products, brands: [] });
 });
 
@@ -1470,19 +1776,23 @@ router.get('/categories/:id/contents', requireAdmin, async (req: Request, res: R
   const id = routeParam(req.params.id);
   const page = parseInt(String(req.query.page || '1'));
   const size = parseInt(String(req.query.size || '50'));
-  const [subfolders, products] = await Promise.all([
+  const [rawSubfolders, products] = await Promise.all([
     prisma.category.findMany({
       where: { parentId: id },
       orderBy: { sortOrder: 'asc' },
     }),
-    (prismaAny as any).product.findMany({
-      where: { status: 'active', productCategories: { some: { categoryId: id } } },
+    prisma.product.findMany({
+      where: {
+        status: { in: [...EXPLORER_PRODUCT_STATUSES] },
+        productCategories: { some: { categoryId: id } },
+      },
       skip: (page - 1) * size,
       take: size,
       orderBy: { createdAt: 'desc' },
       include: { productAssets: { orderBy: { sortOrder: 'asc' } }, pricing: true },
     }),
   ]);
+  const subfolders = await enrichSubfolders(rawSubfolders);
   res.json({ subfolders, products, brands: [] });
 });
 
@@ -1491,31 +1801,60 @@ router.get('/categories/:id/contents', requireAdmin, async (req: Request, res: R
 router.get('/orders', requireAdmin, adminOrderListingLimiter, async (req: Request, res: Response) => {
   const page = parseInt(String(req.query.page || '1'));
   const limit = 20;
+  const { status } = req.query as Record<string, string>;
+  const where: any = {};
+  if (status) where.status = status;
   const [orders, total] = await Promise.all([
     prisma.order.findMany({
+      where,
       include: { user: { select: { name: true, email: true } }, items: true },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
     }),
-    prisma.order.count(),
+    prisma.order.count({ where }),
   ]);
   res.json({ orders, total, page, limit });
 });
 
 router.get('/orders/:id', requireAdmin, adminOrderListingLimiter, async (req: Request, res: Response) => {
+  const orderId = routeParam(req.params.id);
   const order = await prisma.order.findUnique({
-    where: { id: routeParam(req.params.id) },
+    where: { id: orderId },
     include: {
       user: { select: { id: true, name: true, email: true, phone: true } },
       items: true,
       timeline: { orderBy: { createdAt: 'asc' } },
       shipments: true,
       shippingAddress: true,
+      paymentTxs: true,
     },
   });
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
-  res.json({ order });
+
+  // Fallback product images for legacy items that never got a snapshot.
+  const missingImageProductIds = [...new Set(order.items.filter((i) => !i.productImage).map((i) => i.productId))];
+  const imageByProductId = new Map<string, string>();
+  if (missingImageProductIds.length) {
+    const assets = await prisma.productAsset.findMany({
+      where: { productId: { in: missingImageProductIds }, assetType: 'image' },
+      orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+    });
+    for (const asset of assets) {
+      if (!imageByProductId.has(asset.productId)) imageByProductId.set(asset.productId, asset.url);
+    }
+  }
+  const items = order.items.map((i) => ({
+    ...i,
+    productImage: i.productImage || imageByProductId.get(i.productId) || null,
+  }));
+
+  const courierShipments = await prisma.courier_shipments.findMany({
+    where: { order_id: orderId },
+    orderBy: { created_at: 'desc' },
+  });
+
+  res.json({ order: { ...order, items, courierShipments } });
 });
 
 async function handleOrderStatusUpdate(req: Request, res: Response) {
@@ -1542,6 +1881,10 @@ async function handleOrderStatusUpdate(req: Request, res: Response) {
     if (fullOrder?.user.email) sendShippingUpdate(fullOrder.user.email, order.orderNumber, status).catch(() => {});
     if (fullOrder?.user.phone) sendShippingUpdateSms(fullOrder.user.phone, order.orderNumber, status).catch(() => {});
   } catch { /* non-fatal */ }
+
+  if (status === 'processing') {
+    try { await notifyCustomer({ userId: order.userId, event: 'order_processing', vars: { orderNumber: order.orderNumber } }); } catch { /* non-fatal */ }
+  }
 
   res.json({ order });
 }
@@ -1620,11 +1963,15 @@ router.get('/customers/:id', requireAdmin, async (req: Request, res: Response) =
 
 router.get('/customers/:id/360', requireAdmin, async (req: Request, res: Response) => {
   const customerId = routeParam(req.params.id);
-  const [profile, orders, payments, returns] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: customerId },
-      include: { customer: true, savedAddresses: true },
-    }),
+  const profile = await prisma.user.findUnique({
+    where: { id: customerId },
+    include: { customer: true, savedAddresses: true },
+  });
+  if (!profile) {
+    res.status(404).json({ error: 'Customer not found' });
+    return;
+  }
+  const [orders, payments, returns, reviews, tickets, disputes, wholesaleApplications, businessInquiries] = await Promise.all([
     prisma.order.findMany({
       where: { userId: customerId },
       include: { items: true },
@@ -1641,16 +1988,51 @@ router.get('/customers/:id/360', requireAdmin, async (req: Request, res: Respons
       orderBy: { created_at: 'desc' },
       take: 25,
     }),
+    prisma.productReview.findMany({
+      where: { userId: customerId },
+      include: { product: { select: { id: true, titleEn: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+    }),
+    prisma.ticket.findMany({
+      where: { userId: customerId },
+      include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      orderBy: { updatedAt: 'desc' },
+      take: 25,
+    }),
+    prisma.disputes.findMany({
+      where: { user_id: customerId },
+      orderBy: { updated_at: 'desc' },
+      take: 25,
+    }),
+    prisma.wholesale_applications.findMany({
+      where: { user_id: customerId },
+      orderBy: { created_at: 'desc' },
+      take: 25,
+    }),
+    prisma.business_inquiries.findMany({
+      where: {
+        OR: [
+          ...(profile.email ? [{ email: profile.email }] : []),
+          ...(profile.phone ? [{ phone: profile.phone }] : []),
+        ],
+      },
+      orderBy: { created_at: 'desc' },
+      take: 25,
+    }),
   ]);
-  if (!profile) {
-    res.status(404).json({ error: 'Customer not found' });
-    return;
-  }
   res.json({
     profile,
     recentOrders: orders,
     recentPayments: payments,
     recentReturns: returns,
+    recentReviews: reviews,
+    recentTickets: tickets,
+    recentDisputes: disputes,
+    applications: {
+      wholesale: wholesaleApplications,
+      businessInquiries,
+    },
   });
 });
 
@@ -1774,6 +2156,7 @@ router.get('/qa/pending', requireAdmin, async (_req: Request, res: Response) => 
     const rows = await prisma.$queryRaw<Array<{
       id: string;
       product_id: string;
+      user_id: string | null;
       question: string;
       answer: string | null;
       asked_at: Date;
@@ -1781,7 +2164,7 @@ router.get('/qa/pending', requireAdmin, async (_req: Request, res: Response) => 
       asker_email: string | null;
       product_title: string | null;
     }>>`
-      SELECT q.id, q.product_id, q.question, q.answer, q.asked_at, q.asker_name, q.asker_email,
+      SELECT q.id, q.product_id, q.user_id, q.question, q.answer, q.asked_at, q.asker_name, q.asker_email,
              p.title_en AS product_title
       FROM product_qa q
       LEFT JOIN products p ON p.id = q.product_id

@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { requireAuth } from '../middleware/auth';
 import { generateEntityId } from '../utils/hexId';
 import { routeParam } from '../utils/params';
 import { ReviewListResponseSchema } from '../contracts/review.contract';
 import { parseContract } from '../lib/contractValidate';
 const router = Router();
-const prisma = new PrismaClient();
 
 function formatReview(r: {
   id: string;

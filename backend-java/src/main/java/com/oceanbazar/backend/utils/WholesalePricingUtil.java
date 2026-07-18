@@ -29,6 +29,18 @@ public final class WholesalePricingUtil {
         return user.getUserType() == UserType.wholesale;
     }
 
+    /**
+     * Per-product retail order cap, mirroring storefront PricingBlock:
+     * the retail tier-3 threshold set in the admin CRM, else the global retail cap.
+     */
+    public static int retailMaxOrderQty(ProductEntity product) {
+        ProductPricingEntity retail = findPricing(product, CustomerType.retail);
+        if (retail != null && retail.getTier3MinQty() != null && retail.getTier3MinQty() > 0) {
+            return retail.getTier3MinQty();
+        }
+        return RETAIL_MAX_ORDER_QTY;
+    }
+
     public static ProductPricingEntity findPricing(ProductEntity product, CustomerType type) {
         if (product == null || product.getPricing() == null) return null;
         String typeName = type.name();

@@ -1,12 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import { createHash } from 'crypto';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { apiLimiter } from '../middleware/rateLimiter';
 import { emitToRoom } from '../lib/adminEvents';
 import { appLog } from '../lib/appLog';
+import { prisma } from '../lib/prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const MAX_LEN = {
   digest: 128,
@@ -46,6 +46,12 @@ router.post('/', apiLimiter, async (req: Request, res: Response) => {
       snapshot = body.snapshot as Record<string, unknown>;
     }
 
+    let userId: string | undefined;
+    const rawUserId = clip(body.userId, 8);
+    if (rawUserId && /^[A-Za-z0-9]{8}$/.test(rawUserId) && !rawUserId.startsWith('visitor')) {
+      userId = rawUserId;
+    }
+
     if (!digest && !message && !stack && !snapshot) {
       res.status(400).json({ error: 'Nothing to report' });
       return;
@@ -61,6 +67,7 @@ router.post('/', apiLimiter, async (req: Request, res: Response) => {
         locale: locale ?? null,
         snapshot: (snapshot ?? undefined) as Prisma.InputJsonValue | undefined,
         ipHash: ipHash(req) ?? null,
+        userId: userId ?? null,
       },
     });
 

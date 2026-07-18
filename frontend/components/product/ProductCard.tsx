@@ -14,9 +14,20 @@ import { calculatePrice } from '@/lib/pricing';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
+import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
 
 interface Props {
   product: Product;
+}
+
+function FlashScarcityBadge({ available }: { available?: number }) {
+  const variant = useAbVariant(AB_TESTS.FLASH_SCARCITY);
+  if (variant !== 'B' || available == null) return null;
+  return (
+    <span className="rounded-md bg-red-700 px-1.5 py-0.5 text-2xs font-bold text-white shadow-sm">
+      Only {available} left
+    </span>
+  );
 }
 
 function ProductCard({ product }: Props) {
@@ -48,6 +59,10 @@ function ProductCard({ product }: Props) {
       setCart(data);
       setOpen(true);
       success(tp('addedToCart'));
+      void trackAbOutcome('add_to_cart', {
+        value: priceResult.unitPrice,
+        metadata: { productId: product.id, source: product.flashDeal ? 'flash_sale' : 'product_card' },
+      });
     },
     onError: (err: any) => {
       const status = err?.response?.status;
@@ -95,6 +110,7 @@ function ProductCard({ product }: Props) {
               ⚡ Flash
             </span>
           )}
+          {product.flashDeal && <FlashScarcityBadge available={product.flashAvailable} />}
           {hasDiscount && (
             <span className="rounded-md bg-destructive px-1.5 py-0.5 text-2xs font-bold text-destructive-foreground shadow-sm">
               -{discountPct}%

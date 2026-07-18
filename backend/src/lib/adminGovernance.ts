@@ -1,9 +1,9 @@
 import { Request } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { scheduleFlashCampaign } from './flashSalesService';
 
-const prisma = new PrismaClient();
 let govSchemaReady = false;
 
 export async function ensureAdminGovernanceSchema(): Promise<void> {
@@ -88,6 +88,26 @@ export async function applyOrQueueChange(req: Request, opts: QueueChangeOptions)
   }
 
   const admin = getAdminFromReq(req);
+
+  // Dedupe: don't stack identical pending requests for the same resource.
+  const existing = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM admin_pending_changes
+    WHERE module = ${opts.module}
+      AND action = ${opts.action}
+      AND resource_id IS NOT DISTINCT FROM ${opts.resourceId ?? null}
+      AND status = 'pending'
+    LIMIT 1
+  `;
+  if (existing.length) {
+    return {
+      applied: false,
+      pending: true,
+      pendingId: existing[0].id,
+      duplicate: true,
+      message: 'Already awaiting Super Admin approval',
+    };
+  }
+
   const id = uuidv4();
   await prisma.$executeRaw`
     INSERT INTO admin_pending_changes (
@@ -194,9 +214,43 @@ export async function getSearchAnalytics(limit = 500, offset = 0) {
     SELECT id, query, user_id, created_at FROM search_logs
     ORDER BY created_at DESC LIMIT 50
   `;
+  const trend = await prisma.$queryRaw<Array<{ day: Date; searches: number }>>`
+    SELECT DATE(created_at) AS day, COUNT(*)::int AS searches
+    FROM search_logs
+    WHERE created_at >= NOW() - INTERVAL '30 days'
+    GROUP BY DATE(created_at)
+    ORDER BY day ASC
+  `;
+
+  let zeroResultTerms: Array<{ query: string; search_count: number }> = [];
+  try {
+    const col = await prisma.$queryRaw<Array<{ column_name: string }>>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'search_logs' AND column_name = 'result_count'
+      LIMIT 1
+    `;
+    if (col?.length) {
+      zeroResultTerms = await prisma.$queryRaw<Array<{ query: string; search_count: number }>>`
+        SELECT query, COUNT(*)::int AS search_count
+        FROM search_logs
+        WHERE result_count = 0
+        GROUP BY query
+        ORDER BY search_count DESC
+        LIMIT 50
+      `;
+    }
+  } catch {
+    /* result_count column not available */
+  }
+
   return {
     terms: summary || [],
     totalDistinct: Number(total?.[0]?.c ?? 0),
     recent: recent || [],
+    trend: (trend || []).map((r) => ({
+      day: r.day,
+      searches: Number(r.searches ?? 0),
+    })),
+    zeroResultTerms,
   };
 }

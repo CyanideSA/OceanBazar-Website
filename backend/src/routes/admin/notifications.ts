@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { routeParam } from '../../utils/params';
 import { emitToUser, emitBroadcast } from '../../lib/adminEvents';
 import { requireAdminReauth } from '../../middleware/adminReauth';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const normalizeNotification = (n: any) => ({
   id: n.id,

@@ -45,21 +45,6 @@ export function toWhatsAppRecipient(to: string): string {
 }
 
 function dbg(hypothesisId: string, message: string, data: Record<string, unknown>) {
-  // #region agent log
-  fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8d503' },
-    body: JSON.stringify({
-      sessionId: 'a8d503',
-      runId: process.env.DEBUG_RUN_ID || 'pre-fix',
-      hypothesisId,
-      location: 'whatsappClient.ts',
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 }
 
 export async function sendWhatsAppText(to: string, text: string): Promise<boolean> {

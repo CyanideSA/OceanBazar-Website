@@ -68,7 +68,6 @@ export default function MultiMediaUploader({
   const isVideo = preview === PREVIEW_MODES.video;
   const isBanner = preview === PREVIEW_MODES.banner;
   const Icon = isVideo ? FiFilm : FiImage;
-  const colorClass = isVideo ? "purple" : "blue";
 
   return (
     <div className="space-y-3">
@@ -76,19 +75,19 @@ export default function MultiMediaUploader({
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
         onClick={() => fileRef.current?.click()}
-        className={`border-2 border-dashed border-gray-600 rounded-xl p-6 text-center cursor-pointer hover:border-${colorClass}-500 hover:bg-${colorClass}-500/5 transition-all group`}
+        className="border-2 border-dashed border-crm-border-strong rounded-xl p-6 text-center cursor-pointer hover:border-crm-primary hover:bg-crm-primary/5 transition-all group"
       >
-        <Icon size={28} className={`mx-auto mb-2 text-gray-500 group-hover:text-${colorClass}-400`} />
-        <p className="text-sm font-semibold text-gray-300">
+        <Icon size={28} className="mx-auto mb-2 text-crm-text-muted group-hover:text-crm-primary" />
+        <p className="text-sm font-semibold text-crm-text">
           {isVideo ? "Drop videos here or click to select" :
            isBanner ? "Drop banner images here or click to select" :
            "Drop files here or click to select"}
         </p>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-crm-text-muted mt-1">
           {hint || (isVideo ? "MP4, MOV, WEBM supported" : isBanner ? "Recommended: 1200x400px" : "Supports JPG, PNG, WEBP")}
           {` · Max ${maxCount}`}
         </p>
-        {uploading && <p className={`text-xs text-${colorClass}-400 mt-2 animate-pulse`}>Uploading...</p>}
+        {uploading && <p className="text-xs text-crm-primary mt-2 animate-pulse">Uploading...</p>}
         <input ref={fileRef} type="file" multiple accept={accept} className="hidden"
           onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
       </div>
@@ -101,14 +100,14 @@ export default function MultiMediaUploader({
               draggable
               onDragStart={() => onDragStart(idx)}
               onDragOver={(e) => onDragOver(e, idx)}
-              className={`relative group rounded-xl overflow-hidden border-2 border-gray-600 hover:border-gray-400 cursor-grab transition-all ${
-                isBanner ? "flex items-center gap-3 p-2 bg-gray-800" : ""
+              className={`relative group rounded-xl overflow-hidden border-2 border-crm-border-strong hover:border-crm-border-strong cursor-grab transition-all ${
+                isBanner ? "flex items-center gap-3 p-2 bg-crm-bg-alt" : ""
               }`}
             >
               {isVideo ? (
-                <div className="w-full aspect-square bg-gray-800 flex flex-col items-center justify-center gap-1">
-                  <FiFilm size={24} className="text-purple-400" />
-                  <p className="text-[10px] text-gray-400 truncate px-2 w-full text-center">
+                <div className="w-full aspect-square bg-crm-bg-alt flex flex-col items-center justify-center gap-1">
+                  <FiFilm size={24} className="text-crm-purple" />
+                  <p className="text-[10px] text-crm-text-dim truncate px-2 w-full text-center">
                     {asset._localName || "Video"}
                   </p>
                 </div>
@@ -116,21 +115,21 @@ export default function MultiMediaUploader({
                 <>
                   <img
                     src={normalizeProductImageUrl ? normalizeProductImageUrl(asset.url) : asset.url}
-                    alt="" className="w-24 h-14 object-cover rounded bg-gray-700 flex-shrink-0"
-                    onError={(e) => { e.target.style.background = "#374151"; }}
+                    alt="" className="w-24 h-14 object-cover rounded bg-crm-bg-hover flex-shrink-0"
+                    onError={(e) => { e.target.style.background = "var(--crm-bg-hover)"; }}
                   />
-                  <p className="text-xs text-gray-300 truncate flex-1">{asset._localName || "Banner"}</p>
+                  <p className="text-xs text-crm-text truncate flex-1">{asset._localName || "Banner"}</p>
                 </>
               ) : (
                 <img
                   src={normalizeProductImageUrl ? normalizeProductImageUrl(asset.url) : asset.url}
-                  alt="" className="w-full aspect-square object-cover bg-gray-800"
-                  onError={(e) => { e.target.style.background = "#374151"; }}
+                  alt="" className="w-full aspect-square object-cover bg-crm-bg-alt"
+                  onError={(e) => { e.target.style.background = "var(--crm-bg-hover)"; }}
                 />
               )}
               <div className={`${isBanner ? "flex-shrink-0" : "absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"}`}>
                 <button type="button" onClick={() => remove(idx)}
-                  className={`text-xs ${isBanner ? "text-red-400 hover:text-red-300 p-1" : "bg-red-600 text-white px-2 py-1 rounded font-semibold hover:bg-red-700"}`}>
+                  className={`text-xs ${isBanner ? "text-crm-danger hover:text-crm-danger-hover p-1" : "bg-crm-danger text-white px-2 py-1 rounded font-semibold hover:bg-crm-danger-hover"}`}>
                   {isBanner ? <FiTrash2 size={14} /> : "Remove"}
                 </button>
               </div>

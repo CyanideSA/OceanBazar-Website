@@ -1,8 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { sendCartAbandonmentReminder } from './emailService';
-
-const prisma = new PrismaClient();
 
 const ABANDONMENT_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 const REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000; // Don't re-send within 24h

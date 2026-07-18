@@ -27,6 +27,14 @@ api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('ob_access_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
+    let deviceId = localStorage.getItem('ob_device_id');
+    if (!deviceId) {
+      deviceId =
+        (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
+        `device-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+      localStorage.setItem('ob_device_id', deviceId);
+    }
+    config.headers['X-Device-Id'] = deviceId;
     const rid =
       (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
       `ob-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
@@ -47,16 +55,28 @@ api.interceptors.response.use(
       // For truly anonymous calls (wishlist/cart sync etc.) there's no token, so we
       // silently reject without redirecting — guests should be able to browse freely.
       const hadToken = typeof window !== 'undefined' && !!localStorage.getItem('ob_access_token');
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,D',location:'frontend/lib/api.ts:response-401',message:'API request received first 401',data:{url:String(original?.url||''),method:String(original?.method||''),hadToken,isAuthenticatedPersisted:typeof window!=='undefined'&&localStorage.getItem('ob-auth')?.includes('"isAuthenticated":true')},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!hadToken) {
         return Promise.reject(err);
       }
 
       try {
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,B,C',location:'frontend/lib/api.ts:refresh-start',message:'Starting refresh after 401',data:{url:String(original?.url||''),requestId:String(original?.headers?.['X-Request-Id']||'')},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         const { data } = await axios.post(`${resolvePublicApiBase()}/api/auth/refresh`, {}, { withCredentials: true });
         localStorage.setItem('ob_access_token', data.access);
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,B,C',location:'frontend/lib/api.ts:refresh-success',message:'Refresh succeeded and request will retry',data:{url:String(original?.url||''),requestId:String(original?.headers?.['X-Request-Id']||'')},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         original.headers.Authorization = `Bearer ${data.access}`;
         return api(original);
-      } catch {
+      } catch (refreshError) {
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,B,C,D',location:'frontend/lib/api.ts:refresh-failure',message:'Refresh failed and access token will be removed',data:{url:String(original?.url||''),requestId:String(original?.headers?.['X-Request-Id']||''),refreshStatus:(refreshError as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         localStorage.removeItem('ob_access_token');
         if (typeof window !== 'undefined') {
           const path = window.location.pathname;
@@ -202,6 +222,8 @@ export const returnsApi = {
     api.post('/returns', data),
   list: () => api.get('/returns'),
   get: (id: string) => api.get(`/returns/${id}`),
+  submitRefundAccount: (id: string, data: { method: string; accountNumber: string; accountName?: string; bankName?: string; branchName?: string; notes?: string }) =>
+    api.post(`/returns/${id}/refund-account`, data),
 };
 
 // ─── Reviews ─────────────────────────────────────────────────────────────────

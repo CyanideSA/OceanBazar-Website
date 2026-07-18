@@ -242,19 +242,19 @@ function CategoryPickerModal({ onSelect, onClose }) {
     return (
       <div key={node.id}>
         <div
-          className="flex items-center gap-2 px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors"
+          className="flex items-center gap-2 px-3 py-2 hover:bg-crm-bg-hover cursor-pointer rounded transition-colors"
           style={{ paddingLeft: `${(depth * 16) + 12}px` }}
           onClick={() => onSelect(node.id, node.nameEn)}
         >
           {hasChildren ? (
-            <button type="button" className="text-gray-400 hover:text-white"
+            <button type="button" className="text-crm-text-dim hover:text-crm-text-bright"
               onClick={(e) => { e.stopPropagation(); toggle(node.id); }}>
               {isOpen ? "▾" : "▸"}
             </button>
           ) : <span className="w-4" />}
-          <span className="text-sm text-gray-200">{node.nameEn}</span>
+          <span className="text-sm text-crm-text">{node.nameEn}</span>
           {node.productCount > 0 && (
-            <span className="text-xs text-gray-500 ml-auto">{node.productCount}</span>
+            <span className="text-xs text-crm-text-muted ml-auto">{node.productCount}</span>
           )}
         </div>
         {hasChildren && isOpen &&
@@ -299,35 +299,35 @@ function CategoryPickerModal({ onSelect, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-800 border border-gray-600 rounded-2xl w-96 max-h-[80vh] flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-          <h3 className="text-sm font-bold text-white">Select Category</h3>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-white"><FiX /></button>
+      <div className="bg-crm-bg-alt border border-crm-border-strong rounded-2xl w-96 max-h-[80vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-crm-border">
+          <h3 className="text-sm font-bold text-crm-text-bright">Select Category</h3>
+          <button type="button" onClick={onClose} className="text-crm-text-dim hover:text-crm-text-bright"><FiX /></button>
         </div>
-        <div className="px-3 py-2 border-b border-gray-700">
+        <div className="px-3 py-2 border-b border-crm-border">
           <div className="relative">
-            <FiSearch className="absolute left-2 top-2.5 text-gray-400" size={13} />
+            <FiSearch className="absolute left-2 top-2.5 text-crm-text-dim" size={13} />
             <input
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search categories…"
-              className="w-full bg-gray-700 border border-gray-600 text-sm text-gray-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full bg-crm-bg-hover border border-crm-border-strong text-sm text-crm-text rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-crm-primary"
             />
           </div>
-          <div className="mt-2 rounded-lg border border-gray-700 bg-gray-800/60 p-2.5 space-y-2">
+          <div className="mt-2 rounded-lg border border-crm-border bg-crm-bg-alt/60 p-2.5 space-y-2">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setCreateMode("root")}
-                className={`px-2 py-1 rounded text-[10px] font-semibold ${createMode === "root" ? "bg-blue-600 text-white" : "bg-gray-700 text-gray-300"}`}
+                className={`px-2 py-1 rounded text-[10px] font-semibold ${createMode === "root" ? "bg-crm-primary text-white" : "bg-crm-bg-hover text-crm-text"}`}
               >
                 New Category
               </button>
               <button
                 type="button"
                 onClick={() => setCreateMode("sub")}
-                className={`px-2 py-1 rounded text-[10px] font-semibold ${createMode === "sub" ? "bg-blue-600 text-white" : "bg-gray-700 text-gray-300"}`}
+                className={`px-2 py-1 rounded text-[10px] font-semibold ${createMode === "sub" ? "bg-crm-primary text-white" : "bg-crm-bg-hover text-crm-text"}`}
               >
                 New Subcategory
               </button>
@@ -336,7 +336,7 @@ function CategoryPickerModal({ onSelect, onClose }) {
               <select
                 value={parentId}
                 onChange={(e) => setParentId(e.target.value)}
-                className="w-full bg-gray-700 border border-gray-600 text-xs text-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full bg-crm-bg-hover border border-crm-border-strong text-xs text-crm-text rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-crm-primary"
               >
                 <option value="">Select parent category…</option>
                 {allNodes.map((n) => (
@@ -349,22 +349,22 @@ function CategoryPickerModal({ onSelect, onClose }) {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="Name (English) *"
-                className="w-full bg-gray-700 border border-gray-600 text-xs text-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full bg-crm-bg-hover border border-crm-border-strong text-xs text-crm-text rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-crm-primary"
               />
               <input
                 value={newNameBn}
                 onChange={(e) => setNewNameBn(e.target.value)}
                 placeholder="Name (Bangla, optional)"
-                className="w-full bg-gray-700 border border-gray-600 text-xs text-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full bg-crm-bg-hover border border-crm-border-strong text-xs text-crm-text rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-crm-primary"
               />
               <div className="grid grid-cols-2 gap-1.5">
                 <input
                   value={newCatIcon}
                   onChange={(e) => setNewCatIcon(e.target.value)}
                   placeholder="Icon emoji (e.g. 📱)"
-                  className="w-full bg-gray-700 border border-gray-600 text-xs text-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full bg-crm-bg-hover border border-crm-border-strong text-xs text-crm-text rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-crm-primary"
                 />
-                <label className="flex items-center justify-center gap-1 rounded-lg border border-dashed border-gray-600 bg-gray-700/50 px-2 py-1.5 text-[10px] text-gray-300 cursor-pointer hover:border-blue-500">
+                <label className="flex items-center justify-center gap-1 rounded-lg border border-dashed border-crm-border-strong bg-crm-bg-hover/50 px-2 py-1.5 text-[10px] text-crm-text cursor-pointer hover:border-crm-primary">
                   <FiImage size={12}/>
                   {newCatImageUploading ? "…" : newCatImageUrl ? "Image ✓" : "Upload image"}
                   <input
@@ -391,14 +391,14 @@ function CategoryPickerModal({ onSelect, onClose }) {
                 </label>
               </div>
               {newCatImageUrl && (
-                <p className="text-[10px] text-green-400 truncate">Label image set (emoji cleared if uploaded)</p>
+                <p className="text-[10px] text-crm-success truncate">Label image set (emoji cleared if uploaded)</p>
               )}
             </div>
             <button
               type="button"
               disabled={creating || (createMode === "sub" && !parentId)}
               onClick={handleCreateCategory}
-              className="w-full rounded-lg bg-blue-600 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              className="w-full rounded-lg bg-crm-primary px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-crm-primary-hover disabled:opacity-50"
             >
               {creating ? "Creating…" : createMode === "sub" ? "Create subcategory" : "Create category"}
             </button>
@@ -406,15 +406,15 @@ function CategoryPickerModal({ onSelect, onClose }) {
         </div>
         <div className="flex-1 overflow-y-auto py-1">
           {loading ? (
-            <div className="text-center text-gray-500 py-8 text-sm">Loading…</div>
+            <div className="text-center text-crm-text-muted py-8 text-sm">Loading…</div>
           ) : error ? (
             <div className="text-center py-8 space-y-2">
-              <p className="text-xs text-red-400">{error}</p>
-              <button type="button" className="text-xs text-blue-400 hover:underline"
+              <p className="text-xs text-crm-danger">{error}</p>
+              <button type="button" className="text-xs text-crm-primary hover:underline"
                 onClick={() => { setError(""); setLoading(true); loadCategoryTree().finally(() => setLoading(false)); }}>Retry</button>
             </div>
           ) : displayNodes.length === 0 ? (
-            <div className="text-center text-gray-500 py-8 text-sm">No categories found</div>
+            <div className="text-center text-crm-text-muted py-8 text-sm">No categories found</div>
           ) : displayNodes.map((n) => renderNode(n))}
         </div>
       </div>
@@ -501,14 +501,14 @@ function BrandPicker({ value, onChange }) {
         className="crm-input w-full"
       />
       {open && filtered.length > 0 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-crm-bg-alt border border-crm-border-strong rounded-xl shadow-xl max-h-48 overflow-y-auto">
           {filtered.map((b) => {
             const id = b?.id || "";
             const name = typeof b === "string" ? b : b.nameEn || b.name || "";
             return (
               <button key={id || name} type="button"
                 onMouseDown={() => { onChange(id, name); setSearch(name); setOpen(false); }}
-                className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2">
+                className="w-full text-left px-3 py-2 text-sm text-crm-text hover:bg-crm-bg-hover flex items-center gap-2">
                 {b.logoUrl && <img src={b.logoUrl} alt="" className="w-5 h-5 object-contain rounded" />}
                 {name}
               </button>
@@ -521,7 +521,7 @@ function BrandPicker({ value, onChange }) {
           type="button"
           onMouseDown={(e) => { e.preventDefault(); logoInputRef.current?.click(); }}
           disabled={creating}
-          className="mt-1 w-full rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-left text-xs text-blue-300 hover:bg-blue-500/20 disabled:opacity-50"
+          className="mt-1 w-full rounded-lg border border-crm-primary/40 bg-crm-primary/10 px-3 py-2 text-left text-xs text-crm-primary hover:bg-crm-primary/20 disabled:opacity-50"
         >
           {creating ? "Creating brand…" : `+ Create "${normalizedSearch}" (logo required — pick image)`}
         </button>
@@ -561,9 +561,6 @@ function MediaUploader({ assets, onChange }) {
       }
     }
     onChange(newAssets);
-    // #region agent log
-    fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f9670f'},body:JSON.stringify({sessionId:'f9670f',location:'AddProductWizard:MediaUploader',message:'assets after upload batch',data:{count:newAssets.length,added:batch.length},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
     setUploading(false);
   };
 
@@ -599,12 +596,12 @@ function MediaUploader({ assets, onChange }) {
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
         onClick={() => fileRef.current?.click()}
-        className="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-500/5 transition-all group"
+        className="border-2 border-dashed border-crm-border-strong rounded-xl p-8 text-center cursor-pointer hover:border-crm-primary hover:bg-crm-primary/5 transition-all group"
       >
-        <FiUpload size={32} className="mx-auto mb-2 text-gray-500 group-hover:text-blue-400" />
-        <p className="text-sm font-semibold text-gray-300">Drop images here or click to select</p>
-        <p className="text-xs text-gray-500 mt-1">First image becomes primary · Supports JPG, PNG, WEBP · Multiple select</p>
-        {uploading && <p className="text-xs text-blue-400 mt-2 animate-pulse">Uploading to Cloudinary…</p>}
+        <FiUpload size={32} className="mx-auto mb-2 text-crm-text-muted group-hover:text-crm-primary" />
+        <p className="text-sm font-semibold text-crm-text">Drop images here or click to select</p>
+        <p className="text-xs text-crm-text-muted mt-1">First image becomes primary · Supports JPG, PNG, WEBP · Multiple select</p>
+        {uploading && <p className="text-xs text-crm-primary mt-2 animate-pulse">Uploading to Cloudinary…</p>}
         <input ref={fileRef} type="file" multiple accept="image/*" className="hidden"
           onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
       </div>
@@ -619,29 +616,29 @@ function MediaUploader({ assets, onChange }) {
               onDragStart={() => onDragStart(idx)}
               onDragOver={(e) => onDragOver(e, idx)}
               className={`relative group rounded-xl overflow-hidden border-2 cursor-grab transition-all ${
-                asset.isPrimary ? "border-blue-500" : "border-gray-600 hover:border-gray-400"
+                asset.isPrimary ? "border-crm-primary" : "border-crm-border-strong hover:border-crm-border-strong"
               }`}
             >
               <img
                 src={normalizeProductImageUrl ? normalizeProductImageUrl(asset.url) : asset.url}
                 alt=""
-                className="w-full aspect-square object-cover bg-gray-800"
-                onError={(e) => { e.target.src = ""; e.target.style.background = "#374151"; }}
+                className="w-full aspect-square object-cover bg-crm-bg-alt"
+                onError={(e) => { e.target.src = ""; e.target.style.background = "var(--crm-bg-hover)"; }}
               />
               {asset.isPrimary && (
-                <span className="absolute top-1 left-1 bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                <span className="absolute top-1 left-1 bg-crm-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                   PRIMARY
                 </span>
               )}
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5">
                 {!asset.isPrimary && (
                   <button type="button" onClick={() => setPrimary(idx)}
-                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-semibold hover:bg-blue-700">
+                    className="text-xs bg-crm-primary text-white px-2 py-1 rounded font-semibold hover:bg-crm-primary-hover">
                     Set Primary
                   </button>
                 )}
                 <button type="button" onClick={() => remove(idx)}
-                  className="text-xs bg-red-600 text-white px-2 py-1 rounded font-semibold hover:bg-red-700">
+                  className="text-xs bg-crm-danger text-white px-2 py-1 rounded font-semibold hover:bg-crm-danger-hover">
                   Remove
                 </button>
               </div>
@@ -666,21 +663,21 @@ function KVTable({ rows, onChange, addLabel = "Add Row" }) {
     <div className="space-y-2">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-gray-700">
-            <th className="text-left py-1.5 px-2 text-gray-400 font-medium w-2/5">Attribute</th>
-            <th className="text-left py-1.5 px-2 text-gray-400 font-medium">Value</th>
+          <tr className="border-b border-crm-border">
+            <th className="text-left py-1.5 px-2 text-crm-text-dim font-medium w-2/5">Attribute</th>
+            <th className="text-left py-1.5 px-2 text-crm-text-dim font-medium">Value</th>
             <th className="w-8" />
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-gray-700/50">
+            <tr key={i} className="border-b border-crm-border/50">
               <td className="py-1 px-1">
                 <input
                   value={row.key}
                   onChange={(e) => update(i, "key", e.target.value)}
                   placeholder="e.g. Material"
-                  className="w-full bg-gray-800 border border-gray-600 text-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full bg-crm-bg-alt border border-crm-border-strong text-crm-text rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-crm-primary"
                 />
               </td>
               <td className="py-1 px-1">
@@ -688,11 +685,11 @@ function KVTable({ rows, onChange, addLabel = "Add Row" }) {
                   value={row.value}
                   onChange={(e) => update(i, "value", e.target.value)}
                   placeholder="e.g. Cotton"
-                  className="w-full bg-gray-800 border border-gray-600 text-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full bg-crm-bg-alt border border-crm-border-strong text-crm-text rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-crm-primary"
                 />
               </td>
               <td className="py-1 px-1 text-center">
-                <button type="button" onClick={() => remove(i)} className="text-gray-500 hover:text-red-400 p-1">
+                <button type="button" onClick={() => remove(i)} className="text-crm-text-muted hover:text-crm-danger p-1">
                   <FiTrash2 size={12} />
                 </button>
               </td>
@@ -701,7 +698,7 @@ function KVTable({ rows, onChange, addLabel = "Add Row" }) {
         </tbody>
       </table>
       <button type="button" onClick={add}
-        className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-medium mt-1">
+        className="flex items-center gap-1.5 text-xs text-crm-primary hover:text-crm-primary font-medium mt-1">
         <FiPlus size={12} /> {addLabel}
       </button>
     </div>
@@ -724,20 +721,20 @@ function BandTierEditor({ bands, onChange, label, basePrice, wholesaleMode }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">{label}</p>
-        <button type="button" onClick={add} className="text-xs flex items-center gap-1 text-blue-400 hover:text-blue-300">
+        <p className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">{label}</p>
+        <button type="button" onClick={add} className="text-xs flex items-center gap-1 text-crm-primary hover:text-crm-primary">
           <FiPlus size={12} /> Add tier
         </button>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs min-w-[540px]">
           <thead>
-            <tr className="border-b border-gray-700">
-              <th className="text-left py-1.5 px-2 text-gray-500">#</th>
-              <th className="text-left py-1.5 px-2 text-gray-500">Min qty</th>
-              <th className="text-left py-1.5 px-2 text-gray-500">Max qty</th>
-              <th className="text-left py-1.5 px-2 text-gray-500">Discount %</th>
-              <th className="text-left py-1.5 px-2 text-gray-500">Unit price</th>
+            <tr className="border-b border-crm-border">
+              <th className="text-left py-1.5 px-2 text-crm-text-muted">#</th>
+              <th className="text-left py-1.5 px-2 text-crm-text-muted">Min qty</th>
+              <th className="text-left py-1.5 px-2 text-crm-text-muted">Max qty</th>
+              <th className="text-left py-1.5 px-2 text-crm-text-muted">Discount %</th>
+              <th className="text-left py-1.5 px-2 text-crm-text-muted">Unit price</th>
               <th className="w-8" />
             </tr>
           </thead>
@@ -749,31 +746,31 @@ function BandTierEditor({ bands, onChange, label, basePrice, wholesaleMode }) {
                 ? (bp * (1 - disc / 100)).toFixed(2)
                 : "—";
               return (
-                <tr key={i} className="border-b border-gray-700/50">
-                  <td className="py-1 px-2 text-gray-500">{i + 1}</td>
+                <tr key={i} className="border-b border-crm-border/50">
+                  <td className="py-1 px-2 text-crm-text-muted">{i + 1}</td>
                   <td className="py-1 px-1">
                     <input type="number" min="1" value={tier.minQty}
                       onChange={(e) => update(i, "minQty", e.target.value)}
-                      className="w-24 bg-gray-800 border border-gray-600 text-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                      className="w-24 bg-crm-bg-alt border border-crm-border-strong text-crm-text rounded-lg px-2 py-1.5 text-xs" />
                   </td>
                   <td className="py-1 px-1">
                     <input type="number" min="1"
                       value={tier.maxQty}
                       onChange={(e) => update(i, "maxQty", e.target.value)}
                       placeholder={wholesaleMode && isLast ? "optional" : ""}
-                      className="w-28 bg-gray-800 border border-gray-600 text-gray-200 rounded-lg px-2 py-1.5 text-xs placeholder:text-gray-600" />
+                      className="w-28 bg-crm-bg-alt border border-crm-border-strong text-crm-text rounded-lg px-2 py-1.5 text-xs placeholder:text-crm-text-muted" />
                     {wholesaleMode && isLast && (
-                      <p className="text-[9px] text-gray-600 mt-0.5">empty = unlimited</p>
+                      <p className="text-[9px] text-crm-text-muted mt-0.5">empty = unlimited</p>
                     )}
                   </td>
                   <td className="py-1 px-1">
                     <input type="number" min="0" max="100" value={tier.discount}
                       onChange={(e) => update(i, "discount", e.target.value)}
-                      className="w-20 bg-gray-800 border border-gray-600 text-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                      className="w-20 bg-crm-bg-alt border border-crm-border-strong text-crm-text rounded-lg px-2 py-1.5 text-xs" />
                   </td>
-                  <td className="py-1 px-2 text-green-400 font-mono">৳{unit}</td>
+                  <td className="py-1 px-2 text-crm-success font-mono">৳{unit}</td>
                   <td className="py-1 px-1 text-center">
-                    <button type="button" onClick={() => removeRow(i)} className="text-gray-500 hover:text-red-400 disabled:opacity-30" disabled={bands.length <= 1}>
+                    <button type="button" onClick={() => removeRow(i)} className="text-crm-text-muted hover:text-crm-danger disabled:opacity-30" disabled={bands.length <= 1}>
                       <FiTrash2 size={12} />
                     </button>
                   </td>
@@ -805,49 +802,49 @@ function ProductPreviewCard({ form }) {
     ? Math.round((1 - Number(form.retailPrice) / Number(form.compareAt)) * 100) : null;
 
   return (
-    <div className="bg-gray-800 border border-gray-600 rounded-2xl overflow-hidden w-72 shadow-xl">
-      <div className="relative bg-gray-700 h-56 flex items-center justify-center">
+    <div className="bg-crm-bg-alt border border-crm-border-strong rounded-2xl overflow-hidden w-72 shadow-xl">
+      <div className="relative bg-crm-bg-hover h-56 flex items-center justify-center">
         {primaryAsset?.url ? (
           <img src={primaryAsset.url} alt={form.titleEn}
             className="w-full h-full object-cover" />
         ) : (
-          <div className="text-gray-500 flex flex-col items-center gap-2">
+          <div className="text-crm-text-muted flex flex-col items-center gap-2">
             <FiImage size={40} />
             <span className="text-xs">No image</span>
           </div>
         )}
         {form.isFeatured && (
-          <span className="absolute top-2 left-2 bg-yellow-500 text-black text-[10px] font-bold px-2 py-0.5 rounded">Featured</span>
+          <span className="absolute top-2 left-2 bg-crm-warning text-white text-[10px] font-bold px-2 py-0.5 rounded">Featured</span>
         )}
         {form.isBestRated && (
-          <span className="absolute top-2 right-2 bg-violet-500 text-white text-[10px] font-bold px-2 py-0.5 rounded">Best Rated</span>
+          <span className="absolute top-2 right-2 bg-crm-purple text-white text-[10px] font-bold px-2 py-0.5 rounded">Best Rated</span>
         )}
         {discount && (
-          <span className="absolute bottom-2 right-2 bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded">{discount}% OFF</span>
+          <span className="absolute bottom-2 right-2 bg-crm-danger text-white text-xs font-bold px-2 py-0.5 rounded">{discount}% OFF</span>
         )}
       </div>
       <div className="p-4">
         {form.categoryName && (
-          <p className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider mb-1">{form.categoryName}</p>
+          <p className="text-[10px] text-crm-primary font-semibold uppercase tracking-wider mb-1">{form.categoryName}</p>
         )}
-        <h3 className="text-sm font-bold text-white leading-snug line-clamp-2">
+        <h3 className="text-sm font-bold text-crm-text-bright leading-snug line-clamp-2">
           {form.titleEn || "Product Name"}
         </h3>
         {form.brandName && (
-          <p className="text-xs text-gray-400 mt-0.5">{form.brandName}</p>
+          <p className="text-xs text-crm-text-dim mt-0.5">{form.brandName}</p>
         )}
         <div className="flex items-baseline gap-2 mt-2">
-          <span className="text-lg font-bold text-white">{price}</span>
-          {compareAt && <span className="text-xs text-gray-500 line-through">{compareAt}</span>}
+          <span className="text-lg font-bold text-crm-text-bright">{price}</span>
+          {compareAt && <span className="text-xs text-crm-text-muted line-through">{compareAt}</span>}
         </div>
         {form.stock && (
-          <p className={`text-xs mt-1 font-medium ${Number(form.stock) < 10 ? "text-red-400" : "text-green-400"}`}>
+          <p className={`text-xs mt-1 font-medium ${Number(form.stock) < 10 ? "text-crm-danger" : "text-crm-success"}`}>
             {Number(form.stock) < 10 ? `Only ${form.stock} left!` : `In stock · ${form.stock} units`}
           </p>
         )}
         <div className="mt-3 flex flex-wrap gap-1">
           {form.selectedTagIds?.slice(0, 3).map((t, i) => (
-            <span key={i} className="bg-gray-700 text-gray-300 text-[10px] px-2 py-0.5 rounded-full">{t.nameEn || t}</span>
+            <span key={i} className="bg-crm-bg-hover text-crm-text text-[10px] px-2 py-0.5 rounded-full">{t.nameEn || t}</span>
           ))}
         </div>
       </div>
@@ -998,9 +995,6 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
           altEn: form.titleEn || null,
         })),
       ];
-      // #region agent log
-      fetch('http://127.0.0.1:7768/ingest/4878ed05-f1ac-4ebb-915b-84a7969025f6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f9670f'},body:JSON.stringify({sessionId:'f9670f',location:'AddProductWizard:publish',message:'publish asset payload',data:{productId,images:form.assets.length,videos:form.videoAssets.length,banners:form.bannerAssets.length,totalAssets:assetPayload.length},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       // Step 2: Full update with description, assets, attributes, specs, pricing tiers
       const attrsFilled = form.keyAttributes.filter((r) => r.key.trim() && r.value.trim());
       const specsFilled = form.specifications.filter((r) => r.key.trim() && r.value.trim());
@@ -1098,18 +1092,18 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Product Name (English) *</label>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Product Name (English) *</label>
               <input
                 autoFocus
                 value={form.titleEn}
                 onChange={(e) => set("titleEn", e.target.value)}
                 placeholder="e.g. Pro Wireless Gaming Mouse"
-                className={`crm-input ${errors.titleEn ? "border-red-500 ring-1 ring-red-500" : ""}`}
+                className={`crm-input ${errors.titleEn ? "border-crm-danger ring-1 ring-crm-danger" : ""}`}
               />
-              {errors.titleEn && <p className="text-xs text-red-400 flex items-center gap-1"><FiAlertCircle size={11}/>{errors.titleEn}</p>}
+              {errors.titleEn && <p className="text-xs text-crm-danger flex items-center gap-1"><FiAlertCircle size={11}/>{errors.titleEn}</p>}
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Product Name (বাংলা)</label>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Product Name (বাংলা)</label>
               <input
                 value={form.titleBn}
                 onChange={(e) => set("titleBn", e.target.value)}
@@ -1121,7 +1115,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
 
           {/* Tags */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Product Tags</label>
+            <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Product Tags</label>
             <input
               value={tagSearch}
               onChange={(e) => setTagSearch(e.target.value)}
@@ -1145,8 +1139,8 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                       }}
                       className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
                         selected
-                          ? "bg-blue-600 border-blue-600 text-white"
-                          : "bg-gray-800 border-gray-600 text-gray-300 hover:border-blue-500 hover:text-blue-300"
+                          ? "bg-crm-primary border-crm-primary text-white"
+                          : "bg-crm-bg-alt border-crm-border-strong text-crm-text hover:border-crm-primary hover:text-crm-primary"
                       }`}
                     >
                       {tag.nameEn}
@@ -1154,11 +1148,11 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                   );
                 })}
               {allTags.length === 0 && (
-                <p className="text-xs text-gray-500">No tags available. Create tags in the Tags section first.</p>
+                <p className="text-xs text-crm-text-muted">No tags available. Create tags in the Tags section first.</p>
               )}
             </div>
             {form.selectedTagIds.length > 0 && (
-              <p className="text-xs text-blue-400">{form.selectedTagIds.length} tag(s) selected</p>
+              <p className="text-xs text-crm-primary">{form.selectedTagIds.length} tag(s) selected</p>
             )}
           </div>
         </div>
@@ -1168,13 +1162,13 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
       case 2: return (
         <div className="space-y-6">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Product Images (max 20)</label>
-            <p className="text-xs text-gray-500">First image = primary · Drag to reorder · Hover to set primary or remove</p>
+            <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Product Images (max 20)</label>
+            <p className="text-xs text-crm-text-muted">First image = primary · Drag to reorder · Hover to set primary or remove</p>
             <MediaUploader assets={form.assets} onChange={(a) => set("assets", a)} />
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Product Videos (max 5)</label>
+            <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Product Videos (max 5)</label>
             <MultiMediaUploader
               assets={form.videoAssets}
               onChange={(a) => set("videoAssets", a)}
@@ -1186,7 +1180,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Landing Banners (max 5)</label>
+            <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Landing Banners (max 5)</label>
             <MultiMediaUploader
               assets={form.bannerAssets}
               onChange={(a) => set("bannerAssets", a)}
@@ -1204,15 +1198,15 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
       case 3: return (
         <div className="space-y-6">
           {/* Pricing Mode Toggle */}
-          <div className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/50 border border-gray-700">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pricing Model:</span>
-            <div className="flex rounded-lg overflow-hidden border border-gray-600">
+          <div className="flex items-center gap-4 p-3 rounded-xl bg-crm-bg-alt/50 border border-crm-border">
+            <span className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Pricing Model:</span>
+            <div className="flex rounded-lg overflow-hidden border border-crm-border-strong">
               <button type="button"
                 onClick={() => set("pricingMode", "non_tiered")}
                 className={`px-4 py-1.5 text-xs font-semibold transition-all ${
                   form.pricingMode === "non_tiered"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:text-white"
+                    ? "bg-crm-primary text-white"
+                    : "bg-crm-bg-alt text-crm-text-dim hover:text-crm-text-bright"
                 }`}
               >
                 Non-Tiered (Retail Only)
@@ -1221,14 +1215,14 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                 onClick={() => set("pricingMode", "tiered")}
                 className={`px-4 py-1.5 text-xs font-semibold transition-all ${
                   form.pricingMode === "tiered"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:text-white"
+                    ? "bg-crm-primary text-white"
+                    : "bg-crm-bg-alt text-crm-text-dim hover:text-crm-text-bright"
                 }`}
               >
                 Tiered (Retail + Wholesale)
               </button>
             </div>
-            <span className="text-[10px] text-gray-500 ml-auto">
+            <span className="text-[10px] text-crm-text-muted ml-auto">
               {form.pricingMode === "non_tiered"
                 ? "Simple retail pricing with no tier discounts"
                 : "3 retail tiers + 3 wholesale tiers with quantity-based discounts"}
@@ -1238,7 +1232,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
           {/* Base Pricing */}
           <div className="grid grid-cols-2 gap-5">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-blue-400 uppercase tracking-wider">
+              <label className="text-xs font-bold text-crm-primary uppercase tracking-wider">
                 {form.pricingMode === "non_tiered" ? "Current Price (৳) *" : "Retail Price (৳) *"}
               </label>
               <input
@@ -1246,21 +1240,21 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                 value={form.retailPrice}
                 onChange={(e) => set("retailPrice", e.target.value)}
                 placeholder="0.00"
-                className={`crm-input font-bold text-lg ${errors.retailPrice ? "border-red-500" : ""}`}
+                className={`crm-input font-bold text-lg ${errors.retailPrice ? "border-crm-danger" : ""}`}
               />
-              {errors.retailPrice && <p className="text-xs text-red-400">{errors.retailPrice}</p>}
+              {errors.retailPrice && <p className="text-xs text-crm-danger">{errors.retailPrice}</p>}
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Previous / Compare Price (৳)</label>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Previous / Compare Price (৳)</label>
               <input
                 type="number" min="0" step="0.01"
                 value={form.compareAt}
                 onChange={(e) => set("compareAt", e.target.value)}
                 placeholder="0.00"
-                className="crm-input text-gray-400"
+                className="crm-input text-crm-text-dim"
               />
               {form.compareAt && Number(form.compareAt) > Number(form.retailPrice) && (
-                <p className="text-xs text-green-400">
+                <p className="text-xs text-crm-success">
                   {Math.round((1 - Number(form.retailPrice) / Number(form.compareAt)) * 100)}% discount badge will show
                 </p>
               )}
@@ -1269,7 +1263,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
 
           {/* Retail Tiers (only for tiered mode) */}
           {form.pricingMode === "tiered" && (
-            <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+            <div className="p-4 rounded-xl bg-crm-bg-alt/50 border border-crm-border">
               <BandTierEditor
                 bands={form.retailBands}
                 onChange={(t) => set("retailBands", t)}
@@ -1277,7 +1271,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                 basePrice={form.retailPrice}
                 wholesaleMode={false}
               />
-              <p className="text-[10px] text-gray-500 mt-2">
+              <p className="text-[10px] text-crm-text-muted mt-2">
                 Tier 3 max qty becomes the retail order limit. Beyond that, only wholesale customers can order.
               </p>
             </div>
@@ -1287,17 +1281,17 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
           {form.pricingMode === "tiered" && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-purple-400 uppercase tracking-wider">
+                <label className="text-xs font-bold text-crm-purple uppercase tracking-wider">
                   Wholesale Pricing
                 </label>
                 {form.wholesalePrice && (
                   <button type="button" onClick={() => { set("wholesalePrice", ""); set("wholesaleCompareAt", ""); }}
-                    className="text-xs text-gray-500 hover:text-red-400">Clear wholesale</button>
+                    className="text-xs text-crm-text-muted hover:text-crm-danger">Clear wholesale</button>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-purple-400 uppercase tracking-wider">Wholesale Price (৳)</label>
+                  <label className="text-xs font-bold text-crm-purple uppercase tracking-wider">Wholesale Price (৳)</label>
                   <input
                     type="number" min="0" step="0.01"
                     value={form.wholesalePrice}
@@ -1307,23 +1301,23 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Previous / Compare Price (৳)</label>
+                  <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Previous / Compare Price (৳)</label>
                   <input
                     type="number" min="0" step="0.01"
                     value={form.wholesaleCompareAt}
                     onChange={(e) => set("wholesaleCompareAt", e.target.value)}
                     placeholder="0.00"
-                    className="crm-input text-gray-400"
+                    className="crm-input text-crm-text-dim"
                   />
                   {form.wholesaleCompareAt && form.wholesalePrice && Number(form.wholesaleCompareAt) > Number(form.wholesalePrice) && (
-                    <p className="text-xs text-green-400">
+                    <p className="text-xs text-crm-success">
                       {Math.round((1 - Number(form.wholesalePrice) / Number(form.wholesaleCompareAt)) * 100)}% wholesale discount badge
                     </p>
                   )}
                 </div>
               </div>
               {form.wholesalePrice && (
-                <div className="p-4 rounded-xl bg-gray-800/50 border border-purple-800/40">
+                <div className="p-4 rounded-xl bg-crm-bg-alt/50 border border-crm-purple/40">
                   <BandTierEditor
                     bands={form.wholesaleBands}
                     onChange={(t) => set("wholesaleBands", t)}
@@ -1331,7 +1325,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                     basePrice={form.wholesalePrice}
                     wholesaleMode
                   />
-                  <p className="text-[10px] text-gray-500 mt-2">
+                  <p className="text-[10px] text-crm-text-muted mt-2">
                     Quantity gates must follow: Q1 &lt; Q2 &lt; Q3 &lt; Q4 &lt; Q5. Discounts must increase monotonically.
                   </p>
                 </div>
@@ -1346,7 +1340,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-5">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Stock Count</label>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Stock Count</label>
               <input
                 type="number" min="0"
                 value={form.stock}
@@ -1356,7 +1350,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">MOQ (Min. Order Qty)</label>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">MOQ (Min. Order Qty)</label>
               <input
                 type="number" min="1"
                 value={form.moq}
@@ -1368,7 +1362,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Product SKU</label>
+            <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Product SKU</label>
             <div className="flex gap-2">
               <input
                 value={form.sku}
@@ -1389,20 +1383,20 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
           <div className="grid grid-cols-2 gap-5">
             {/* Category Picker */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Category</label>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Category</label>
               <button
                 type="button"
                 onClick={() => setShowCategoryPicker(true)}
                 className="crm-input text-left flex items-center justify-between w-full"
               >
-                <span className={form.categoryName ? "text-gray-100" : "text-gray-500"}>
+                <span className={form.categoryName ? "text-crm-text-bright" : "text-crm-text-muted"}>
                   {form.categoryName || "Select from category explorer…"}
                 </span>
-                <FiSearch size={14} className="text-gray-400" />
+                <FiSearch size={14} className="text-crm-text-dim" />
               </button>
               {form.categoryId && (
-                <p className="text-xs text-blue-400">
-                  Selected: {form.categoryName} <button type="button" className="text-gray-500 hover:text-red-400 ml-1"
+                <p className="text-xs text-crm-primary">
+                  Selected: {form.categoryName} <button type="button" className="text-crm-text-muted hover:text-crm-danger ml-1"
                     onClick={() => { set("categoryId", ""); set("categoryName", ""); }}>× clear</button>
                 </p>
               )}
@@ -1410,7 +1404,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
 
             {/* Brand Picker */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Brand</label>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider">Brand</label>
               <BrandPicker
                 value={form.brandName}
                 onChange={(id, name) => { set("brandId", id); set("brandName", name); }}
@@ -1424,7 +1418,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
       case 5: return (
         <div className="space-y-6">
           <div>
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">
+            <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider mb-2 block">
               Product Description
             </label>
             <RichTextEditor
@@ -1437,8 +1431,8 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
 
           <div className="grid grid-cols-2 gap-6">
             <div>
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">
-                Key Attributes <span className="text-blue-400">(shown on storefront)</span>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider mb-2 block">
+                Key Attributes <span className="text-crm-primary">(shown on storefront)</span>
               </label>
               <KVTable
                 rows={form.keyAttributes}
@@ -1447,8 +1441,8 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">
-                Specifications <span className="text-blue-400">(shows on storefront)</span>
+              <label className="text-xs font-bold text-crm-text-dim uppercase tracking-wider mb-2 block">
+                Specifications <span className="text-crm-primary">(shows on storefront)</span>
               </label>
               <KVTable
                 rows={form.specifications.length ? form.specifications : [{ key: "", value: "" }]}
@@ -1464,46 +1458,46 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
       case 6: return (
         <div className="grid grid-cols-2 gap-6">
           <div className="space-y-3">
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Collection Flags</h4>
+            <h4 className="text-xs font-bold text-crm-text-dim uppercase tracking-wider mb-2">Collection Flags</h4>
 
             {[
-              { key: "isFeatured", label: "Promote as Featured", desc: "Appears on homepage featured section", icon: FiStar, color: "text-yellow-400" },
-              { key: "isBestRated", label: "Mark as Best Rated", desc: "Eligible for homepage best-rated collections", icon: FiStar, color: "text-violet-400" },
-              { key: "isTopTrending", label: "Mark as Top Trending", desc: "Adds ob_top_trending tag automatically", icon: FiTrendingUp, color: "text-blue-400" },
+              { key: "isFeatured", label: "Promote as Featured", desc: "Appears on homepage featured section", icon: FiStar, color: "text-crm-warning" },
+              { key: "isBestRated", label: "Mark as Best Rated", desc: "Eligible for homepage best-rated collections", icon: FiStar, color: "text-crm-purple" },
+              { key: "isTopTrending", label: "Mark as Top Trending", desc: "Adds ob_top_trending tag automatically", icon: FiTrendingUp, color: "text-crm-primary" },
             ].map(({ key, label, desc, icon: Icon, color }) => (
               <label key={key}
-                className={`flex items-start gap-3 p-3.5 rounded-xl bg-gray-800 cursor-pointer border transition-all ${
-                  form[key] ? "border-blue-600/60 bg-blue-600/5" : "border-gray-700 hover:border-gray-500"
+                className={`flex items-start gap-3 p-3.5 rounded-xl bg-crm-bg-alt cursor-pointer border transition-all ${
+                  form[key] ? "border-crm-primary/60 bg-crm-primary/5" : "border-crm-border hover:border-crm-border-strong"
                 }`}>
                 <input type="checkbox" checked={form[key]}
                   onChange={(e) => set(key, e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded accent-blue-600" />
+                  className="mt-0.5 w-4 h-4 rounded accent-crm-primary" />
                 <div>
                   <p className={`text-sm font-bold ${color}`}><Icon className="inline mr-1" size={13}/>{label}</p>
-                  <p className="text-xs text-gray-500">{desc}</p>
+                  <p className="text-xs text-crm-text-muted">{desc}</p>
                 </div>
               </label>
             ))}
 
             <label className={`flex items-start gap-3 p-3.5 rounded-xl cursor-pointer border transition-all mt-2 ${
-              form.complianceConfirmed ? "border-green-600/60 bg-green-600/5" : "border-yellow-600/40 bg-yellow-600/5 hover:border-yellow-500"
+              form.complianceConfirmed ? "border-crm-success/60 bg-crm-success/5" : "border-crm-warning/40 bg-crm-warning/5 hover:border-crm-warning"
             }`}>
               <input type="checkbox" checked={form.complianceConfirmed}
                 onChange={(e) => { set("complianceConfirmed", e.target.checked); if (e.target.checked) setErrors((er) => ({ ...er, complianceConfirmed: undefined })); }}
-                className="mt-0.5 w-4 h-4 rounded accent-green-600" />
+                className="mt-0.5 w-4 h-4 rounded accent-crm-success" />
               <div>
-                <p className="text-sm font-bold text-yellow-400">✓ Compliance Confirmation *</p>
-                <p className="text-xs text-gray-500">I confirm all product information, pricing, and media are accurate and comply with platform policies.</p>
+                <p className="text-sm font-bold text-crm-warning">✓ Compliance Confirmation *</p>
+                <p className="text-xs text-crm-text-muted">I confirm all product information, pricing, and media are accurate and comply with platform policies.</p>
               </div>
             </label>
             {errors.complianceConfirmed && (
-              <p className="text-xs text-red-400 flex items-center gap-1"><FiAlertCircle size={11}/>{errors.complianceConfirmed}</p>
+              <p className="text-xs text-crm-danger flex items-center gap-1"><FiAlertCircle size={11}/>{errors.complianceConfirmed}</p>
             )}
           </div>
 
           {/* Mini Preview */}
           <div className="flex flex-col items-center justify-start pt-2">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Live Preview Snapshot</p>
+            <p className="text-xs font-bold text-crm-text-dim uppercase tracking-wider mb-3">Live Preview Snapshot</p>
             <ProductPreviewCard form={form} />
             <button type="button"
               onClick={() => setStep(7)}
@@ -1519,32 +1513,32 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
         <div className="space-y-6">
           <div className="flex gap-8">
             <div className="flex-shrink-0">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Storefront Preview</p>
+              <p className="text-xs font-bold text-crm-text-dim uppercase tracking-wider mb-3">Storefront Preview</p>
               <ProductPreviewCard form={form} />
             </div>
             <div className="flex-1 space-y-4">
-              <div className="bg-gray-800/60 rounded-xl border border-gray-700 p-4 text-sm space-y-2">
-                <p className="font-bold text-white text-base">{form.titleEn}</p>
-                {form.titleBn && <p className="text-gray-400">{form.titleBn}</p>}
-                <div className="flex flex-wrap gap-3 text-xs text-gray-400">
-                  <span>SKU: <strong className="text-gray-200">{form.sku || "—"}</strong></span>
-                  <span>Stock: <strong className="text-gray-200">{form.stock || "0"}</strong></span>
-                  <span>Category: <strong className="text-gray-200">{form.categoryName || "—"}</strong></span>
-                  <span>Brand: <strong className="text-gray-200">{form.brandName || "—"}</strong></span>
+              <div className="bg-crm-bg-alt/60 rounded-xl border border-crm-border p-4 text-sm space-y-2">
+                <p className="font-bold text-crm-text-bright text-base">{form.titleEn}</p>
+                {form.titleBn && <p className="text-crm-text-dim">{form.titleBn}</p>}
+                <div className="flex flex-wrap gap-3 text-xs text-crm-text-dim">
+                  <span>SKU: <strong className="text-crm-text">{form.sku || "—"}</strong></span>
+                  <span>Stock: <strong className="text-crm-text">{form.stock || "0"}</strong></span>
+                  <span>Category: <strong className="text-crm-text">{form.categoryName || "—"}</strong></span>
+                  <span>Brand: <strong className="text-crm-text">{form.brandName || "—"}</strong></span>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="bg-blue-600/20 text-blue-300 px-2 py-0.5 rounded">Retail: ৳{form.retailPrice}</span>
-                  {form.compareAt && <span className="bg-red-600/20 text-red-300 px-2 py-0.5 rounded">Was: ৳{form.compareAt}</span>}
-                  {form.wholesalePrice && <span className="bg-purple-600/20 text-purple-300 px-2 py-0.5 rounded">Wholesale: ৳{form.wholesalePrice}</span>}
+                  <span className="bg-crm-primary/20 text-crm-primary px-2 py-0.5 rounded">Retail: ৳{form.retailPrice}</span>
+                  {form.compareAt && <span className="bg-crm-danger/20 text-crm-danger px-2 py-0.5 rounded">Was: ৳{form.compareAt}</span>}
+                  {form.wholesalePrice && <span className="bg-crm-purple/20 text-crm-purple px-2 py-0.5 rounded">Wholesale: ৳{form.wholesalePrice}</span>}
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs mt-1">
-                  {form.isFeatured && <span className="bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded">⭐ Featured</span>}
-                  {form.isBestRated && <span className="bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded">⭐ Best Rated</span>}
-                  {form.isTopTrending && <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">📈 Top Trending</span>}
+                  {form.isFeatured && <span className="bg-crm-warning/20 text-crm-warning px-2 py-0.5 rounded">⭐ Featured</span>}
+                  {form.isBestRated && <span className="bg-crm-purple/20 text-crm-purple px-2 py-0.5 rounded">⭐ Best Rated</span>}
+                  {form.isTopTrending && <span className="bg-crm-primary/20 text-crm-primary px-2 py-0.5 rounded">📈 Top Trending</span>}
                 </div>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {form.selectedTagIds.map((t, i) => (
-                    <span key={i} className="bg-gray-700 text-gray-300 text-[10px] px-2 py-0.5 rounded-full">
+                    <span key={i} className="bg-crm-bg-hover text-crm-text text-[10px] px-2 py-0.5 rounded-full">
                       {typeof t === "object" ? t.nameEn : t}
                     </span>
                   ))}
@@ -1552,27 +1546,27 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                 {form.assets.length > 0 && (
                   <div className="flex gap-2 mt-2">
                     {form.assets.slice(0, 5).map((a, i) => (
-                      <img key={i} src={a.url} alt="" className="w-10 h-10 rounded object-cover border border-gray-600" />
+                      <img key={i} src={a.url} alt="" className="w-10 h-10 rounded object-cover border border-crm-border-strong" />
                     ))}
-                    {form.assets.length > 5 && <span className="text-xs text-gray-500 self-center">+{form.assets.length - 5} more</span>}
+                    {form.assets.length > 5 && <span className="text-xs text-crm-text-muted self-center">+{form.assets.length - 5} more</span>}
                   </div>
                 )}
                 {form.videoAssets.length > 0 && (
                   <div className="flex items-center gap-2 mt-2">
-                    <FiFilm size={12} className="text-purple-400" />
-                    <span className="text-xs text-purple-300">{form.videoAssets.length} video(s)</span>
+                    <FiFilm size={12} className="text-crm-purple" />
+                    <span className="text-xs text-crm-purple">{form.videoAssets.length} video(s)</span>
                   </div>
                 )}
                 {form.bannerAssets.length > 0 && (
                   <div className="flex items-center gap-2 mt-1">
-                    <FiImage size={12} className="text-blue-400" />
-                    <span className="text-xs text-blue-300">{form.bannerAssets.length} banner(s)</span>
+                    <FiImage size={12} className="text-crm-primary" />
+                    <span className="text-xs text-crm-primary">{form.bannerAssets.length} banner(s)</span>
                   </div>
                 )}
               </div>
 
               {!form.complianceConfirmed && (
-                <div className="flex items-center gap-2 p-3 bg-yellow-900/30 border border-yellow-700/50 rounded-xl text-xs text-yellow-300">
+                <div className="flex items-center gap-2 p-3 bg-crm-warning/30 border border-crm-warning/50 rounded-xl text-xs text-crm-warning">
                   <FiAlertCircle size={14}/>
                   <span>You must confirm compliance on Step 6 before publishing.</span>
                   <button type="button" onClick={() => setStep(6)} className="underline font-semibold">Go back</button>
@@ -1583,7 +1577,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                 type="button"
                 disabled={submitting}
                 onClick={handlePublish}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold text-base transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-crm-primary to-crm-primary hover:from-crm-primary-hover hover:to-crm-primary text-white font-bold text-base transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg"
               >
                 {submitting ? (
                   <><FiRefreshCw className="animate-spin" size={16}/> Publishing…</>
@@ -1607,22 +1601,22 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden">
-        <div className="relative w-full max-w-5xl mx-4 my-4 flex flex-col bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="relative w-full max-w-5xl mx-4 my-4 flex flex-col bg-crm-bg-card border border-crm-border-strong rounded-2xl shadow-2xl overflow-hidden text-crm-text">
 
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 bg-gray-800 flex-shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-crm-border bg-crm-bg-alt flex-shrink-0">
             <div>
-              <h2 className="text-lg font-bold text-white">Add New Product</h2>
-              <p className="text-xs text-gray-400">Step {step} of {STEPS.length} — {STEPS[step - 1].label}</p>
+              <h2 className="text-lg font-bold text-crm-text-bright">Add New Product</h2>
+              <p className="text-xs text-crm-text-dim">Step {step} of {STEPS.length} — {STEPS[step - 1].label}</p>
             </div>
             <button type="button" disabled={submitting} onClick={onClose}
-              className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-700 transition-colors">
+              className="text-crm-text-dim hover:text-crm-text-bright p-2 rounded-lg hover:bg-crm-bg-hover transition-colors">
               <FiX size={20} />
             </button>
           </div>
 
           {/* Step Progress */}
-          <div className="px-6 py-3 border-b border-gray-700 bg-gray-800/60 flex-shrink-0">
+          <div className="px-6 py-3 border-b border-crm-border bg-crm-bg-alt/60 flex-shrink-0">
             <div className="flex items-center gap-1 overflow-x-auto">
               {STEPS.map((s, i) => {
                 const Icon = s.icon;
@@ -1635,15 +1629,15 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
                       disabled={submitting}
                       onClick={() => !submitting && setStep(s.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
-                        isActive ? "bg-blue-600 text-white shadow" :
-                        isDone ? "text-green-400 hover:bg-gray-700" :
-                        "text-gray-500 hover:bg-gray-700 hover:text-gray-300"
+                        isActive ? "bg-crm-primary text-white shadow" :
+                        isDone ? "text-crm-success font-semibold hover:bg-crm-bg-hover" :
+                        "text-crm-text-dim font-semibold hover:bg-crm-bg-hover hover:text-crm-text-bright"
                       }`}
                     >
                       {isDone ? <FiCheck size={11}/> : <Icon size={11}/>}
                       {s.label}
                     </button>
-                    {i < STEPS.length - 1 && <FiChevronRight size={14} className="text-gray-700 mx-0.5 flex-shrink-0"/>}
+                    {i < STEPS.length - 1 && <FiChevronRight size={14} className="text-crm-text-muted mx-0.5 flex-shrink-0"/>}
                   </div>
                 );
               })}
@@ -1656,7 +1650,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
           </div>
 
           {/* Footer Navigation */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-700 bg-gray-800 flex-shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-t border-crm-border bg-crm-bg-alt flex-shrink-0">
             <button
               type="button"
               onClick={goBack}
@@ -1666,7 +1660,7 @@ export default function AddProductWizard({ open, onClose, onSuccess, defaultCate
               <FiChevronLeft size={14}/> Back
             </button>
 
-            <span className="text-xs text-gray-500">{step} / {STEPS.length}</span>
+            <span className="text-xs text-crm-text-muted">{step} / {STEPS.length}</span>
 
             {step < STEPS.length ? (
               <button type="button" onClick={goNext} disabled={submitting}

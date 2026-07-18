@@ -19,6 +19,7 @@ import {
   listDeals,
   createDeal,
   updateDeal,
+  deleteDeal,
 } from '../../services/pipelineService';
 
 const router = Router();
@@ -70,7 +71,12 @@ router.get('/restock', async (_req: Request, res: Response) => {
 });
 
 router.get('/insights', async (_req: Request, res: Response) => {
-  res.json(await getInsights());
+  try {
+    const data = await getInsights();
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'insights_failed' });
+  }
 });
 
 router.get('/customers/:id/timeline', async (req: Request, res: Response) => {
@@ -135,6 +141,15 @@ router.patch('/deals/:id', requireRole('super_admin', 'admin', 'staff'), async (
     res.json({ deal: await updateDeal(String(req.params.id), req.body || {}) });
   } catch (err: any) {
     res.status(400).json({ error: err?.message || 'update_failed' });
+  }
+});
+
+router.delete('/deals/:id', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
+  try {
+    await deleteDeal(String(req.params.id));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'delete_failed' });
   }
 });
 

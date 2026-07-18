@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FiCpu, FiRefreshCw, FiAlertTriangle, FiUsers, FiTrendingUp, FiX, FiPlus } from "react-icons/fi";
+import { FiCpu, FiRefreshCw, FiAlertTriangle, FiUsers, FiTrendingUp, FiX, FiPlus, FiEdit2, FiTrash2 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
+import { getAdminUser } from "../lib/auth";
+import { hasPermission } from "../auth/permissionMatrix";
 import { useToast } from "../components/ToastProvider";
 import { format } from "date-fns";
 
@@ -23,6 +25,9 @@ function money(n) {
 
 export default function CrmIntelligencePage() {
   const toast = useToast();
+  const adminRole = useMemo(() => String(getAdminUser()?.role || "STAFF").toUpperCase(), []);
+  const canEdit = hasPermission(adminRole, "crmIntelligence", "edit");
+
   const [tab, setTab] = useState("risk");
   const [loading, setLoading] = useState(false);
   const [overview, setOverview] = useState(null);
@@ -33,6 +38,7 @@ export default function CrmIntelligencePage() {
   const [timeline, setTimeline] = useState(null);
   const [recomputing, setRecomputing] = useState(false);
   const [newDeal, setNewDeal] = useState({ title: "", value: "", customerId: "" });
+  const [editingDeal, setEditingDeal] = useState(null);
 
   const loadOverview = useCallback(async () => {
     try { setOverview(await adminApi.intelOverview()); } catch { /* ignore */ }
@@ -45,7 +51,7 @@ export default function CrmIntelligencePage() {
       else if (tab === "segments") setSegments((await adminApi.intelSegments())?.segments || []);
       else if (tab === "clv") setClv(await adminApi.intelClv({ limit: 25 }));
       else if (tab === "pipeline") setPipeline(await adminApi.deals());
-    } catch {
+    } catch (err) {
       toast.error("Failed to load intelligence data");
     } finally {
       setLoading(false);
@@ -56,13 +62,25 @@ export default function CrmIntelligencePage() {
   useEffect(() => { loadTab(); }, [loadTab]);
 
   const recompute = async () => {
+    if (!canEdit) {
+      toast.error("Only Admin and Super Admin can recompute predictions");
+      return;
+    }
     setRecomputing(true);
     try {
       const r = await adminApi.intelRecompute({ churn: true, demand: true });
       toast.success(`Recomputed ${r.churn} customers, ${r.demand} products`);
       loadOverview(); loadTab();
     } catch (e) {
-      toast.error(e?.response?.data?.error === "ml_not_configured" ? "ML service not configured" : "Recompute failed");
+      const status = e?.response?.status;
+      const err = e?.response?.data?.error;
+      if (status === 403) {
+        toast.error("Insufficient permissions — recompute requires Admin or Super Admin role");
+      } else if (err === "ml_not_configured") {
+        toast.error("ML service not configured");
+      } else {
+        toast.error(err || "Recompute failed");
+      }
     } finally {
       setRecomputing(false);
     }
@@ -87,24 +105,62 @@ export default function CrmIntelligencePage() {
   }, [pipeline]);
 
   const moveDeal = async (deal, stageId) => {
+    if (!canEdit) return;
     try {
       await adminApi.updateDeal(deal.id, { stageId });
       loadTab();
-    } catch { toast.error("Failed to move deal"); }
+    } catch (e) {
+      toast.error(e?.response?.data?.error || "Failed to move deal");
+    }
   };
 
   const addDeal = async () => {
+    if (!canEdit) return;
     if (!newDeal.title.trim()) { toast.error("Deal title required"); return; }
+    const cid = newDeal.customerId.trim();
+    if (cid && cid.length !== 8) {
+      toast.error("Customer ID must be empty or exactly 8 characters");
+      return;
+    }
     try {
       await adminApi.createDeal({
         title: newDeal.title.trim(),
         value: Number(newDeal.value) || 0,
-        customerId: newDeal.customerId.trim() || undefined,
+        customerId: cid || undefined,
       });
       setNewDeal({ title: "", value: "", customerId: "" });
       toast.success("Deal created");
       loadTab();
-    } catch { toast.error("Failed to create deal"); }
+    } catch (e) {
+      toast.error(e?.response?.data?.error || "Failed to create deal");
+    }
+  };
+
+  const saveEditDeal = async () => {
+    if (!editingDeal?.id) return;
+    try {
+      await adminApi.updateDeal(editingDeal.id, {
+        title: editingDeal.title.trim(),
+        value: Number(editingDeal.value) || 0,
+      });
+      setEditingDeal(null);
+      toast.success("Deal updated");
+      loadTab();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || "Failed to update deal");
+    }
+  };
+
+  const deleteDeal = async (deal) => {
+    if (!canEdit) return;
+    if (!window.confirm(`Delete deal "${deal.title}"?`)) return;
+    try {
+      await adminApi.deleteDeal(deal.id);
+      toast.success("Deal deleted");
+      loadTab();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || "Failed to delete deal");
+    }
   };
 
   return (
@@ -117,9 +173,13 @@ export default function CrmIntelligencePage() {
             <p className="text-crm-text-dim text-sm">Predictive churn, segmentation, CLV &amp; B2B sales pipeline</p>
           </div>
         </div>
-        <button onClick={recompute} disabled={recomputing} className="crm-btn-primary flex items-center gap-2 text-sm">
-          <FiRefreshCw size={14} className={recomputing ? "animate-spin" : ""} /> Recompute predictions
-        </button>
+        {canEdit ? (
+          <button onClick={recompute} disabled={recomputing} className="crm-btn-primary flex items-center gap-2 text-sm">
+            <FiRefreshCw size={14} className={recomputing ? "animate-spin" : ""} /> Recompute predictions
+          </button>
+        ) : (
+          <p className="text-xs text-crm-text-dim">View-only — contact an Admin to recompute or edit deals</p>
+        )}
       </div>
 
       {overview && !overview.mlConfigured && (
@@ -216,12 +276,16 @@ export default function CrmIntelligencePage() {
 
       {!loading && tab === "pipeline" && (
         <div className="space-y-4">
-          <div className="crm-card flex flex-wrap items-end gap-2">
-            <div className="flex-1 min-w-[160px]"><label className="text-xs text-crm-text-dim uppercase font-bold">Deal title</label><input className="crm-input w-full" value={newDeal.title} onChange={(e) => setNewDeal({ ...newDeal, title: e.target.value })} /></div>
-            <div className="w-32"><label className="text-xs text-crm-text-dim uppercase font-bold">Value (৳)</label><input type="number" className="crm-input w-full" value={newDeal.value} onChange={(e) => setNewDeal({ ...newDeal, value: e.target.value })} /></div>
-            <div className="w-36"><label className="text-xs text-crm-text-dim uppercase font-bold">Customer ID</label><input className="crm-input w-full" value={newDeal.customerId} onChange={(e) => setNewDeal({ ...newDeal, customerId: e.target.value })} /></div>
-            <button onClick={addDeal} className="crm-btn-primary flex items-center gap-2"><FiPlus size={16} /> Add deal</button>
-          </div>
+          {canEdit ? (
+            <div className="crm-card flex flex-wrap items-end gap-2">
+              <div className="flex-1 min-w-[160px]"><label className="text-xs text-crm-text-dim uppercase font-bold">Deal title</label><input className="crm-input w-full" value={newDeal.title} onChange={(e) => setNewDeal({ ...newDeal, title: e.target.value })} /></div>
+              <div className="w-32"><label className="text-xs text-crm-text-dim uppercase font-bold">Value (৳)</label><input type="number" className="crm-input w-full" value={newDeal.value} onChange={(e) => setNewDeal({ ...newDeal, value: e.target.value })} /></div>
+              <div className="w-36"><label className="text-xs text-crm-text-dim uppercase font-bold">Customer ID</label><input className="crm-input w-full font-mono" maxLength={8} placeholder="8 chars" value={newDeal.customerId} onChange={(e) => setNewDeal({ ...newDeal, customerId: e.target.value })} /></div>
+              <button onClick={addDeal} className="crm-btn-primary flex items-center gap-2"><FiPlus size={16} /> Add deal</button>
+            </div>
+          ) : (
+            <p className="text-sm text-crm-text-dim crm-card">Pipeline is read-only for your role. Drag deals and editing require Admin access.</p>
+          )}
           <div className="flex gap-4 overflow-x-auto pb-2">
             {(pipeline.stages || []).map((stage) => (
               <div key={stage.id} className="min-w-[240px] w-60 shrink-0">
@@ -230,19 +294,56 @@ export default function CrmIntelligencePage() {
                   <span className="text-xs text-crm-text-dim">{(dealsByStage[stage.id] || []).length}</span>
                 </div>
                 <div className="space-y-2 min-h-[60px]"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { const id = e.dataTransfer.getData("dealId"); const d = pipeline.deals.find((x) => x.id === id); if (d) moveDeal(d, stage.id); }}>
+                  onDragOver={(e) => canEdit && e.preventDefault()}
+                  onDrop={(e) => {
+                    if (!canEdit) return;
+                    const id = e.dataTransfer.getData("dealId");
+                    const d = pipeline.deals.find((x) => x.id === id);
+                    if (d) moveDeal(d, stage.id);
+                  }}>
                   {(dealsByStage[stage.id] || []).map((d) => (
-                    <div key={d.id} draggable onDragStart={(e) => e.dataTransfer.setData("dealId", d.id)}
-                      className="crm-card cursor-grab active:cursor-grabbing p-3">
+                    <div key={d.id} draggable={canEdit} onDragStart={(e) => canEdit && e.dataTransfer.setData("dealId", d.id)}
+                      className="crm-card cursor-grab active:cursor-grabbing p-3 group relative">
                       <div className="font-medium text-crm-text-bright text-sm">{d.title}</div>
                       <div className="text-crm-primary font-bold text-sm tabular-nums">{money(d.value)}</div>
                       {d.customerId && <div className="text-xs text-crm-text-dim font-mono">{d.customerId}</div>}
+                      {canEdit && (
+                        <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button type="button" onClick={() => setEditingDeal({ id: d.id, title: d.title, value: d.value })}
+                            className="p-1 text-crm-text-dim hover:text-crm-primary" title="Edit">
+                            <FiEdit2 size={13} />
+                          </button>
+                          <button type="button" onClick={() => deleteDeal(d)}
+                            className="p-1 text-crm-text-dim hover:text-crm-danger" title="Delete">
+                            <FiTrash2 size={13} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {editingDeal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditingDeal(null)}>
+          <div className="crm-card w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-crm-text-bright">Edit deal</h3>
+            <div>
+              <label className="text-xs text-crm-text-dim uppercase font-bold">Title</label>
+              <input className="crm-input w-full" value={editingDeal.title} onChange={(e) => setEditingDeal({ ...editingDeal, title: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-xs text-crm-text-dim uppercase font-bold">Value (৳)</label>
+              <input type="number" className="crm-input w-full" value={editingDeal.value} onChange={(e) => setEditingDeal({ ...editingDeal, value: e.target.value })} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setEditingDeal(null)} className="crm-btn">Cancel</button>
+              <button type="button" onClick={saveEditDeal} className="crm-btn-primary">Save</button>
+            </div>
           </div>
         </div>
       )}

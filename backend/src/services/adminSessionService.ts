@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import type { Request } from 'express';
 import crypto from 'crypto';
 
-const prisma = new PrismaClient();
 
 export async function trackAdminSession(adminId: number, req: Request): Promise<void> {
   const ua = req.headers['user-agent']?.slice(0, 512);

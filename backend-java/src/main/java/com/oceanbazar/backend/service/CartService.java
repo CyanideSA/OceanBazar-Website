@@ -52,9 +52,10 @@ public class CartService {
                 ProductEntity product = productRepository.findById(item.getProductId()).orElse(null);
                 if (product == null) continue;
                 int qty = item.getQuantity() == null ? 0 : item.getQuantity();
-                if (!isWholesale && qty > WholesalePricingUtil.RETAIL_MAX_ORDER_QTY) {
-                    item.setQuantity(WholesalePricingUtil.RETAIL_MAX_ORDER_QTY);
-                    qty = WholesalePricingUtil.RETAIL_MAX_ORDER_QTY;
+                int retailCap = WholesalePricingUtil.retailMaxOrderQty(product);
+                if (!isWholesale && qty > retailCap) {
+                    item.setQuantity(retailCap);
+                    qty = retailCap;
                     cappedRetail = true;
                 }
                 if (qty <= 0) continue;
@@ -118,11 +119,7 @@ public class CartService {
                 .findFirst()
                 .orElse(null);
         if (updated != null && updated.getQuantity() != null) finalQty = updated.getQuantity();
-        if (!wholesaleEarly && finalQty > WholesalePricingUtil.RETAIL_MAX_ORDER_QTY) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Retail customers may order at most " + WholesalePricingUtil.RETAIL_MAX_ORDER_QTY
-                            + " units per product. Apply for wholesale to order more.");
-        }
+        enforceQuantityLimits(product, finalQty, wholesaleEarly);
         if (updated != null && finalQty > 0) {
             double unitPrice = isWholesale
                     ? WholesalePricingUtil.computeWholesaleUnitPrice(product, finalQty)
@@ -157,11 +154,7 @@ public class CartService {
         if (product != null) {
             UserEntity user = userRepository.findById(userId).orElse(null);
             boolean isWholesale = WholesalePricingUtil.isApprovedWholesaleUser(user);
-            if (!isWholesale && qty > WholesalePricingUtil.RETAIL_MAX_ORDER_QTY) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Retail customers may order at most " + WholesalePricingUtil.RETAIL_MAX_ORDER_QTY
-                                + " units per product. Apply for wholesale to order more.");
-            }
+            enforceQuantityLimits(product, qty, isWholesale);
             if (qty > 0) {
                 double unitPrice = isWholesale
                         ? WholesalePricingUtil.computeWholesaleUnitPrice(product, qty)
@@ -212,6 +205,27 @@ public class CartService {
         }
         cartRepository.save(cart);
         return toCartResponse(cart);
+    }
+
+    /**
+     * Mirrors storefront product-page limits: per-product retail cap
+     * (retail tier-3 threshold from the admin CRM) plus available stock.
+     */
+    private void enforceQuantityLimits(ProductEntity product, int qty, boolean isWholesale) {
+        if (product == null || qty <= 0) return;
+        if (!isWholesale) {
+            int retailCap = WholesalePricingUtil.retailMaxOrderQty(product);
+            if (qty > retailCap) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "You can order at most " + retailCap
+                                + " units of this product. Apply for wholesale to order more.");
+            }
+        }
+        Integer stock = product.getStock();
+        if (stock != null && stock > 0 && qty > stock) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only " + stock + " units in stock for this product.");
+        }
     }
 
     private CartDtos.CartResponseDto toCartResponse(CartEntity cart) {

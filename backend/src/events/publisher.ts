@@ -1,11 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { getRedisClient } from '../cache/redisClient';
 import { appLog } from '../lib/appLog';
 import { createDomainEvent, type DomainEvent, type DomainEventType } from './domain-events';
 
 const EVENTS_STREAM = 'ob:events';
 const MAX_DLQ_ATTEMPTS = 8;
-const prisma = new PrismaClient();
 
 export async function publishDomainEvent<T extends Record<string, unknown>>(
   type: DomainEventType,

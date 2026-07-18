@@ -7,7 +7,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   RefreshCcw, ShoppingBag, Package, Camera, CheckCircle2,
   Clock, XCircle, AlertCircle, ChevronRight, ArrowRight,
-  Truck, CreditCard,
+  Truck, CreditCard, Banknote,
 } from 'lucide-react';
 import { returnsApi, ordersApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,7 @@ type ReturnRequest = {
   updatedAt: string;
   orderId?: string | null;
   productId?: string | null;
+  refundAmount?: number;
   messages?: Array<{ message: string; createdAt: string; senderRole?: string }>;
 };
 
@@ -38,18 +39,136 @@ const RETURN_REASONS = [
   'Other',
 ];
 
+// Aligned 1:1 with backend return_requests.status values (see backend/src/routes/admin/returns.ts).
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cls: string; desc: string }> = {
-  open:        { label: 'Under Review',  icon: AlertCircle,  cls: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',     desc: 'Our team is reviewing your request.' },
-  in_progress: { label: 'In Progress',   icon: Clock,        cls: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',  desc: 'Pickup or action is being arranged.' },
-  resolved:    { label: 'Approved',      icon: CheckCircle2, cls: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', desc: 'Return approved. Refund will be processed.' },
-  closed:      { label: 'Closed',        icon: XCircle,      cls: 'bg-muted text-muted-foreground',                      desc: 'This return request has been closed.' },
+  pending:         { label: 'Pending Review',    icon: AlertCircle,  cls: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',       desc: 'Our team is reviewing your request.' },
+  approved:        { label: 'Approved',           icon: CheckCircle2, cls: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', desc: 'Approved — pickup is being arranged.' },
+  courier_booked:  { label: 'Pickup Booked',      icon: Truck,        cls: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',    desc: 'A courier has been booked to pick up your item.' },
+  received:        { label: 'Received',           icon: Package,     cls: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',    desc: 'Your item arrived at our warehouse and is queued for inspection.' },
+  under_review:    { label: 'Under Inspection',   icon: Clock,        cls: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',    desc: 'Our team is inspecting the returned item.' },
+  refund_eligible: { label: 'Refund Eligible',    icon: Banknote,     cls: 'bg-primary/10 text-primary',                            desc: 'Approved for refund — please submit your payment details below.' },
+  refunded:        { label: 'Refunded',           icon: CheckCircle2, cls: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', desc: 'Your refund has been sent.' },
+  rejected:        { label: 'Rejected',           icon: XCircle,      cls: 'bg-destructive/10 text-destructive',                    desc: 'This return request was not approved.' },
+  closed:          { label: 'Closed',             icon: XCircle,      cls: 'bg-muted text-muted-foreground',                        desc: 'This return request has been closed.' },
 };
 
-function ReturnStatusCard({ req }: { req: ReturnRequest }) {
-  const cfg = STATUS_CONFIG[req.status] ?? STATUS_CONFIG.open;
+const PROGRESS_STATUSES = ['pending', 'approved', 'courier_booked', 'received', 'under_review', 'refund_eligible', 'refunded'];
+const PROGRESS_STEPS = ['Submitted', 'Approved', 'Pickup Booked', 'Received', 'Inspection', 'Refund Eligible', 'Refunded'];
+
+const REFUND_METHODS = [
+  { value: 'bkash', label: 'bKash' },
+  { value: 'nagad', label: 'Nagad' },
+  { value: 'rocket', label: 'Rocket' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+];
+
+function RefundAccountForm({ returnId, onSubmitted }: { returnId: string; onSubmitted: () => void }) {
+  const [method, setMethod] = useState(REFUND_METHODS[0].value);
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [notes, setNotes] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: () => returnsApi.submitRefundAccount(returnId, {
+      method,
+      accountNumber,
+      accountName: accountName || undefined,
+      bankName: method === 'bank_transfer' ? bankName || undefined : undefined,
+      notes: notes || undefined,
+    }),
+    onSuccess: () => {
+      setSubmitted(true);
+      onSubmitted();
+    },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } }).response?.data?.error ?? 'Failed to submit payment details.');
+    },
+  });
+
+  if (submitted) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+        Payment details submitted — we&apos;ll process your refund shortly.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+      <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <Banknote className="h-4 w-4 text-primary" /> Submit your refund payment details
+      </p>
+      {error && <p className="rounded-lg bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">Method *</label>
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          >
+            {REFUND_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">
+            {method === 'bank_transfer' ? 'Account Number *' : 'Wallet Number *'}
+          </label>
+          <input
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value)}
+            placeholder={method === 'bank_transfer' ? 'e.g. 0123456789' : 'e.g. 01712345678'}
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground">Account Holder Name</label>
+          <input
+            value={accountName}
+            onChange={(e) => setAccountName(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          />
+        </div>
+        {method === 'bank_transfer' && (
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground">Bank Name</label>
+            <input
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+        )}
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground">Notes (optional)</label>
+        <input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+        />
+      </div>
+      <button
+        type="button"
+        disabled={!accountNumber || mutation.isPending}
+        onClick={() => mutation.mutate()}
+        className="w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-50"
+      >
+        {mutation.isPending ? 'Submitting…' : 'Submit Payment Details'}
+      </button>
+    </div>
+  );
+}
+
+function ReturnStatusCard({ req, onRefundInfoSubmitted }: { req: ReturnRequest; onRefundInfoSubmitted: () => void }) {
+  const cfg = STATUS_CONFIG[req.status] ?? STATUS_CONFIG.pending;
   const Icon = cfg.icon;
-  const steps = ['Submitted', 'Under Review', 'Pickup', 'Inspection', 'Refund'];
-  const stepIdx = req.status === 'open' ? 1 : req.status === 'in_progress' ? 2 : req.status === 'resolved' ? 4 : 5;
+  const isTerminalAlt = req.status === 'rejected' || req.status === 'closed';
+  const stepIdx = PROGRESS_STATUSES.indexOf(req.status);
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
@@ -78,28 +197,41 @@ function ReturnStatusCard({ req }: { req: ReturnRequest }) {
         </span>
       </div>
 
-      {/* Progress bar */}
-      <div className="border-t border-border bg-muted/20 px-5 py-4">
-        <div className="flex items-center justify-between">
-          {steps.map((s, i) => (
-            <div key={s} className="flex flex-1 flex-col items-center gap-1">
-              <div className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
-                i < stepIdx ? 'bg-emerald-500 text-white' : i === stepIdx ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-              )}>
-                {i < stepIdx ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+      {!isTerminalAlt && stepIdx >= 0 && (
+        <div className="relative border-t border-border bg-muted/20 px-5 py-4">
+          <div className="flex items-center justify-between">
+            {PROGRESS_STEPS.map((s, i) => (
+              <div key={s} className="relative flex flex-1 flex-col items-center gap-1">
+                <div className={cn(
+                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
+                  i < stepIdx ? 'bg-emerald-500 text-white' : i === stepIdx ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                )}>
+                  {i < stepIdx ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+                </div>
+                <span className={cn('hidden text-center text-xs sm:block', i <= stepIdx ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
+                  {s}
+                </span>
+                {i < PROGRESS_STEPS.length - 1 && (
+                  <div className={cn('absolute top-3 h-0.5 w-full', i < stepIdx ? 'bg-emerald-500' : 'bg-border')} />
+                )}
               </div>
-              <span className={cn('hidden text-center text-xs sm:block', i <= stepIdx ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
-                {s}
-              </span>
-              {i < steps.length - 1 && (
-                <div className={cn('absolute top-3 h-0.5 w-full', i < stepIdx ? 'bg-emerald-500' : 'bg-border')} />
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
+          <p className="mt-3 text-center text-xs text-muted-foreground">{cfg.desc}</p>
         </div>
-        <p className="mt-3 text-center text-xs text-muted-foreground">{cfg.desc}</p>
-      </div>
+      )}
+
+      {isTerminalAlt && (
+        <div className="border-t border-border bg-muted/20 px-5 py-3">
+          <p className="text-center text-xs text-muted-foreground">{cfg.desc}</p>
+        </div>
+      )}
+
+      {req.status === 'refund_eligible' && (
+        <div className="border-t border-border px-5 py-4">
+          <RefundAccountForm returnId={req.id} onSubmitted={onRefundInfoSubmitted} />
+        </div>
+      )}
     </div>
   );
 }
@@ -149,6 +281,7 @@ export default function ReturnsPage() {
     updatedAt: r.updated_at,
     orderId: r.order_id,
     productId: null,
+    refundAmount: r.refund_amount != null ? Number(r.refund_amount) : undefined,
   }));
 
   return (
@@ -360,7 +493,7 @@ export default function ReturnsPage() {
           <h2 className="mb-4 font-bold text-foreground">Your Return Requests</h2>
           <div className="space-y-4">
             {returnTickets.map((req) => (
-              <ReturnStatusCard key={req.id} req={req} />
+              <ReturnStatusCard key={req.id} req={req} onRefundInfoSubmitted={() => refetch()} />
             ))}
           </div>
         </section>

@@ -6,12 +6,23 @@ function mapList(data) {
   return rows.map(normalizeInventoryItem);
 }
 
+function mapPaginated(data) {
+  return {
+    items: mapList(data),
+    total: data?.total ?? 0,
+    page: data?.page ?? 1,
+    limit: data?.limit ?? 20,
+  };
+}
+
 export const inventoryService = {
-  list: () => api.get("/api/admin/inventory").then((r) => mapList(r.data)),
+  list: (params = {}) =>
+    api.get("/api/admin/inventory", { params }).then((r) => mapPaginated(r.data)),
   listByProduct: (productId) =>
     api.get(`/api/admin/inventory/product/${productId}`).then((r) => mapList(r.data)),
-  lowStock: (threshold = 10) =>
-    api.get("/api/admin/inventory/low-stock", { params: { threshold } }).then((r) => mapList(r.data)),
+  lowStock: (params = {}) =>
+    api.get("/api/admin/inventory/low-stock", { params }).then((r) => mapPaginated(r.data)),
+  analytics: () => api.get("/api/admin/inventory/analytics").then((r) => r.data),
   detail: (itemId) =>
     api.get(`/api/admin/inventory/${itemId}`).then((r) => ({
       item: normalizeInventoryItem(r.data?.item),

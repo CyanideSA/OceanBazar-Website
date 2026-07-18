@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { logCommunication } from './communicationLogService';
 import {
@@ -8,8 +9,6 @@ import {
   sendWhatsAppOtp,
   isWhatsAppConfigured,
 } from './meta/whatsappClient';
-
-const prisma = new PrismaClient();
 
 function isTwilioConfigured(channel: 'sms' | 'whatsapp' = 'sms'): boolean {
   const fromNumber = channel === 'whatsapp'
@@ -95,11 +94,22 @@ async function sendMessage(
   return sent;
 }
 
+/** Generic SMS helper used by customerNotify and other lifecycle events. */
+export async function sendSms(phone: string, body: string, messageType = 'notification'): Promise<boolean> {
+  return sendMessage(phone, body, messageType, 'sms');
+}
+
 export async function sendOtpSms(phone: string, otp: string, type: string): Promise<boolean> {
   const body = `Your OceanBazar ${type.replace(/_/g, ' ')} code is ${otp}. It expires in ${process.env.OTP_EXPIRE_MINUTES || 10} minutes. Never share this code.`;
 
-  if (process.env.OTP_TERMINAL_ONLY === 'true' || isTwilioConfigured('sms')) {
+  if (process.env.OTP_TERMINAL_ONLY === 'true') {
     return sendMessage(phone, body, 'otp', 'sms');
+  }
+
+  // Prefer Twilio SMS when configured (reliable). Meta WhatsApp is secondary.
+  if (isTwilioConfigured('sms')) {
+    const sent = await sendMessage(phone, body, 'otp', 'sms');
+    if (sent) return true;
   }
 
   if (isWhatsAppConfigured()) {
@@ -111,7 +121,21 @@ export async function sendOtpSms(phone: string, otp: string, type: string): Prom
       'whatsapp',
       sent ? undefined : 'meta_whatsapp_error',
     );
-    return sent;
+    if (sent) return true;
+
+    // Meta token often returns 190 — fall back to Twilio WhatsApp/SMS if available.
+    if (isTwilioConfigured('whatsapp') || isTwilioConfigured('sms')) {
+      const viaTwilio = await sendViaTwilio(phone, body, isTwilioConfigured('sms') ? 'sms' : 'whatsapp');
+      await logSms(phone, 'otp', viaTwilio ? 'sent' : 'failed', 'sms', viaTwilio ? undefined : 'twilio_fallback_failed');
+      if (viaTwilio) return true;
+    }
+  }
+
+  // Dev: OTP already printed to BFF console in authService — don't hard-fail UX.
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn(`[otp] Phone delivery failed for ${phone}; OTP is available in BFF terminal logs`);
+    await logSms(phone, 'otp', 'dev_terminal_fallback', 'sms', 'provider_failed_dev_ok');
+    return true;
   }
 
   console.error('[otp] No SMS or WhatsApp provider is configured');

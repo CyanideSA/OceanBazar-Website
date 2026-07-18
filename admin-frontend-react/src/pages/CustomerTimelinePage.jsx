@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+﻿import React, { useState, useCallback, useEffect } from "react";
 import { FiSearch, FiMail, FiMessageSquare, FiHelpCircle, FiPhone } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
@@ -6,7 +6,7 @@ import { format } from "date-fns";
 
 function channelIcon(channel) {
   if (channel === "email") return <FiMail className="text-blue-400" />;
-  if (channel === "whatsapp") return <FiPhone className="text-green-400" />;
+  if (channel === "whatsapp") return <FiPhone className="text-crm-success" />;
   if (channel === "chat" || channel === "web" || channel === "facebook" || channel === "instagram") return <FiMessageSquare className="text-violet-400" />;
   if (channel === "ticket") return <FiHelpCircle className="text-amber-400" />;
   return <FiMessageSquare className="text-crm-text-muted" />;

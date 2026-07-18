@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+﻿import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { 
   FiSearch, FiFilter, FiAlertCircle, FiClock, FiCheckCircle, 
   FiXCircle, FiMoreVertical, FiDownload, FiPlus, FiArrowRight,
@@ -303,7 +303,7 @@ export default function DisputesPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">Dispute Information</h4>
+                  <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">Dispute Information</h4>
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
                       <span className="text-crm-text-dim">Title</span>
@@ -323,7 +323,7 @@ export default function DisputesPage() {
                 </div>
 
                 <div className="pt-8 border-t border-crm-border space-y-6">
-                  <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Resolution Center</h4>
+                  <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Resolution Center</h4>
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">Internal / Resolution Note</label>
@@ -362,7 +362,7 @@ export default function DisputesPage() {
 
                 <div className="pt-8 border-t border-crm-border space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Activity History</h4>
+                    <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Activity History</h4>
                     <FiActivity className="text-crm-text-muted" />
                   </div>
                   <div className="p-4 rounded-lg bg-crm-bg border border-crm-border text-center">

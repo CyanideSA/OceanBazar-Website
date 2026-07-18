@@ -75,6 +75,7 @@ public final class CartMapper {
             productMap.put("tags", List.of());
             productMap.put("description", product.getDescriptionEn() == null ? "" : product.getDescriptionEn());
             productMap.put("stock", product.getStock() == null ? 0 : product.getStock());
+            productMap.put("retailMaxQty", com.oceanbazar.backend.utils.WholesalePricingUtil.retailMaxOrderQty(product));
 
             CartDtos.CartItemDto itemDto = new CartDtos.CartItemDto();
             itemDto.setId(item.getProductId());

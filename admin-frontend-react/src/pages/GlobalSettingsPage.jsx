@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { 
-  FiSettings, FiGlobe, FiLayout, FiCreditCard, FiShield, FiSave, 
-  FiRefreshCw, FiMail, FiPhone, FiFacebook, FiTwitter, FiInstagram, 
-  FiYoutube, FiImage, FiGrid, FiClock, FiStar, FiTruck, FiZap, FiAward, FiLock
+import {
+  FiSettings, FiGlobe, FiLayout, FiCreditCard, FiSave,
+  FiRefreshCw, FiMail, FiFacebook, FiInstagram,
+  FiYoutube, FiImage, FiGrid, FiClock, FiStar, FiTruck, FiZap, FiAward,
 } from "react-icons/fi";
-import { adminApi } from "../lib/api";
+import { adminApi, resolveAdminApiBase } from "../lib/api";
 import { getAdminUser } from "../lib/auth";
 import { hasPermission } from "../auth/permissionMatrix";
 import { useToast } from "../components/ToastProvider";
@@ -21,6 +21,8 @@ export default function GlobalSettingsPage() {
   const toast = useToast();
   const role = String(getAdminUser()?.role || "STAFF").toUpperCase();
   const canEdit = hasPermission(role, "settings", "edit");
+
+  const webhookBase = useMemo(() => resolveAdminApiBase().replace(/\/$/, ""), []);
 
   const [activeTab, setActiveTab] = useState("general");
   const [loading, setLoading] = useState(true);
@@ -128,7 +130,7 @@ export default function GlobalSettingsPage() {
       className={`flex items-center gap-2 px-6 py-3 border-b-2 transition-all font-medium text-sm ${
         activeTab === id 
           ? "border-crm-primary text-crm-primary bg-crm-primary-dim" 
-          : "border-transparent text-crm-text-dim hover:text-crm-text-bright hover:bg-crm-bg-hover"
+          : "border-transparent text-crm-text font-semibold hover:text-crm-text-bright hover:bg-crm-bg-hover"
       }`}
     >
       <Icon size={16} />
@@ -162,6 +164,12 @@ export default function GlobalSettingsPage() {
         </div>
       </div>
 
+      {!canEdit && !loading && (
+        <div className="crm-card text-sm text-crm-text-dim border-crm-warning/30 bg-crm-warning-dim/20">
+          You have view-only access to global settings. Contact an Admin to save changes.
+        </div>
+      )}
+
       <div className="crm-card p-0 overflow-hidden border-b-0 rounded-b-none flex flex-wrap">
         {TABS.map(({ key, ...tabProps }) => <TabButton key={key} {...tabProps} id={key} />)}
       </div>
@@ -177,14 +185,14 @@ export default function GlobalSettingsPage() {
               <div className="space-y-10">
                 {/* Logo Upload */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiImage /> Brand Logos
                   </h3>
                   <p className="text-xs text-crm-text-dim">Upload or drag & drop your logo images. These appear across the storefront header, footer, emails, and invoices.</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {[
-                      {key: "logoLightUrl", label: "Light Theme Logo", desc: "Shown on light backgrounds (header)", bg: "bg-white", textColor: "text-gray-400"},
-                      {key: "logoDarkUrl", label: "Dark Theme Logo", desc: "Shown on dark backgrounds (header + footer)", bg: "bg-gray-900", textColor: "text-gray-500"}
+                      {key: "logoLightUrl", label: "Light Theme Logo", desc: "Shown on light backgrounds (header)", bg: "bg-crm-bg", textColor: "text-crm-text-muted"},
+                      {key: "logoDarkUrl", label: "Dark Theme Logo", desc: "Shown on dark backgrounds (header + footer)", bg: "bg-crm-text-bright", textColor: "text-crm-bg-alt"}
                     ].map(({key, label, desc, bg, textColor}) => (
                       <div key={key} className="space-y-3">
                         <div>
@@ -255,7 +263,7 @@ export default function GlobalSettingsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiMail /> Contact Details
                   </h3>
                   <div className="space-y-4">
@@ -271,21 +279,25 @@ export default function GlobalSettingsPage() {
                 </div>
 
                 <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiFacebook /> Social Presence
                   </h3>
                   <div className="space-y-4">
                     <div className="relative">
                       <FiFacebook className="absolute left-3 top-1/2 -translate-y-1/2 text-crm-text-muted" />
-                      <input className="crm-input pl-10" value={form.facebookUrl} onChange={e => setForm({...form, facebookUrl: e.target.value})} placeholder="Facebook Page URL" />
+                      <input className="crm-input pl-10" value={form.facebookUrl} onChange={e => setForm({...form, facebookUrl: e.target.value})} placeholder="Facebook Page URL" disabled={!canEdit} />
+                    </div>
+                    <div className="relative">
+                      <FiAward className="absolute left-3 top-1/2 -translate-y-1/2 text-crm-text-muted" />
+                      <input className="crm-input pl-10" value={form.twitterUrl} onChange={e => setForm({...form, twitterUrl: e.target.value})} placeholder="Twitter / X Profile URL" disabled={!canEdit} />
                     </div>
                     <div className="relative">
                       <FiInstagram className="absolute left-3 top-1/2 -translate-y-1/2 text-crm-text-muted" />
-                      <input className="crm-input pl-10" value={form.instagramUrl} onChange={e => setForm({...form, instagramUrl: e.target.value})} placeholder="Instagram Profile" />
+                      <input className="crm-input pl-10" value={form.instagramUrl} onChange={e => setForm({...form, instagramUrl: e.target.value})} placeholder="Instagram Profile" disabled={!canEdit} />
                     </div>
                     <div className="relative">
                       <FiYoutube className="absolute left-3 top-1/2 -translate-y-1/2 text-crm-text-muted" />
-                      <input className="crm-input pl-10" value={form.youtubeUrl} onChange={e => setForm({...form, youtubeUrl: e.target.value})} placeholder="YouTube Channel" />
+                      <input className="crm-input pl-10" value={form.youtubeUrl} onChange={e => setForm({...form, youtubeUrl: e.target.value})} placeholder="YouTube Channel" disabled={!canEdit} />
                     </div>
                   </div>
                 </div>
@@ -293,15 +305,15 @@ export default function GlobalSettingsPage() {
 
                 {/* Webhook URLs (read-only info) */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiZap /> Courier Webhook URLs
                   </h3>
                   <p className="text-xs text-crm-text-dim">Register these URLs with each courier provider to receive delivery status updates.</p>
                   <div className="space-y-3">
                     {[
-                      {label: "Paperfly", url: `${window.location.protocol}//${window.location.hostname}:4000/api/webhooks/paperfly`},
-                      {label: "Pathao", url: `${window.location.protocol}//${window.location.hostname}:4000/api/webhooks/pathao`},
-                      {label: "Steadfast", url: `${window.location.protocol}//${window.location.hostname}:4000/api/webhooks/steadfast`}
+                      {label: "Paperfly", url: `${webhookBase}/api/webhooks/paperfly`},
+                      {label: "Pathao", url: `${webhookBase}/api/webhooks/pathao`},
+                      {label: "Steadfast", url: `${webhookBase}/api/webhooks/steadfast`}
                     ].map(w => (
                       <div key={w.label} className="flex items-center gap-3">
                         <span className="text-xs font-bold text-crm-text-dim w-20">{w.label}</span>
@@ -316,22 +328,37 @@ export default function GlobalSettingsPage() {
             {activeTab === "content" && (
               <div className="space-y-8">
                 <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiImage /> Homepage Hero Slides
                   </h3>
-                  <HeroSlidesRowEditor 
-                    jsonString={sf.heroSlidesJson} 
-                    onJsonChange={next => setSf({...sf, heroSlidesJson: next})} 
+                  <HeroSlidesRowEditor
+                    jsonString={sf.heroSlidesJson}
+                    onJsonChange={next => setSf({...sf, heroSlidesJson: next})}
+                    disabled={!canEdit}
                   />
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiStar /> Customer Testimonials
                   </h3>
-                  <TestimonialsRowEditor 
-                    jsonString={sf.testimonialsJson} 
-                    onJsonChange={next => setSf({...sf, testimonialsJson: next})} 
+                  <TestimonialsRowEditor
+                    jsonString={sf.testimonialsJson}
+                    onJsonChange={next => setSf({...sf, testimonialsJson: next})}
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                    <FiAward /> Trust Badges (JSON)
+                  </h3>
+                  <textarea
+                    className="crm-input min-h-[120px] font-mono text-xs"
+                    value={sf.trustBadgesJson}
+                    onChange={e => setSf({...sf, trustBadgesJson: e.target.value})}
+                    disabled={!canEdit}
+                    placeholder='[{"icon":"shield","label":"Secure checkout"}]'
                   />
                 </div>
               </div>
@@ -340,7 +367,7 @@ export default function GlobalSettingsPage() {
             {activeTab === "products" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">Curated Lists</h3>
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">Curated Lists</h3>
                   <div className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">Featured Products (IDs)</label>
@@ -348,13 +375,17 @@ export default function GlobalSettingsPage() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">Best Deals (IDs)</label>
-                      <textarea className="crm-input min-h-[80px]" value={sf.bestDealsProductIds} onChange={e => setSf({...sf, bestDealsProductIds: e.target.value})} />
+                      <textarea className="crm-input min-h-[80px]" value={sf.bestDealsProductIds} onChange={e => setSf({...sf, bestDealsProductIds: e.target.value})} disabled={!canEdit} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-crm-text-dim uppercase">New Arrivals (IDs)</label>
+                      <textarea className="crm-input min-h-[80px]" value={sf.newArrivalsProductIds} onChange={e => setSf({...sf, newArrivalsProductIds: e.target.value})} disabled={!canEdit} placeholder="65e..., 65f..." />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">Animation Settings</h3>
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">Animation Settings</h3>
                   <div className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-crm-text-dim uppercase flex items-center gap-2"><FiClock /> Banner Rotation (ms)</label>
@@ -372,7 +403,7 @@ export default function GlobalSettingsPage() {
             {activeTab === "gateways" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiCreditCard /> Payment Gateway (SSLCommerz)
                   </h3>
                   <div className="space-y-4">
@@ -388,17 +419,25 @@ export default function GlobalSettingsPage() {
                 </div>
 
                 <div className="space-y-6">
-                  <h3 className="text-sm font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2 flex items-center gap-2">
                     <FiTruck /> Courier Integrations
                   </h3>
                   <div className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">Pathao Client ID</label>
-                      <input className="crm-input font-mono text-xs" value={gw.pathaoClientId} onChange={e => setGw({...gw, pathaoClientId: e.target.value})} />
+                      <input className="crm-input font-mono text-xs" value={gw.pathaoClientId} onChange={e => setGw({...gw, pathaoClientId: e.target.value})} disabled={!canEdit} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-crm-text-dim uppercase">Pathao Client Secret</label>
+                      <input type="password" title="Secure entry" className="crm-input font-mono text-xs" value={gw.pathaoClientSecret} onChange={e => setGw({...gw, pathaoClientSecret: e.target.value})} disabled={!canEdit} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-crm-text-dim uppercase">Steadfast API Key</label>
+                      <input type="password" title="Secure entry" className="crm-input font-mono text-xs" value={gw.steadfastApiKey} onChange={e => setGw({...gw, steadfastApiKey: e.target.value})} disabled={!canEdit} />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">RedX API Key</label>
-                      <input type="password" title="Secure entry" className="crm-input font-mono text-xs" value={gw.redxApiKey} onChange={e => setGw({...gw, redxApiKey: e.target.value})} />
+                      <input type="password" title="Secure entry" className="crm-input font-mono text-xs" value={gw.redxApiKey} onChange={e => setGw({...gw, redxApiKey: e.target.value})} disabled={!canEdit} />
                     </div>
                   </div>
                 </div>

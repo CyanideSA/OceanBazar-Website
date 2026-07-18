@@ -1,10 +1,11 @@
+import fs from 'fs';
+import path from 'path';
 import nodemailer from 'nodemailer';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { isConfigured as graphConfigured, sendGraphMail, defaultSender } from './microsoftGraphService';
 import { logCommunication, resolveCustomerIdByEmail } from './communicationLogService';
-
-const prisma = new PrismaClient();
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -67,16 +68,17 @@ export async function sendMail(
   options?: { from?: string }
 ): Promise<boolean> {
   const devOnly = process.env.OTP_TERMINAL_ONLY === 'true';
-  const smtpAvailable = Boolean(process.env.SMTP_USER);
+  const smtpAvailable = Boolean(process.env.SMTP_USER?.trim());
+  const graphOk = graphConfigured();
 
-  if (devOnly || (!graphConfigured() && !smtpAvailable)) {
+  if (devOnly || (!graphOk && !smtpAvailable)) {
     console.log(`[email] (DEV) To: ${to}, Subject: ${subject}`);
     await logEmail(to, subject, template, 'dev_logged', 'dev');
     return true;
   }
 
   // 1) Microsoft 365 Graph
-  if (graphConfigured()) {
+  if (graphOk) {
     const result = await sendGraphMail({
       to,
       subject,
@@ -173,6 +175,12 @@ export async function sendOrderConfirmation(
   to: string,
   order: { orderNumber: string; total: number; items: { productTitle: string; quantity: number; unitPrice: number }[] }
 ): Promise<boolean> {
+  const rendered = await renderEmailTemplate('order_confirmation', {
+    orderNumber: order.orderNumber,
+    total: String(order.total),
+  });
+  if (rendered) return sendMail(to, rendered.subject, rendered.html, 'order_confirmation');
+
   const itemRows = order.items.map((i, idx) => `
     <tr style="background:${idx % 2 === 0 ? '#f9fafb' : '#ffffff'};">
       <td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#111827;font-size:14px;">${i.productTitle}</td>
@@ -206,6 +214,64 @@ export async function sendOrderConfirmation(
   return sendMail(to, `✅ Order Confirmed — #${order.orderNumber}`, emailWrapper(body), 'order_confirmation');
 }
 
+export async function sendPaymentInvoice(
+  to: string,
+  order: {
+    id: string;
+    orderNumber: string;
+    subtotal: number;
+    discount: number;
+    gst: number;
+    shippingFee: number;
+    serviceFee: number;
+    obDiscount: number;
+    total: number;
+    paymentMethod: string;
+    items: { productTitle: string; quantity: number; unitPrice: number; lineTotal: number }[];
+  },
+): Promise<boolean> {
+  const money = (value: number) => `৳${Number(value).toLocaleString('en-BD')}`;
+  const itemRows = order.items.map((item, index) => `
+    <tr style="background:${index % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#111827;font-size:13px;">${item.productTitle}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px;">${item.quantity}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#374151;font-size:13px;">${money(item.unitPrice)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#111827;font-size:13px;">${money(item.lineTotal)}</td>
+    </tr>`).join('');
+  const adjustment = (label: string, value: number, subtract = false) => value > 0
+    ? `<tr><td style="padding:4px 0;color:#6b7280;">${label}</td><td style="padding:4px 0;text-align:right;color:${subtract ? '#047857' : '#374151'};">${subtract ? '−' : ''}${money(value)}</td></tr>`
+    : '';
+
+  const body = `
+    <h2 style="margin:0 0 6px;color:#111827;font-size:22px;">Payment received</h2>
+    <p style="margin:0 0 22px;color:#6b7280;font-size:14px;">Invoice for order <strong style="color:#111827;">#${order.orderNumber}</strong></p>
+    <div style="margin-bottom:20px;padding:14px 16px;border:1px solid #a7f3d0;border-radius:10px;background:#ecfdf5;color:#065f46;font-size:14px;">
+      Your payment via <strong>${order.paymentMethod.replace(/_/g, ' ')}</strong> was received and is under verification.
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+      <thead><tr style="background:${PRIMARY};">
+        <th style="padding:10px 12px;text-align:left;color:#fff;font-size:12px;">Product</th>
+        <th style="padding:10px 12px;text-align:center;color:#fff;font-size:12px;">Qty</th>
+        <th style="padding:10px 12px;text-align:right;color:#fff;font-size:12px;">Unit price</th>
+        <th style="padding:10px 12px;text-align:right;color:#fff;font-size:12px;">Total</th>
+      </tr></thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;font-size:13px;">
+      <tr><td style="padding:4px 0;color:#6b7280;">Subtotal</td><td style="padding:4px 0;text-align:right;color:#374151;">${money(order.subtotal)}</td></tr>
+      ${adjustment('Discount', order.discount, true)}
+      ${adjustment('OB Points', order.obDiscount, true)}
+      ${adjustment('Shipping', order.shippingFee)}
+      ${adjustment('VAT', order.gst)}
+      ${adjustment('Service fee', order.serviceFee)}
+      <tr><td style="padding:10px 0 0;border-top:1px solid #e5e7eb;font-weight:800;color:#111827;">Amount paid</td><td style="padding:10px 0 0;border-top:1px solid #e5e7eb;text-align:right;font-size:18px;font-weight:800;color:${PRIMARY};">${money(order.total)}</td></tr>
+    </table>
+    <div style="text-align:center;">${btn(`${CLIENT}/en/account/orders/${order.id}/invoice`, 'View or print invoice')}</div>
+    <p style="margin:10px 0 0;text-align:center;color:#9ca3af;font-size:11px;">This is a system-generated invoice and does not require a signature.</p>`;
+
+  return sendMail(to, `Invoice for OceanBazar order #${order.orderNumber}`, emailWrapper(body), 'payment_invoice');
+}
+
 export async function sendShippingUpdate(
   to: string,
   orderNumber: string,
@@ -213,6 +279,14 @@ export async function sendShippingUpdate(
   trackingNumber?: string,
   carrier?: string
 ): Promise<boolean> {
+  const rendered = await renderEmailTemplate('shipping_update', {
+    orderNumber,
+    status,
+    trackingNumber: trackingNumber || '',
+    carrier: carrier || '',
+  });
+  if (rendered) return sendMail(to, rendered.subject, rendered.html, 'shipping_update');
+
   const LABELS: Record<string, { label: string; emoji: string; color: string }> = {
     processing:       { label: 'Being Processed',   emoji: '⚙️',  color: '#7c3aed' },
     shipped:          { label: 'Shipped',            emoji: '🚚',  color: '#2563eb' },
@@ -317,5 +391,4 @@ export async function renderEmailTemplate(
   }
   return { subject, html: emailWrapper(html) };
 }
-
 

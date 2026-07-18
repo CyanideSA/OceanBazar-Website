@@ -22,17 +22,25 @@ function isValidType(t: unknown): t is SeoEntityType {
 
 /** GET /api/admin/seo/overview */
 router.get('/overview', async (_req: Request, res: Response) => {
-  res.json(await getOverview());
+  try {
+    res.json(await getOverview());
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to load SEO overview' });
+  }
 });
 
 /** GET /api/admin/seo/metadata?entityType=&limit=&offset= */
 router.get('/metadata', async (req: Request, res: Response) => {
-  const result = await listSeo({
-    entityType: (req.query.entityType as string) || undefined,
-    limit: req.query.limit ? parseInt(String(req.query.limit)) : undefined,
-    offset: req.query.offset ? parseInt(String(req.query.offset)) : undefined,
-  });
-  res.json(result);
+  try {
+    const result = await listSeo({
+      entityType: (req.query.entityType as string) || undefined,
+      limit: req.query.limit ? parseInt(String(req.query.limit)) : undefined,
+      offset: req.query.offset ? parseInt(String(req.query.offset)) : undefined,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to load SEO metadata' });
+  }
 });
 
 /** GET /api/admin/seo/metadata/:entityType/:entityId?locale= */

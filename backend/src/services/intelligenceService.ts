@@ -1,7 +1,7 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { forecastSales, isMlConfigured, type ForecastResponse } from './mlClient';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 
 // ─── Churn / LTV ──────────────────────────────────────────────────────────────
 
@@ -203,22 +203,30 @@ export async function getRestockSuggestions(limit = 20) {
 // ─── Dashboard insights panel ───────────────────────────────────────────────
 
 export async function getInsights() {
-  const [churn, segments, forecast, restock, abandoned] = await Promise.all([
+  const settled = await Promise.allSettled([
     getChurnList({ limit: 5, minScore: 0.6 }),
     getSegments(),
     getForecast(7),
     getRestockSuggestions(5),
     getAbandonedCarts(5),
   ]);
-  const next7 = forecast.points.reduce((s, p) => s + p.predicted_revenue, 0);
+  const churn = settled[0].status === 'fulfilled' ? settled[0].value : [];
+  const segments = settled[1].status === 'fulfilled' ? settled[1].value : [];
+  const forecast = settled[2].status === 'fulfilled' ? settled[2].value : { points: [], method: 'unavailable' as const };
+  const restock = settled[3].status === 'fulfilled' ? settled[3].value : [];
+  const abandoned = settled[4].status === 'fulfilled' ? settled[4].value : [];
+  const next7 = (forecast.points || []).reduce((s: number, p: { predicted_revenue: number }) => s + p.predicted_revenue, 0);
   return {
     atRiskCustomers: churn,
     segments,
     forecastNext7Days: Math.round(next7 * 100) / 100,
     forecastMethod: forecast.method,
-    restockSuggestions: restock.filter((r) => r.stock <= 10 || r.demandScore >= 60),
+    restockSuggestions: (restock || []).filter((r: { stock: number; demandScore: number }) => r.stock <= 10 || r.demandScore >= 60),
     recentAbandonedCarts: abandoned,
     mlConfigured: isMlConfigured(),
+    partialErrors: settled
+      .map((r, i) => (r.status === 'rejected' ? { index: i, error: String((r.reason as Error)?.message || r.reason).slice(0, 120) } : null))
+      .filter(Boolean),
   };
 }
 

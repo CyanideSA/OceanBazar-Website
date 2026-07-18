@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import { routeParam } from '../../utils/params';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 async function maybeAlertLowStock(
   item: { product_id: string; sku: string | null; quantity_available: number; status: string },
@@ -22,6 +22,73 @@ async function maybeAlertLowStock(
   } catch { /* non-fatal */ }
   alertLowStock(title, item.quantity_available).catch(() => {});
 }
+
+// GET /api/admin/inventory/analytics
+router.get('/analytics', async (_req: Request, res: Response) => {
+  try {
+    const [stockByCategory, lowStockRow, valueRow, movementTrend] = await Promise.all([
+      prisma.$queryRaw<Array<{ category: string; units: number; sku_count: number }>>`
+        SELECT
+          COALESCE(c.name_en, 'Uncategorized') AS category,
+          SUM(ii.quantity_on_hand)::int AS units,
+          COUNT(DISTINCT ii.id)::int AS sku_count
+        FROM inventory_items ii
+        LEFT JOIN products p ON p.id = ii.product_id
+        LEFT JOIN product_category_map pc ON pc.product_id = p.id AND pc.is_primary = true
+        LEFT JOIN categories c ON c.id = pc.category_id
+        GROUP BY c.name_en
+        ORDER BY units DESC
+        LIMIT 10
+      `,
+      prisma.$queryRaw<Array<{ c: bigint }>>`
+        SELECT COUNT(*)::bigint AS c FROM inventory_items
+        WHERE status IN ('low_stock', 'out_of_stock')
+           OR quantity_available <= reorder_point
+      `,
+      prisma.$queryRaw<Array<{ total_value: number | string }>>`
+        SELECT COALESCE(SUM(ii.quantity_on_hand * COALESCE(pp.price, 0)), 0)::float AS total_value
+        FROM inventory_items ii
+        LEFT JOIN product_pricing pp
+          ON pp.product_id = ii.product_id AND pp.customer_type = 'retail'
+      `,
+      prisma.$queryRaw<Array<{ day: Date; inbound: number; outbound: number }>>`
+        SELECT
+          DATE(created_at) AS day,
+          COALESCE(SUM(CASE WHEN type IN ('adjustment_in', 'restock', 'set_quantity') THEN ABS(quantity) ELSE 0 END), 0)::int AS inbound,
+          COALESCE(SUM(CASE WHEN type IN ('adjustment_out', 'sale', 'deduct') THEN ABS(quantity) ELSE 0 END), 0)::int AS outbound
+        FROM inventory_transactions
+        WHERE created_at >= NOW() - INTERVAL '14 days'
+        GROUP BY DATE(created_at)
+        ORDER BY day ASC
+      `,
+    ]);
+
+    const topProducts = await prisma.$queryRaw<Array<{ product_id: string; title: string; units: number }>>`
+      SELECT
+        ii.product_id,
+        COALESCE(p.title_en, ii.sku, ii.product_id) AS title,
+        ii.quantity_on_hand::int AS units
+      FROM inventory_items ii
+      LEFT JOIN products p ON p.id = ii.product_id
+      ORDER BY ii.quantity_on_hand DESC
+      LIMIT 10
+    `;
+
+    res.json({
+      stockByCategory: stockByCategory || [],
+      stockByProduct: topProducts || [],
+      lowStockCount: Number(lowStockRow?.[0]?.c ?? 0),
+      totalValue: Number(valueRow?.[0]?.total_value ?? 0),
+      movementTrend: (movementTrend || []).map((r) => ({
+        day: r.day,
+        inbound: Number(r.inbound ?? 0),
+        outbound: Number(r.outbound ?? 0),
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'analytics_failed' });
+  }
+});
 
 // GET /api/admin/inventory
 router.get('/', async (req: Request, res: Response) => {
@@ -50,21 +117,16 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/admin/inventory/low-stock
-router.get('/low-stock', async (_req: Request, res: Response) => {
-  const items = await prisma.inventory_items.findMany({
-    where: {
-      quantity_available: { lte: prisma.inventory_items.fields?.reorder_point as any || 10 },
-    },
+router.get('/low-stock', async (req: Request, res: Response) => {
+  const page = parseInt(String(req.query.page || '1'));
+  const limit = parseInt(String(req.query.limit || '20'));
+  const all = await prisma.inventory_items.findMany({
     orderBy: { quantity_available: 'asc' },
-    take: 50,
   });
-  // Fallback: filter in-app since Prisma can't compare two columns directly
-  const lowStock = await prisma.inventory_items.findMany({
-    orderBy: { quantity_available: 'asc' },
-    take: 200,
-  });
-  const filtered = lowStock.filter(i => i.quantity_available <= i.reorder_point);
-  res.json({ items: filtered });
+  const filtered = all.filter((i) => i.quantity_available <= i.reorder_point);
+  const total = filtered.length;
+  const items = filtered.slice((page - 1) * limit, page * limit);
+  res.json({ items, total, page, limit });
 });
 
 // GET /api/admin/inventory/:id

@@ -10,9 +10,10 @@
  *   Customer confirms → POST /api/admin/cod-otp/:orderId/verify (admin inputs customer's OTP)
  *   On success → order moves to 'confirmed_cod' status → courier assignment unlocked
  */
+import { prisma } from '../../lib/prisma';
 
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+
 import { requireAdmin } from '../../middleware/auth';
 import { sendOtpSms } from '../../services/smsService';
 import { routeParam } from '../../utils/params';
@@ -20,7 +21,6 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const OTP_EXPIRE_MS = 10 * 60 * 1000; // 10 minutes
 

@@ -104,7 +104,14 @@ export default function AccountOrdersPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between sm:mt-4">
-                  <span className="text-sm font-bold text-primary sm:text-lg">৳{Number(order.total).toLocaleString()}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-primary sm:text-lg">৳{Number(order.total).toLocaleString()}</span>
+                    {order.paymentStatus === 'unpaid' && order.paymentMethod !== 'cod' && order.status !== 'cancelled' ? (
+                      <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                        {t('awaitingPayment')}
+                      </span>
+                    ) : null}
+                  </div>
                   <span className="flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
                     {t('details')} <ChevronRight className="h-3 w-3" />
                   </span>

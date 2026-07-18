@@ -1,26 +1,36 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { 
-  FiSearch, FiFilter, FiDollarSign, FiCreditCard, FiClock, 
-  FiDownload, FiArrowRight, FiCheckCircle, FiXCircle, FiAlertCircle 
+﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FiSearch, FiFilter, FiDollarSign, FiCreditCard,
+  FiDownload, FiArrowRight, FiCheckCircle
 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { getAdminUser } from "../lib/auth";
 import { hasPermission } from "../auth/permissionMatrix";
 import { useToast } from "../components/ToastProvider";
+import OrderSnapshot from "../components/OrderSnapshot";
+import useStepUpReauth from "../hooks/useStepUpReauth";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
 const FILTERS = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
+  { key: "under_verification", label: "Under verification" },
   { key: "success", label: "Paid" },
   { key: "failed", label: "Failed" },
   { key: "refunded", label: "Refunded" },
   { key: "mismatch", label: "State mismatch" },
 ];
 
-export default function PaymentsPage({ liveTick = 0 }) {
+function statusLabel(raw) {
+  const s = String(raw || "pending").toLowerCase();
+  const labels = { success: "Paid", pending: "Pending", failed: "Failed", refunded: "Refunded" };
+  return labels[s] || s;
+}
+
+export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, onOpenOrder, onOpenCustomer, onOpenProduct }) {
   const toast = useToast();
+  const { requestToken, modal: reauthModal } = useStepUpReauth();
   const role = String(getAdminUser()?.role || "STAFF").toUpperCase();
   const canEditPayments = hasPermission(role, "payments", "edit");
 
@@ -28,9 +38,12 @@ export default function PaymentsPage({ liveTick = 0 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [detailId, setDetailId] = useState(null);
+  const [detailId, setDetailId] = useState(initialPaymentId);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [showRefundForm, setShowRefundForm] = useState(false);
+  const [refundForm, setRefundForm] = useState({ amount: "", method: "original_payment", note: "" });
 
   const fetchPayments = useCallback(async () => {
     setLoading(true);
@@ -66,6 +79,11 @@ export default function PaymentsPage({ liveTick = 0 }) {
     }
   };
 
+  useEffect(() => {
+    if (initialPaymentId) openDetail(initialPaymentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const filteredPayments = useMemo(() => {
     if (!search) return items;
     const q = search.toLowerCase();
@@ -93,8 +111,8 @@ export default function PaymentsPage({ liveTick = 0 }) {
       ['Transaction ID', 'Status', 'Method', 'Amount (BDT)', 'Order #', 'Customer', 'Date'],
       filteredPayments.map(p => [
         p.id || p.transactionId || '',
-        p.status || p.paymentStatus || '',
-        p.method || p.paymentMethod || 'Manual',
+        p.status || '',
+        p.method || 'Manual',
         Number(p.amount || 0).toFixed(2),
         p.order?.orderNumber || p.orderNumber || 'N/A',
         p.user?.name || p.userName || '',
@@ -104,13 +122,58 @@ export default function PaymentsPage({ liveTick = 0 }) {
     toast.success(`Exported ${filteredPayments.length} transactions`);
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status, orderPaymentStatus) => {
     const s = (status || "pending").toLowerCase();
-    if (s === "paid" || s === "success") return <span className="crm-badge crm-badge-success">Paid</span>;
+    if (s === "success" && String(orderPaymentStatus || "").toLowerCase() === "under_verification") {
+      return <span className="crm-badge crm-badge-warning">Under verification</span>;
+    }
+    if (s === "success") return <span className="crm-badge crm-badge-success">Paid</span>;
     if (s === "failed") return <span className="crm-badge crm-badge-danger">Failed</span>;
     if (s === "refunded") return <span className="crm-badge bg-crm-purple-dim text-crm-purple border-crm-purple/30">Refunded</span>;
-    if (s === "processing") return <span className="crm-badge bg-crm-primary-dim text-crm-primary border-crm-primary/30">Processing</span>;
     return <span className="crm-badge crm-badge-warning">Pending</span>;
+  };
+
+  const tx = detail?.transaction || null;
+
+  const handleMarkPaid = async () => {
+    if (!tx?.id) return;
+    setBusy(true);
+    try {
+      await adminApi.markPaymentPaid(tx.id);
+      toast.success("Payment marked as received");
+      openDetail(tx.id);
+      fetchPayments();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to mark as paid");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openRefundForm = () => {
+    setRefundForm({ amount: String(Number(tx?.amount || 0)), method: "original_payment", note: "" });
+    setShowRefundForm(true);
+  };
+
+  const submitRefund = async () => {
+    if (!tx?.id) return;
+    setBusy(true);
+    try {
+      const reauthToken = await requestToken();
+      await adminApi.refundPayment(tx.id, {
+        amount: Number(refundForm.amount) || Number(tx.amount),
+        method: refundForm.method,
+        note: refundForm.note || undefined,
+      }, reauthToken);
+      toast.success("Refund processed");
+      setShowRefundForm(false);
+      openDetail(tx.id);
+      fetchPayments();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Refund failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -184,17 +247,17 @@ export default function PaymentsPage({ liveTick = 0 }) {
                 </tr>
               ) : (
                 filteredPayments.map((p) => (
-                  <tr key={p.id || p.transactionId} className="group">
+                  <tr key={p.id || p.transactionId} className="group cursor-pointer" onClick={() => openDetail(p.id || p.transactionId)}>
                     <td>
                       <span className="font-mono text-[11px] font-bold text-crm-text-dim bg-crm-bg-hover px-2 py-1 rounded">
                         {(p.id || p.transactionId || '').slice(0, 16)}...
                       </span>
                     </td>
-                    <td>{getStatusBadge(p.status || p.paymentStatus)}</td>
+                    <td>{getStatusBadge(p.status, p.order?.paymentStatus)}</td>
                     <td>
                       <div className="flex items-center gap-2">
                         <FiCreditCard className="text-crm-text-muted" />
-                        <span className="text-sm">{p.method || p.paymentMethod || "Manual"}</span>
+                        <span className="text-sm">{p.method || "Manual"}</span>
                       </div>
                     </td>
                     <td>
@@ -213,7 +276,7 @@ export default function PaymentsPage({ liveTick = 0 }) {
                     <td className="text-xs text-crm-text-dim">
                       {p.createdAt ? format(new Date(p.createdAt), "MMM dd, HH:mm") : "—"}
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => openDetail(p.id || p.transactionId)}
                         className="p-1.5 rounded hover:bg-crm-bg-hover text-crm-text-dim hover:text-crm-primary transition-colors"
@@ -251,7 +314,7 @@ export default function PaymentsPage({ liveTick = 0 }) {
                 <div className="flex items-center justify-center h-full">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-crm-primary"></div>
                 </div>
-              ) : detail ? (
+              ) : tx ? (
                 <div className="p-8 space-y-8">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -260,7 +323,7 @@ export default function PaymentsPage({ liveTick = 0 }) {
                       </div>
                       <div>
                         <h3 className="text-xl font-bold text-crm-text-bright">Payment Detail</h3>
-                        <p className="text-[10px] text-crm-text-dim font-mono uppercase tracking-wider">{detailId}</p>
+                        <p className="text-[10px] text-crm-text-dim font-mono uppercase tracking-wider">{tx.id}</p>
                       </div>
                     </div>
                     <button onClick={() => setDetailId(null)} className="p-2 hover:bg-crm-bg-hover rounded-full text-crm-text-dim">
@@ -271,63 +334,109 @@ export default function PaymentsPage({ liveTick = 0 }) {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="crm-card bg-crm-bg border-none">
                       <p className="text-[10px] text-crm-text-dim uppercase font-bold tracking-wider mb-2">Status</p>
-                      {getStatusBadge(detail.transaction?.paymentStatus)}
+                      {getStatusBadge(tx.status, tx.order?.paymentStatus)}
                     </div>
                     <div className="crm-card bg-crm-bg border-none">
                       <p className="text-[10px] text-crm-text-dim uppercase font-bold tracking-wider mb-2">Amount</p>
-                      <span className="text-xl font-bold text-crm-text-bright">৳{Number(detail.transaction?.amount).toLocaleString()}</span>
+                      <span className="text-xl font-bold text-crm-text-bright">৳{Number(tx.amount).toLocaleString()}</span>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">Transaction Info</h4>
+                    <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">Transaction Info</h4>
                     <div className="space-y-3">
                       <div className="flex justify-between text-sm">
                         <span className="text-crm-text-dim">Method</span>
-                        <span className="text-crm-text-bright font-medium">{detail.transaction?.paymentMethod || "Manual"}</span>
+                        <span className="text-crm-text-bright font-medium">{tx.method || "Manual"}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-crm-text-dim">Order #</span>
-                        <span className="text-crm-primary font-bold">{detail.transaction?.orderNumber || "N/A"}</span>
+                        <button className="text-crm-primary font-bold hover:underline" onClick={() => onOpenOrder?.(tx.orderId)}>
+                          {tx.order?.orderNumber || "N/A"}
+                        </button>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-crm-text-dim">Customer ID</span>
-                        <span className="text-crm-text-bright font-mono text-xs">{detail.transaction?.customerId}</span>
+                        <span className="text-crm-text-dim">Customer</span>
+                        <button className="text-crm-text-bright font-medium hover:underline" onClick={() => onOpenCustomer?.(tx.userId)}>
+                          {tx.user?.name || tx.userId}
+                        </button>
                       </div>
+                      {tx.providerTxId && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-crm-text-dim">Provider Tx ID</span>
+                          <span className="text-crm-text-bright font-mono text-xs">{tx.providerTxId}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-sm">
                         <span className="text-crm-text-dim">Timestamp</span>
-                        <span className="text-crm-text-bright">{detail.transaction?.createdAt ? format(new Date(detail.transaction.createdAt), "MMMM dd, yyyy HH:mm") : "N/A"}</span>
+                        <span className="text-crm-text-bright">{tx.createdAt ? format(new Date(tx.createdAt), "MMMM dd, yyyy HH:mm") : "N/A"}</span>
                       </div>
                     </div>
                   </div>
 
-                  {detail.transaction?.statusHistory && (
-                    <div className="space-y-4">
-                      <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">Status History</h4>
-                      <div className="relative pl-6 space-y-6 before:absolute before:left-[7px] before:top-2 before:bottom-2 before:w-[2px] before:bg-crm-border">
-                        {detail.transaction.statusHistory.map((h, i) => (
-                          <div key={i} className="relative">
-                            <div className="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-crm-primary border-4 border-crm-bg-alt" />
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="text-sm font-bold text-crm-text-bright">{h.toStatus}</p>
-                                <p className="text-xs text-crm-text-dim">{h.note || "No note"}</p>
-                              </div>
-                              <p className="text-[10px] text-crm-text-muted">{format(new Date(h.at), "HH:mm")}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                  {tx.order && (
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">Order Snapshot</h4>
+                      <OrderSnapshot
+                        order={tx.order}
+                        onOpenCustomer={onOpenCustomer}
+                        onOpenProduct={onOpenProduct}
+                        onOpenOrder={onOpenOrder}
+                        showShipments={false}
+                        showPayments={false}
+                        compact
+                      />
                     </div>
                   )}
 
                   {canEditPayments && (
                     <div className="pt-8 border-t border-crm-border space-y-4">
-                      <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Adjust Payment Status</h4>
-                      <div className="flex flex-wrap gap-2">
-                        <button className="crm-btn crm-btn-primary flex-1 py-2">Mark as Paid</button>
-                        <button className="crm-btn border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex-1 py-2">Refund</button>
-                      </div>
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Adjust Payment Status</h4>
+                      {showRefundForm ? (
+                        <div className="crm-card bg-crm-bg space-y-3">
+                          <div className="field">
+                            <label className="field-label">Refund Amount (৳)</label>
+                            <input className="crm-input" type="number" value={refundForm.amount} onChange={(e) => setRefundForm(f => ({ ...f, amount: e.target.value }))} />
+                          </div>
+                          <div className="field">
+                            <label className="field-label">Method</label>
+                            <select className="crm-input" value={refundForm.method} onChange={(e) => setRefundForm(f => ({ ...f, method: e.target.value }))}>
+                              <option value="original_payment">Original payment method</option>
+                              <option value="bank_transfer">Bank transfer</option>
+                              <option value="mobile_wallet">Mobile wallet</option>
+                              <option value="store_credit">Store credit</option>
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label className="field-label">Note</label>
+                            <textarea className="crm-input min-h-[60px]" value={refundForm.note} onChange={(e) => setRefundForm(f => ({ ...f, note: e.target.value }))} />
+                          </div>
+                          <div className="flex gap-2">
+                            <button className="crm-btn flex-1" onClick={() => setShowRefundForm(false)}>Cancel</button>
+                            <button className="crm-btn border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex-1" disabled={busy} onClick={submitRefund}>
+                              {busy ? "Processing…" : "Confirm Refund"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {tx.status === "success" && String(tx.order?.paymentStatus || "").toLowerCase() === "under_verification" && (
+                            <button className="crm-btn crm-btn-primary flex-1 py-2" disabled={busy} onClick={handleMarkPaid}>
+                              <FiCheckCircle /> Verify Payment
+                            </button>
+                          )}
+                          {tx.status !== "success" && (
+                            <button className="crm-btn crm-btn-primary flex-1 py-2" disabled={busy} onClick={handleMarkPaid}>
+                              <FiCheckCircle /> Mark as Paid
+                            </button>
+                          )}
+                          {tx.status !== "refunded" && (
+                            <button className="crm-btn border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex-1 py-2" disabled={busy} onClick={openRefundForm}>
+                              Refund
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -336,6 +445,7 @@ export default function PaymentsPage({ liveTick = 0 }) {
           </>
         )}
       </AnimatePresence>
+      {reauthModal}
     </div>
   );
 }

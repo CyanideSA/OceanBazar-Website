@@ -1,11 +1,11 @@
-import React, { useCallback } from "react";
+﻿import React, { useCallback } from "react";
 import { useCatalogStore } from "../../stores/catalogStore";
 import {
   IconFolder, IconPackage, IconSpinner, IconEdit, IconSearch,
   IconStar,
 } from "./ExplorerIcons";
 
-const STATUS_COLOR = { active: "#56d364", draft: "#e3b341", archived: "#8b949e" };
+const STATUS_COLOR = { active: "var(--crm-success)", draft: "var(--crm-warning)", archived: "var(--crm-text-dim)" };
 
 function FolderCard({ node, onOpen, onContextMenu }) {
   const { selectedIds, selectItem } = useCatalogStore();
@@ -33,7 +33,7 @@ function FolderCard({ node, onOpen, onContextMenu }) {
       title={`${node.nameEn} — double-click to open`}
     >
       <div className="item-icon-wrap">
-        <IconFolder size={36} color="#e3b341" open={false} />
+        <IconFolder size={36} color="var(--crm-warning)" open={false} />
       </div>
       <div className="item-name" title={node.nameEn}>{node.nameEn}</div>
       <div className="item-meta">
@@ -56,7 +56,7 @@ function BrandCard({ brand, categoryId, onOpenBrand, onContextMenu }) {
       <div className="item-icon-wrap">
         {brand.logoUrl
           ? <img src={brand.logoUrl} alt={brand.nameEn} style={{ width: 36, height: 36, objectFit: "contain", borderRadius: 6 }} />
-          : <IconFolder size={36} color="#8b949e" open={false} />}
+          : <IconFolder size={36} color="var(--crm-text-dim)" open={false} />}
       </div>
       <div className="item-name" title={brand.nameEn}>{brand.nameEn}</div>
       <div className="item-meta">
@@ -69,7 +69,7 @@ function BrandCard({ brand, categoryId, onOpenBrand, onContextMenu }) {
 function ProductCard({ product, onOpen, onContextMenu, viewMode }) {
   const { selectedIds, selectItem } = useCatalogStore();
   const isSelected = selectedIds.has("prod_" + product.id);
-  const statusColor = STATUS_COLOR[product.status] || "#8b949e";
+  const statusColor = STATUS_COLOR[product.status] || "var(--crm-text-dim)";
 
   const dragHandlers = {
     draggable: true,
@@ -95,7 +95,7 @@ function ProductCard({ product, onOpen, onContextMenu, viewMode }) {
         <div className="row-thumb">
           {product.primaryImage
             ? <img src={product.primaryImage} alt={product.titleEn} />
-            : <IconPackage size={14} color="#484f58" />}
+            : <IconPackage size={14} color="var(--crm-text-muted)" />}
         </div>
         <div className="row-name">{product.titleEn}</div>
         <div className="row-sku">{product.sku || "—"}</div>
@@ -128,10 +128,10 @@ function ProductCard({ product, onOpen, onContextMenu, viewMode }) {
       <div className="item-thumb">
         {product.primaryImage
           ? <img src={product.primaryImage} alt={product.titleEn} />
-          : <div className="item-thumb-placeholder"><IconPackage size={28} color="#484f58" /></div>}
+          : <div className="item-thumb-placeholder"><IconPackage size={28} color="var(--crm-text-muted)" /></div>}
         <span
           className="item-status-badge"
-          style={{ background: statusColor === "#56d364" ? "#1a3a1a" : statusColor === "#e3b341" ? "#2d2010" : "#21262d", color: statusColor }}
+          style={{ background: statusColor === "var(--crm-success)" ? "var(--crm-success-dim)" : statusColor === "var(--crm-warning)" ? "var(--crm-warning-dim)" : "var(--crm-bg-card)", color: statusColor }}
         >
           {product.status}
         </span>
@@ -143,7 +143,7 @@ function ProductCard({ product, onOpen, onContextMenu, viewMode }) {
       </div>
       <div className="item-name" title={product.titleEn}>{product.titleEn}</div>
       <div className="item-meta">
-        {product.retailPrice != null && <span style={{ color: "#56d364", fontWeight: 600 }}>৳{product.retailPrice}</span>}
+        {product.retailPrice != null && <span style={{ color: "var(--crm-success)", fontWeight: 600 }}>৳{product.retailPrice}</span>}
         <span>#{product.stock ?? 0}</span>
       </div>
     </div>
@@ -186,7 +186,7 @@ export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextM
     return (
       <div className="content-panel custom-scrollbar" onClick={handleBgClick}>
         <div className="content-loading">
-          <IconSpinner size={16} color="#484f58" />
+          <IconSpinner size={16} color="var(--crm-text-muted)" />
           Loading…
         </div>
       </div>
@@ -200,12 +200,12 @@ export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextM
       <div className="content-panel custom-scrollbar" onClick={handleBgClick}>
         <div className="content-inner">
           <div className="content-section-title">
-            <IconSearch size={14} color="#8b949e" />
+            <IconSearch size={14} color="var(--crm-text-dim)" />
             Search Results
           </div>
           {!hasResults && (
             <div className="empty-state">
-              <div className="empty-state-icon"><IconSearch size={40} color="#484f58" /></div>
+              <div className="empty-state-icon"><IconSearch size={40} color="var(--crm-text-muted)" /></div>
               <div className="empty-state-title">No results found</div>
               <div className="empty-state-desc">Try a different search term</div>
             </div>
@@ -240,7 +240,7 @@ export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextM
     return (
       <div className="content-panel custom-scrollbar content-empty-panel" onClick={handleBgClick}>
         <div className="empty-state">
-          <div className="empty-state-icon"><IconFolder size={48} color="#484f58" /></div>
+          <div className="empty-state-icon"><IconFolder size={48} color="var(--crm-text-muted)" /></div>
           <div className="empty-state-title">Select a folder</div>
           <div className="empty-state-desc">Choose a category from the left panel to explore its contents</div>
         </div>
@@ -255,17 +255,17 @@ export default function ContentPanel({ onOpenCategory, onOpenProduct, onContextM
       <div className="content-inner">
         {activeBrand && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", marginBottom: 8, background: "rgba(88,166,255,0.08)", borderRadius: 6, border: "1px solid rgba(88,166,255,0.25)", fontSize: 12 }}>
-            <span style={{ color: "#58a6ff", fontWeight: 600 }}>Brand: {activeBrand.nameEn}</span>
-            <span style={{ color: "#8b949e" }}>({activeBrand.productCount} products)</span>
+            <span style={{ color: "var(--crm-primary)", fontWeight: 600 }}>Brand: {activeBrand.nameEn}</span>
+            <span style={{ color: "var(--crm-text-dim)" }}>({activeBrand.productCount} products)</span>
             <button
               onClick={(e) => { e.stopPropagation(); clearBrandSelection(); }}
-              style={{ marginLeft: "auto", color: "#8b949e", fontSize: 11, background: "none", border: "none", cursor: "pointer" }}
+              style={{ marginLeft: "auto", color: "var(--crm-text-dim)", fontSize: 11, background: "none", border: "none", cursor: "pointer" }}
             >✕ Clear filter</button>
           </div>
         )}
         {subfolders.length === 0 && products.length === 0 && brands.length === 0 && (
           <div className="empty-state">
-            <div className="empty-state-icon"><IconFolder size={44} color="#484f58" open /></div>
+            <div className="empty-state-icon"><IconFolder size={44} color="var(--crm-text-muted)" open /></div>
             <div className="empty-state-title">This folder is empty</div>
             <div className="empty-state-desc">Right-click or use the toolbar to add sub-folders or products</div>
           </div>

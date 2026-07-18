@@ -10,6 +10,7 @@ import LanguageSelect from '@/components/shared/LanguageSelect';
 import PaymentLogos from '@/components/layout/PaymentLogos';
 import Logo, { LOGO_SRC_TRANSPARENT } from '@/components/shared/Logo';
 import OceanVideoBackground from '@/components/shared/OceanVideoBackground';
+import LiveChatLink from '@/components/chat/LiveChatLink';
 import {
   Facebook,
   Twitter,
@@ -106,9 +107,6 @@ export default function Footer() {
                   </motion.a>
                 ))}
               </div>
-              <div className="mt-3">
-                <PaymentLogos />
-              </div>
             </motion.div>
 
             {/* Shop */}
@@ -132,7 +130,7 @@ export default function Footer() {
                 <li><Link href={`/${locale}/order-tracking`} className="block py-1 transition-colors hover:text-white">Track Order</Link></li>
                 <li><Link href={`/${locale}/account/points`} className="block py-1 transition-colors hover:text-white">{t('obPoints')}</Link></li>
                 <li><Link href={`/${locale}/support`} className="block py-1 transition-colors hover:text-white">{t('supportCenter')}</Link></li>
-                <li><Link href={`/${locale}/chat`} className="block py-1 transition-colors hover:text-white">{tNav('chat')}</Link></li>
+                <li><LiveChatLink href={`/${locale}/chat`} className="block w-full py-1 text-left transition-colors hover:text-white">{tNav('chat')}</LiveChatLink></li>
                 <li><Link href={`/${locale}/returns`} className="block py-1 transition-colors hover:text-white">{t('returnsRefunds')}</Link></li>
                 <li><Link href={`/${locale}/tickets`} className="block py-1 transition-colors hover:text-white">{t('supportTickets')}</Link></li>
               </ul>
@@ -195,6 +193,11 @@ export default function Footer() {
             </div>
             {newsletterState === 'done' && <p className="mt-2 text-xs text-emerald-300">Subscribed successfully.</p>}
             {newsletterState === 'error' && <p className="mt-2 text-xs text-rose-300">Could not subscribe right now.</p>}
+          </motion.div>
+
+          {/* Payment methods — full-bleed strip spanning the whole screen width */}
+          <motion.div variants={itemVariants} className="-mx-4 mb-8 sm:-mx-6 lg:-mx-8">
+            <PaymentLogos />
           </motion.div>
 
           {/* Divider */}

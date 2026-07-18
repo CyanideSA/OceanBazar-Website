@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { getRedisClient, isRedisConnected } from '../cache/redisClient';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { internalApiRequest } from '../clients/internal-api-client';
 import { ProductListResponseSchema } from '../contracts/catalog.contract';
 
 const router = Router();
-const prisma = new PrismaClient();
 const SEARCH_CACHE_TTL = 120; // 2 minutes
 
 /**

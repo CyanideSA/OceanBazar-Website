@@ -1,7 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma';
+
 import type { DomainEvent } from '../domain-events';
 
-const prisma = new PrismaClient();
 
 export async function handleAnalyticsEvent(event: DomainEvent): Promise<void> {
   if (event.type === 'OrderPlaced' && event.aggregateId) {

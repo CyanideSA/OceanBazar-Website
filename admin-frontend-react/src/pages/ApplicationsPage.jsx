@@ -273,7 +273,7 @@ export default function ApplicationsPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest border-b border-crm-border pb-2">Business Information</h4>
+                  <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest border-b border-crm-border pb-2">Business Information</h4>
                   <div className="grid grid-cols-1 gap-4 text-sm">
                     <div className="flex justify-between">
                       <span className="text-crm-text-dim">Company Name</span>
@@ -306,14 +306,14 @@ export default function ApplicationsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Introduction / Message</h4>
+                  <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Introduction / Message</h4>
                   <div className="p-4 rounded-lg bg-crm-bg border border-crm-border text-sm text-crm-text-bright leading-relaxed italic">
                     "{detail.message || "No introduction message provided."}"
                   </div>
                 </div>
 
                 <div className="pt-8 border-t border-crm-border space-y-6">
-                  <h4 className="text-xs font-bold text-crm-text-muted uppercase tracking-widest">Decision Center</h4>
+                  <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Decision Center</h4>
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-crm-text-dim uppercase">Internal Review Notes</label>

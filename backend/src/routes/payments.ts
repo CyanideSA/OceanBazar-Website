@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { requireAuth } from '../middleware/auth';
 import { generateEntityId } from '../utils/hexId';
 import { earnPoints } from '../services/obPointsService';
@@ -8,15 +9,42 @@ import * as bkash from '../services/bkashService';
 import * as ssl from '../services/sslcommerzService';
 import * as nagad from '../services/nagadService';
 import { sendToUser } from '../services/pushNotificationService';
+import { notifyCustomer } from '../services/customerNotify';
 import { appLog } from '../lib/appLog';
+import { sendPaymentInvoice } from '../services/emailService';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const API_BASE = process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || 'http://localhost:4000';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
+
+function checkoutRecoveryUrl(
+  payment: 'failed' | 'cancelled' | 'error' | 'invalid',
+  transaction?: { orderId: string; method: string } | null,
+): string {
+  const params = new URLSearchParams({ payment });
+  if (transaction?.orderId) params.set('orderId', transaction.orderId);
+  if (transaction?.method) params.set('method', transaction.method);
+  return `${CLIENT_URL}/en/checkout?${params.toString()}`;
+}
+
+async function recordPaymentFailure(
+  transactionId: string | undefined,
+  payment: 'failed' | 'cancelled' | 'error' | 'invalid',
+): Promise<string> {
+  if (!transactionId) return checkoutRecoveryUrl(payment);
+  const tx = await prisma.paymentTransaction.findUnique({ where: { id: transactionId } });
+  if (!tx) return checkoutRecoveryUrl(payment);
+  if (tx.status === 'pending') {
+    await prisma.paymentTransaction.update({
+      where: { id: tx.id },
+      data: { status: 'failed' },
+    });
+  }
+  return checkoutRecoveryUrl(payment, { orderId: tx.orderId, method: tx.method });
+}
 
 function sslValidationMatchesTransaction(
   validation: ssl.SslValidationResult,
@@ -41,16 +69,24 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
     if (row.status === 'refunded') {
       return { kind: 'blocked' as const, reason: 'refunded' as const };
     }
+    const orderRow = await txn.order.findUnique({ where: { id: row.orderId }, select: { status: true } });
     const tx = await txn.paymentTransaction.update({
       where: { id: transactionId },
       data: { status: 'success', providerTxId },
     });
+    // Gateway capture confirmed — but funds are pending manual admin verification before
+    // the order is treated as fully paid. Order fulfillment status is left untouched.
     await txn.order.update({
       where: { id: tx.orderId },
-      data: { paymentStatus: 'paid', status: 'confirmed' },
+      data: { paymentStatus: 'under_verification' },
     });
     await txn.orderTimeline.create({
-      data: { orderId: tx.orderId, status: 'confirmed', note: `Payment received via ${method}`, actorType: 'system' },
+      data: {
+        orderId: tx.orderId,
+        status: orderRow?.status || 'pending',
+        note: `Payment received via ${method} — under verification`,
+        actorType: 'system',
+      },
     });
     return { kind: 'applied' as const, tx };
   });
@@ -73,10 +109,47 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
   const tx = outcome.tx;
   await earnPoints(tx.userId, tx.orderId, Number(tx.amount));
   try { emitAdminEvent('admin:payment', { txId: tx.id, orderId: tx.orderId, amount: Number(tx.amount), status: 'success', method }); } catch { /* non-fatal */ }
-  const paidOrder = await prisma.order.findUnique({ where: { id: tx.orderId }, select: { orderNumber: true } });
+  const paidOrder = await prisma.order.findUnique({
+    where: { id: tx.orderId },
+    include: { items: true, user: true },
+  });
+  try {
+    await notifyCustomer({
+      userId: tx.userId,
+      event: 'payment_verification',
+      vars: { orderNumber: paidOrder?.orderNumber || '' },
+    });
+  } catch { /* non-fatal */ }
+  if (paidOrder?.user.email) {
+    try {
+      const sent = await sendPaymentInvoice(paidOrder.user.email, {
+        id: paidOrder.id,
+        orderNumber: paidOrder.orderNumber,
+        subtotal: Number(paidOrder.subtotal),
+        discount: Number(paidOrder.discount),
+        gst: Number(paidOrder.gst),
+        shippingFee: Number(paidOrder.shippingFee),
+        serviceFee: Number(paidOrder.serviceFee),
+        obDiscount: Number(paidOrder.obDiscount),
+        total: Number(paidOrder.total),
+        paymentMethod: method,
+        items: paidOrder.items.map((item) => ({
+          productTitle: item.productTitle,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice),
+          lineTotal: Number(item.lineTotal),
+        })),
+      });
+    } catch (invoiceError) {
+      appLog('warn', 'payment_invoice_failed', {
+        orderId: tx.orderId,
+        detail: invoiceError instanceof Error ? invoiceError.message : String(invoiceError),
+      });
+    }
+  }
   sendToUser(tx.userId, {
-    title: 'Payment Confirmed ✅',
-    body: `Order #${paidOrder?.orderNumber} — ৳${Number(tx.amount).toLocaleString()} paid via ${method}.`,
+    title: 'Payment Under Verification ⏳',
+    body: `Order #${paidOrder?.orderNumber} — ৳${Number(tx.amount).toLocaleString()} received via ${method}. We'll confirm shortly.`,
     url: `/en/orders/${tx.orderId}`,
     tag: 'payment',
   }).catch(() => {});
@@ -132,7 +205,11 @@ router.get('/bkash/callback', async (req: Request, res: Response) => {
   const { paymentID, status } = req.query as { paymentID: string; status: string };
 
   if (status === 'cancel' || status === 'failure') {
-    return res.redirect(`${CLIENT_URL}/en/checkout?payment=cancelled`);
+    const tx = await prisma.paymentTransaction.findFirst({
+      where: { metadata: { path: ['paymentID'], equals: paymentID } },
+      select: { id: true },
+    });
+    return res.redirect(await recordPaymentFailure(tx?.id, status === 'cancel' ? 'cancelled' : 'failed'));
   }
 
   try {
@@ -145,13 +222,13 @@ router.get('/bkash/callback', async (req: Request, res: Response) => {
 
     if (result.transactionStatus === 'Completed') {
       await onPaymentSuccess(tx.id, result.trxID, 'bkash');
-      return res.redirect(`${CLIENT_URL}/en/orders/${tx.orderId}?payment=success`);
+      return res.redirect(`${CLIENT_URL}/en/account/orders/${tx.orderId}?payment=success`);
     }
 
-    res.redirect(`${CLIENT_URL}/en/checkout?payment=failed`);
+    res.redirect(await recordPaymentFailure(tx.id, 'failed'));
   } catch (err: any) {
     console.error('[bKash] callback error:', err.message);
-    res.redirect(`${CLIENT_URL}/en/checkout?payment=error`);
+    res.redirect(checkoutRecoveryUrl('error'));
   }
 });
 
@@ -167,12 +244,6 @@ router.post('/bkash/confirm', requireAuth, async (req: Request, res: Response) =
 
 router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Response) => {
   const { orderId } = req.body as { orderId: string };
-  // #region agent log
-  const _dbg = (message: string, data: Record<string, unknown>) => {
-    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a2ffd6'},body:JSON.stringify({sessionId:'a2ffd6',runId:'checkout-listen',hypothesisId:'E',location:'payments.ts:sslcommerz/initiate',message,data,timestamp:Date.now()})}).catch(()=>{});
-  };
-  _dbg('ssl initiate entry', { orderId, userId: req.user?.userId, configured: ssl.isSslConfigured() });
-  // #endregion
   const [order, user] = await Promise.all([
     prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } }),
     prisma.user.findUnique({ where: { id: req.user!.userId } }),
@@ -191,9 +262,6 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
   });
 
   if (!ssl.isSslConfigured()) {
-    // #region agent log
-    _dbg('ssl not configured', { orderId, txId: tx.id });
-    // #endregion
     return res.status(503).json({
       error: 'SSLCommerz is not configured. Please set up store credentials or use COD.',
       transactionId: tx.id,
@@ -212,14 +280,8 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
       customerPhone: user.phone || '',
     });
 
-    // #region agent log
-    _dbg('ssl initiate ok', { orderId, txId: tx.id, hasRedirect: !!gatewayUrl });
-    // #endregion
     res.json({ transactionId: tx.id, redirectUrl: gatewayUrl });
   } catch (err: any) {
-    // #region agent log
-    _dbg('ssl initiate error', { orderId, error: String(err?.message || err) });
-    // #endregion
     console.error('[SSLCommerz] initiate error:', err.message);
     res.status(502).json({ error: 'Failed to initiate payment. Please try again or use COD.' });
   }
@@ -230,7 +292,7 @@ router.post('/sslcommerz/success', async (req: Request, res: Response) => {
   const { tran_id, val_id, status } = req.body as { tran_id: string; val_id: string; status: string };
 
   if (status !== 'VALID' && status !== 'VALIDATED') {
-    return res.redirect(`${CLIENT_URL}/en/checkout?payment=failed`);
+    return res.redirect(await recordPaymentFailure(tran_id, 'failed'));
   }
 
   try {
@@ -244,24 +306,9 @@ router.post('/sslcommerz/success', async (req: Request, res: Response) => {
         validationAmount: validation.amount,
         validationCurrency: validation.currency,
       });
-      return res.redirect(`${CLIENT_URL}/en/checkout?payment=invalid`);
+      return res.redirect(await recordPaymentFailure(tx.id, 'invalid'));
     }
     await onPaymentSuccess(tx.id, val_id, 'sslcommerz');
-    // #region agent log
-    fetch(process.env.DEBUG_INGEST_URL || 'http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8d503' },
-      body: JSON.stringify({
-        sessionId: 'a8d503',
-        runId: process.env.DEBUG_RUN_ID || 'pre-fix',
-        hypothesisId: 'D',
-        location: 'payments.ts:sslcommerz/success',
-        message: 'ssl_success_redirect',
-        data: { orderId: tx.orderId, userId: tx.userId, amount: Number(tx.amount) },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     // Land on account order page (same auth shell as the rest of account)
     res.redirect(`${CLIENT_URL}/en/account/orders/${tx.orderId}?payment=success`);
   } catch (err: any) {
@@ -298,12 +345,14 @@ router.post('/sslcommerz/ipn', async (req: Request, res: Response) => {
   res.status(200).send('OK');
 });
 
-router.post('/sslcommerz/fail', async (_req, res) => {
-  res.redirect(`${CLIENT_URL}/en/checkout?payment=failed`);
+router.post('/sslcommerz/fail', async (req, res) => {
+  const transactionId = String(req.body?.tran_id || '');
+  res.redirect(await recordPaymentFailure(transactionId || undefined, 'failed'));
 });
 
-router.post('/sslcommerz/cancel', async (_req, res) => {
-  res.redirect(`${CLIENT_URL}/en/checkout?payment=cancelled`);
+router.post('/sslcommerz/cancel', async (req, res) => {
+  const transactionId = String(req.body?.tran_id || '');
+  res.redirect(await recordPaymentFailure(transactionId || undefined, 'cancelled'));
 });
 
 // ─── Nagad ────────────────────────────────────────────────────────────────────
@@ -339,14 +388,21 @@ router.post('/nagad/initiate', requireAuth, async (req: Request, res: Response) 
 
 router.post('/nagad/callback', async (req: Request, res: Response) => {
   const { orderId, payment_ref_id, status } = req.body as { orderId: string; payment_ref_id: string; status: string };
-  if (status !== 'Success') { return res.redirect(`${CLIENT_URL}/en/checkout?payment=failed`); }
+  if (status !== 'Success') {
+    const failedTx = await prisma.paymentTransaction.findFirst({
+      where: { orderId, status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    return res.redirect(await recordPaymentFailure(failedTx?.id, 'failed'));
+  }
 
   const tx = await prisma.paymentTransaction.findFirst({
     where: { orderId, status: { in: ['pending', 'failed'] } },
     orderBy: { createdAt: 'desc' },
   });
   if (tx) { await onPaymentSuccess(tx.id, payment_ref_id, 'nagad'); }
-  res.redirect(`${CLIENT_URL}/en/orders/${orderId}?payment=success`);
+  res.redirect(`${CLIENT_URL}/en/account/orders/${orderId}?payment=success`);
 });
 
 router.post('/nagad/confirm', requireAuth, async (req: Request, res: Response) => {

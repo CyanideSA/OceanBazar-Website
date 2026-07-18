@@ -11,7 +11,7 @@ export default function RootNotFound() {
           The page you&apos;re looking for doesn&apos;t exist or has been moved.
         </p>
         <Link
-          href="/en"
+          href="/bn"
           style={{ display: 'inline-block', padding: '12px 28px', background: '#0ea5e9', color: '#fff', borderRadius: '10px', textDecoration: 'none', fontWeight: 700 }}
         >
           Back to Home

@@ -109,6 +109,7 @@ model AdminUser {
   microsoftOid       String?        @unique @map("microsoft_oid") @db.VarChar(128)
   googleSub          String?        @unique @map("google_sub") @db.VarChar(128)
   authProvider       String         @default("local") @map("auth_provider") @db.VarChar(30)
+  profileImage       String?        @map("profile_image")
   createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   auditLogs          AuditLog[]
   tickets            Ticket[]
@@ -410,6 +411,7 @@ model OrderItem {
   productId    String                   @map("product_id") @db.Char(8)
   variantId    String?                  @map("variant_id") @db.Char(8)
   productTitle String                   @map("product_title") @db.VarChar(500)
+  productImage String?                  @map("product_image") @db.VarChar(1000)
   unitPrice    Decimal                  @map("unit_price") @db.Decimal(12, 2)
   quantity     Int
   lineTotal    Decimal                  @map("line_total") @db.Decimal(12, 2)
@@ -543,7 +545,7 @@ model AuditLog {
   adminId    Int       @map("admin_id")
   action     String    @db.VarChar(255)
   targetType String    @map("target_type") @db.VarChar(100)
-  targetId   String    @map("target_id") @db.VarChar(50)
+  targetId   String    @map("target_id") @db.VarChar(255)
   details    Json?
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   admin      AdminUser @relation(fields: [adminId], references: [id])
@@ -1247,6 +1249,7 @@ model EmailTemplate {
   name       String   @db.VarChar(255)
   subject    String   @db.VarChar(500)
   bodyHtml   String   @map("body_html")
+  designJson Json?    @map("design_json")
   category   String   @db.VarChar(50)
   variables  Json?
   updatedBy  String?  @map("updated_by") @db.VarChar(100)
@@ -1255,6 +1258,30 @@ model EmailTemplate {
 
   @@index([category], map: "idx_email_templates_category")
   @@map("email_templates")
+}
+
+model refund_records {
+  id              String   @id @db.VarChar(255)
+  order_id        String   @db.Char(8)
+  return_id       String?  @db.VarChar(255)
+  payment_tx_id   String?  @db.Char(8)
+  user_id         String   @db.Char(8)
+  amount          Decimal  @db.Decimal(12, 2)
+  method          String?  @db.VarChar(50)
+  reference       String?  @db.VarChar(255)
+  customer_account Json?
+  notes           String?
+  receipt_url     String?  @db.VarChar(1000)
+  status          String   @default("pending_info") @db.VarChar(40)
+  requested_at    DateTime @default(now()) @db.Timestamptz(6)
+  completed_at    DateTime? @db.Timestamptz(6)
+  created_by      String?  @db.VarChar(100)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([order_id], map: "idx_refund_records_order")
+  @@index([user_id], map: "idx_refund_records_user")
+  @@index([return_id], map: "idx_refund_records_return")
+  @@map("refund_records")
 }
 
 model email_drafts {
@@ -1414,16 +1441,39 @@ model referral_events {
 // ─── A/B Test Impressions ─────────────────────────────────────────────────────
 
 model ab_impressions {
-  id        String   @id @db.VarChar(255)
-  testId    String   @map("test_id") @db.VarChar(100)
-  variant   String   @db.Char(1)
-  userId    String?  @map("user_id") @db.Char(8)
-  sessionId String?  @map("session_id") @db.VarChar(255)
-  converted Boolean  @default(false)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id             String   @id @db.VarChar(255)
+  testId         String   @map("test_id") @db.VarChar(100)
+  variant        String   @db.Char(1)
+  userId         String?  @map("user_id") @db.Char(8)
+  sessionId      String?  @map("session_id") @db.VarChar(255)
+  converted      Boolean  @default(false)
+  eventType      String   @default("impression") @map("event_type") @db.VarChar(100)
+  eventValue     Decimal? @map("event_value") @db.Decimal(14, 2)
+  metadata       Json?
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([testId, variant], map: "idx_ab_impressions_test")
   @@index([testId, userId], map: "idx_ab_impressions_user")
+}
+
+model AbTest {
+  id                String    @id @db.VarChar(100)
+  name              String    @db.VarChar(200)
+  description       String?
+  tier              Int       @default(1)
+  surface           String    @db.VarChar(100)
+  primaryMetric     String    @map("primary_metric") @db.VarChar(100)
+  status            String    @default("draft") @db.VarChar(20)
+  trafficAllocation Int       @default(100) @map("traffic_allocation")
+  variantA          Json      @default("{}") @map("variant_a")
+  variantB          Json      @default("{}") @map("variant_b")
+  startedAt         DateTime? @map("started_at") @db.Timestamptz(6)
+  endedAt           DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("ab_tests")
 }
 
 // ─── OceanBazar OS v1.0 — Enterprise Intelligence Layer ───────────────────────
@@ -1650,11 +1700,13 @@ model ClientErrorReport {
   url        String?   @db.VarChar(2048)
   userAgent  String?   @map("user_agent") @db.VarChar(512)
   locale     String?   @db.VarChar(8)
+  userId     String?   @map("user_id") @db.Char(8)
   snapshot   Json?
   ipHash     String?   @map("ip_hash") @db.VarChar(64)
   reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([createdAt(sort: Desc)])
+  @@index([userId], map: "idx_client_error_reports_user")
   @@map("client_error_reports")
 }

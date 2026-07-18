@@ -4,8 +4,9 @@ import react from "@vitejs/plugin-react";
 /** Admin CRM talks only to the BFF (no Java STOMP /ws). */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  // Prefer Docker BFF (:4401) — local :4000 often dies / exhausts Postgres connections.
   const proxyApiTarget =
-    env.ADMIN_DEV_PROXY_API || env.VITE_ADMIN_API_URL || "http://127.0.0.1:4001";
+    env.ADMIN_DEV_PROXY_API || env.VITE_ADMIN_API_URL || "http://127.0.0.1:4401";
 
   return {
   plugins: [

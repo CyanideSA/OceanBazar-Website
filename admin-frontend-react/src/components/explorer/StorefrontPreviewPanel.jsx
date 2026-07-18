@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+﻿import React, { useState, useRef, useCallback } from "react";
 import { useCatalogStore } from "../../stores/catalogStore";
 import {
   IconClose, IconRefresh, IconExternalLink, IconSpinner, IconPreview,
@@ -64,7 +64,7 @@ export default function StorefrontPreviewPanel({ onClose }) {
       <div className="preview-iframe-wrap">
         {loading && (
           <div className="preview-loading">
-            <IconSpinner size={16} color="#484f58" />
+            <IconSpinner size={16} color="var(--crm-text-muted)" />
             Loading storefront…
           </div>
         )}

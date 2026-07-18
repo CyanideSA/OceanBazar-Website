@@ -1,11 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
 import { v4 as uuidv4 } from 'uuid';
 import * as paperflyService from './paperflyService';
 import * as pathaoService from './pathaoService';
 import * as steadfastService from './steadfastService';
 import * as redxService from './redxService';
-
-const prisma = new PrismaClient();
 
 export type CourierProvider = 'paperfly' | 'pathao' | 'steadfast' | 'redx';
 
