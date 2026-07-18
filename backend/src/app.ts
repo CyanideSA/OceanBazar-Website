@@ -10,6 +10,7 @@ import path from 'path';
 import { createServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { prisma } from './lib/prisma';
 
 import authRouter from './routes/auth';
 import productsRouter from './routes/products';

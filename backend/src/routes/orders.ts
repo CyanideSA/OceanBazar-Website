@@ -360,6 +360,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     },
   });
   if (!order) {
+    // Distinguish stale-session ownership mismatches from genuinely missing orders.
+    const ownedByOther = await prisma.order.findFirst({ where: { id }, select: { userId: true } });
     res.status(404).json({
       error: 'Order not found',
       code: ownedByOther && ownedByOther.userId !== requesterId ? 'ORDER_OWNER_MISMATCH' : 'ORDER_NOT_FOUND',
