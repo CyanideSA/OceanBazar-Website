@@ -2,18 +2,27 @@ import axios from 'axios';
 import { normalizeCartSummary } from './cart';
 import type { CartSummary } from '@/types';
 
-/** BFF origin: env at build time; in the browser, match page hostname so LAN/docker access works. */
+/** BFF origin: env at build time; in dev (loopback env), match page hostname so LAN/docker access works. */
 export function resolvePublicApiBase(): string {
   const fromEnv = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000').replace(/\/$/, '');
   if (typeof window === 'undefined') return fromEnv;
+
+  let envHost = '';
+  let envPort = '4000';
+  try {
+    const u = new URL(fromEnv);
+    envHost = u.hostname.toLowerCase();
+    envPort = u.port || '4000';
+  } catch { /* fall through to loopback handling */ }
+
+  const envIsLoopback = !envHost || envHost === 'localhost' || envHost === '127.0.0.1' || envHost === '::1' || envHost === '[::1]';
+  // Production/staging: the env URL is a real public origin — never rewrite it.
+  if (!envIsLoopback) return fromEnv;
+
+  // Dev only: page opened via LAN IP/docker host — mirror the page hostname with the BFF port.
   const { protocol, hostname } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1') return fromEnv;
-  try {
-    const port = new URL(fromEnv).port || '4000';
-    return `${protocol}//${hostname}:${port}`;
-  } catch {
-    return `${protocol}//${hostname}:4000`;
-  }
+  return `${protocol}//${hostname}:${envPort}`;
 }
 
 export const api = axios.create({
