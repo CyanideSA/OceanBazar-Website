@@ -132,10 +132,19 @@ export async function issueRefreshSession(
     )
   `;
   // #region agent log
-  fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'B,C',location:'backend/src/services/userSessionService.ts:issueRefreshSession',message:'Refresh session issued',data:{verified:Boolean(options?.verified),expiresInMs:expiresAt.getTime()-Date.now()},timestamp:Date.now()})}).catch(()=>{});
+  fetch('http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'backend/src/services/userSessionService.ts:issueRefreshSession',message:'Refresh session issued',data:{userId,verified:Boolean(options?.verified)},timestamp:Date.now()})}).catch(()=>{});
   // #endregion
   return token;
 }
+
+/**
+ * Grace period during which an already-rotated refresh token is still accepted.
+ * A page refresh fires several API calls at once; each 401 triggers its own
+ * /auth/refresh with the SAME cookie. The first rotation revokes the cookie,
+ * so the rest would 401 and log the user out. Accepting recent reuse keeps
+ * those in-flight requests alive without weakening long-term rotation.
+ */
+const ROTATION_REUSE_GRACE_MS = 60_000;
 
 export async function rotateRefreshSession(token: string, req: Request): Promise<RefreshTokenPayload | null> {
   await ensureUserSessionSchema();
@@ -144,7 +153,7 @@ export async function rotateRefreshSession(token: string, req: Request): Promise
     payload = jwt.verify(token, env.JWT_REFRESH_SECRET) as RefreshTokenPayload;
   } catch {
     // #region agent log
-    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'B,C',location:'backend/src/services/userSessionService.ts:rotate-token-invalid',message:'Refresh JWT verification failed',data:{tokenPresent:Boolean(token)},timestamp:Date.now()})}).catch(()=>{});
+    fetch('http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'backend/src/services/userSessionService.ts:rotate-token-invalid',message:'Refresh JWT verification failed',data:{tokenPresent:Boolean(token)},timestamp:Date.now()})}).catch(()=>{});
     // #endregion
     return null;
   }
@@ -155,12 +164,19 @@ export async function rotateRefreshSession(token: string, req: Request): Promise
     LIMIT 1
   `;
   const row = rows[0];
+  const hashMatches = Boolean(row && row.refresh_token_hash === hashToken(token));
+  const revokedAgoMs = row?.revoked_at ? Date.now() - row.revoked_at.getTime() : null;
+  const withinGrace = revokedAgoMs !== null && revokedAgoMs < ROTATION_REUSE_GRACE_MS;
   // #region agent log
-  fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,B,C',location:'backend/src/services/userSessionService.ts:rotate-session-state',message:'Refresh session lookup completed',data:{rowFound:Boolean(row),revoked:Boolean(row?.revoked_at),expired:Boolean(row&&row.expires_at<=new Date()),hashMatches:Boolean(row&&row.refresh_token_hash===hashToken(token))},timestamp:Date.now()})}).catch(()=>{});
+  fetch('http://host.docker.internal:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'backend/src/services/userSessionService.ts:rotate-session-state',message:'Refresh session lookup completed',data:{rowFound:Boolean(row),revoked:Boolean(row?.revoked_at),revokedAgoMs,withinGrace,expired:Boolean(row&&row.expires_at<=new Date()),hashMatches},timestamp:Date.now()})}).catch(()=>{});
   // #endregion
   if (!row) return null;
-  if (row.revoked_at || row.expires_at <= new Date()) return null;
-  if (row.refresh_token_hash !== hashToken(token)) return null;
+  if (row.expires_at <= new Date()) return null;
+  if (!hashMatches) return null;
+  if (row.revoked_at) {
+    // Recently rotated: allow idempotent reuse by concurrent requests.
+    return withinGrace ? payload : null;
+  }
 
   await prisma.$executeRaw`
     UPDATE user_sessions SET revoked_at = NOW() WHERE sid = ${payload.sid}

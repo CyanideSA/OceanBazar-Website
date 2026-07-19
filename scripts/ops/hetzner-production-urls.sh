@@ -22,6 +22,10 @@ setkv CLIENT_URL "$BASE"
 setkv ADMIN_URL "$ADMIN"
 setkv BFF_PUBLIC_BASE_URL "$API"
 setkv JAVA_PUBLIC_BASE_URL "$API"
+# Payment gateways (SSLCommerz/Nagad) build their success/fail/IPN callback
+# URLs from API_BASE_URL — it must be the public API origin, never localhost.
+setkv API_BASE_URL "$API"
+setkv PUBLIC_BASE_URL "$API"
 setkv CORS_ALLOWED_ORIGINS "${BASE},${ADMIN},${CONTENTID}"
 setkv TRUST_PROXY 1
 

@@ -52,6 +52,25 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Single-flight refresh: concurrent 401s share one /auth/refresh request so a
+// page refresh (many parallel API calls) rotates the session exactly once.
+let refreshInFlight: Promise<string> | null = null;
+
+function refreshAccessToken(): Promise<string> {
+  if (!refreshInFlight) {
+    refreshInFlight = axios
+      .post(`${resolvePublicApiBase()}/api/auth/refresh`, {}, { withCredentials: true })
+      .then(({ data }) => {
+        localStorage.setItem('ob_access_token', data.access);
+        return data.access as string;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
 // Auto-refresh on 401
 api.interceptors.response.use(
   (res) => res,
@@ -65,7 +84,7 @@ api.interceptors.response.use(
       // silently reject without redirecting — guests should be able to browse freely.
       const hadToken = typeof window !== 'undefined' && !!localStorage.getItem('ob_access_token');
       // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,D',location:'frontend/lib/api.ts:response-401',message:'API request received first 401',data:{url:String(original?.url||''),method:String(original?.method||''),hadToken,isAuthenticatedPersisted:typeof window!=='undefined'&&localStorage.getItem('ob-auth')?.includes('"isAuthenticated":true')},timestamp:Date.now()})}).catch(()=>{});
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:response-401',message:'API request received first 401',data:{url:String(original?.url||''),method:String(original?.method||''),hadToken,isAuthenticatedPersisted:typeof window!=='undefined'&&localStorage.getItem('ob-auth')?.includes('"isAuthenticated":true')},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
       if (!hadToken) {
         return Promise.reject(err);
@@ -73,18 +92,17 @@ api.interceptors.response.use(
 
       try {
         // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,B,C',location:'frontend/lib/api.ts:refresh-start',message:'Starting refresh after 401',data:{url:String(original?.url||''),requestId:String(original?.headers?.['X-Request-Id']||'')},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:refresh-start',message:'Refresh requested after 401 (single-flight shared)',data:{url:String(original?.url||''),sharedInFlight:Boolean(refreshInFlight)},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
-        const { data } = await axios.post(`${resolvePublicApiBase()}/api/auth/refresh`, {}, { withCredentials: true });
-        localStorage.setItem('ob_access_token', data.access);
+        const access = await refreshAccessToken();
         // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,B,C',location:'frontend/lib/api.ts:refresh-success',message:'Refresh succeeded and request will retry',data:{url:String(original?.url||''),requestId:String(original?.headers?.['X-Request-Id']||'')},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:refresh-success',message:'Refresh succeeded and request will retry',data:{url:String(original?.url||'')},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
-        original.headers.Authorization = `Bearer ${data.access}`;
+        original.headers.Authorization = `Bearer ${access}`;
         return api(original);
       } catch (refreshError) {
         // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A,B,C,D',location:'frontend/lib/api.ts:refresh-failure',message:'Refresh failed and access token will be removed',data:{url:String(original?.url||''),requestId:String(original?.headers?.['X-Request-Id']||''),refreshStatus:(refreshError as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:refresh-failure',message:'Refresh failed and access token will be removed',data:{url:String(original?.url||''),refreshStatus:(refreshError as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
         localStorage.removeItem('ob_access_token');
         if (typeof window !== 'undefined') {

@@ -6,6 +6,31 @@ import { routeParam } from '../../utils/params';
 const router = Router();
 const prismaAny = prisma as any;
 
+// NOTE: must be registered before '/timeline/:customerId' or Express matches
+// 'search' as a customer id and the endpoint always returns 404.
+router.get('/timeline/search', async (req: Request, res: Response) => {
+  const q = String(req.query.q || '').trim();
+  if (!q || q.length < 2) {
+    res.status(400).json({ error: 'query too short' });
+    return;
+  }
+
+  const users = await prisma.user.findMany({
+    where: {
+      OR: [
+        { email: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q } },
+        { name: { contains: q, mode: 'insensitive' } },
+        { id: q },
+      ],
+    },
+    take: 20,
+    select: { id: true, name: true, email: true, phone: true },
+  });
+
+  res.json({ customers: users });
+});
+
 router.get('/timeline/:customerId', async (req: Request, res: Response) => {
   const customerId = routeParam(req.params.customerId);
   if (!customerId) {
@@ -107,29 +132,6 @@ router.get('/timeline/:customerId', async (req: Request, res: Response) => {
   ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
   res.json({ customer: user, timeline, counts: { communications: commLogs.length, chats: chatSessions.length, tickets: tickets.length } });
-});
-
-router.get('/timeline/search', async (req: Request, res: Response) => {
-  const q = String(req.query.q || '').trim();
-  if (!q || q.length < 2) {
-    res.status(400).json({ error: 'query too short' });
-    return;
-  }
-
-  const users = await prisma.user.findMany({
-    where: {
-      OR: [
-        { email: { contains: q, mode: 'insensitive' } },
-        { phone: { contains: q } },
-        { name: { contains: q, mode: 'insensitive' } },
-        { id: q },
-      ],
-    },
-    take: 20,
-    select: { id: true, name: true, email: true, phone: true },
-  });
-
-  res.json({ customers: users });
 });
 
 export default router;
