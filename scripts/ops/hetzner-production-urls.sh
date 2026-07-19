@@ -26,7 +26,11 @@ setkv JAVA_PUBLIC_BASE_URL "$API"
 # URLs from API_BASE_URL — it must be the public API origin, never localhost.
 setkv API_BASE_URL "$API"
 setkv PUBLIC_BASE_URL "$API"
-setkv CORS_ALLOWED_ORIGINS "${BASE},${ADMIN},${CONTENTID}"
+# Include every hostname nginx serves (www + .com variants) — any origin missing
+# here gets CORS-blocked in the browser (page loads but all API calls fail).
+WWW_BASE="${BASE/https:\/\//https://www.}"
+COM_ORIGINS="https://oceanbazar.com,https://www.oceanbazar.com,https://admin.oceanbazar.com,https://contentid.oceanbazar.com"
+setkv CORS_ALLOWED_ORIGINS "${BASE},${WWW_BASE},${ADMIN},${CONTENTID},${COM_ORIGINS}"
 setkv TRUST_PROXY 1
 
 setkv NEXT_PUBLIC_SITE_URL "$BASE"
