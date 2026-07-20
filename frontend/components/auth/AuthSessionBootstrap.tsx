@@ -28,11 +28,17 @@ function mapMeUser(raw: Record<string, unknown>): User {
  * in while /account silently fails until they log out and back in.
  */
 export default function AuthSessionBootstrap() {
-  const [hydrated, setHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+  // Start false so SSR/prerender never touches zustand persist APIs.
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setHydrated(useAuthStore.persist.hasHydrated());
-    return useAuthStore.persist.onFinishHydration(() => setHydrated(true));
+    const persistApi = useAuthStore.persist;
+    if (!persistApi?.hasHydrated || !persistApi?.onFinishHydration) {
+      setHydrated(true);
+      return;
+    }
+    setHydrated(persistApi.hasHydrated());
+    return persistApi.onFinishHydration(() => setHydrated(true));
   }, []);
 
   useEffect(() => {
