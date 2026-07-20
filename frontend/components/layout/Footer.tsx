@@ -78,9 +78,9 @@ export default function Footer() {
           viewport={{ once: true, margin: '-60px' }}
         >
           <div className="grid grid-cols-1 gap-x-6 gap-y-8 pt-14 pb-10 xs:grid-cols-2 sm:gap-x-8 md:grid-cols-4 md:pt-16 md:pb-12">
-            {/* Brand */}
-            <motion.div variants={itemVariants} className="col-span-1 xs:col-span-2 md:col-span-1 md:row-span-1">
-              <div className="mb-3 -ml-1">
+            {/* Brand — min-w-0 so the grid column can shrink below the logo's intrinsic size */}
+            <motion.div variants={itemVariants} className="col-span-1 min-w-0 xs:col-span-2 md:col-span-1 md:row-span-1">
+              <div className="mb-3 -ml-1 w-full max-w-[11rem] xs:max-w-[13rem] md:max-w-full lg:max-w-[17.5rem]">
                 <Logo
                   width={282}
                   height={173}

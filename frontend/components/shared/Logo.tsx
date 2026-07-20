@@ -42,12 +42,22 @@ export default function Logo({
   priority = false,
 }: LogoProps) {
   void _variant;
+  // Footer sits in a narrow grid column on tablet; fixed px width overflows into SHOP.
+  const fluid = interaction === 'footer';
 
   return (
     <span
       data-logo-interaction={interaction}
-      className={cn('ob-logo inline-flex shrink-0 items-center', className)}
-      style={{ width, height }}
+      className={cn(
+        'ob-logo inline-flex items-center',
+        fluid ? 'h-auto w-full max-w-full shrink' : 'shrink-0',
+        className,
+      )}
+      style={
+        fluid
+          ? { width: '100%', maxWidth: '100%', aspectRatio: `${width} / ${height}` }
+          : { width, height }
+      }
     >
       <Image
         src={src}
