@@ -72,7 +72,15 @@ function ProductCollectionPageInner() {
     queryKey: ['products-collection', collection, page, search, selectedCategory, sort, locale],
     queryFn: () =>
       productsApi
-        .list({ page, collection, search, category: selectedCategory, sort, lang: locale, limit: 24 })
+        .list({
+          page,
+          collection,
+          search: search.trim() || undefined,
+          category: selectedCategory || undefined,
+          sort,
+          lang: locale,
+          limit: 24,
+        })
         .then((r) => r.data as ProductsListResponse),
     placeholderData: keepPreviousData,
   });
@@ -149,9 +157,9 @@ function ProductCollectionPageInner() {
               onChange={(e) => setSort(e.target.value)}
               className="border border-border bg-background text-foreground rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 min-h-[44px]"
             >
-              <option value="createdAt_desc">{tc('sortNewest')}</option>
-              <option value="price_asc">{tc('sortPriceLow')}</option>
-              <option value="price_desc">{tc('sortPriceHigh')}</option>
+              <option value="createdAt_desc">{tp('sortNewest')}</option>
+              <option value="price_asc">{tp('sortPriceLow')}</option>
+              <option value="price_desc">{tp('sortPriceHigh')}</option>
             </select>
           </div>
 

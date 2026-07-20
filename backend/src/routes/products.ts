@@ -263,7 +263,8 @@ router.get('/', productCache, async (req: Request, res: Response) => {
     category,
     brand,
     brands: brandsParam,
-    search,
+    search: searchParam,
+    q: qParam,
     sort = 'createdAt_desc',
     lang = 'en',
     excludeId,
@@ -272,6 +273,9 @@ router.get('/', productCache, async (req: Request, res: Response) => {
     maxPrice,
     rating,
   } = req.query as Record<string, string>;
+
+  // Accept both ?search= and ?q= (header search historically used either).
+  const search = String(searchParam || qParam || '').trim();
 
   const take = Math.min(parseInt(limit), 100);
   const skip = (parseInt(page) - 1) * take;
@@ -316,6 +320,22 @@ router.get('/', productCache, async (req: Request, res: Response) => {
   if (priceProductIds !== null) extraAnd.push({ id: { in: priceProductIds } });
   if (ratingMin) extraAnd.push({ ratingAvg: { gte: ratingMin } });
 
+  const searchWhere = search
+    ? {
+        OR: [
+          { titleEn: { contains: search, mode: 'insensitive' as const } },
+          { titleBn: { contains: search, mode: 'insensitive' as const } },
+          { descriptionEn: { contains: search, mode: 'insensitive' as const } },
+          { descriptionBn: { contains: search, mode: 'insensitive' as const } },
+          { sku: { contains: search, mode: 'insensitive' as const } },
+          { brand: { contains: search, mode: 'insensitive' as const } },
+          { brandRelation: { nameEn: { contains: search, mode: 'insensitive' as const } } },
+          { brandRelation: { nameBn: { contains: search, mode: 'insensitive' as const } } },
+          { brandRelation: { slug: { contains: search, mode: 'insensitive' as const } } },
+        ],
+      }
+    : {};
+
   if (collectionKey) {
     const ids = await resolveCollectionIds(collectionKey);
     const baseWhere = {
@@ -323,14 +343,7 @@ router.get('/', productCache, async (req: Request, res: Response) => {
       ...(catIds ? { productCategories: { some: { categoryId: { in: catIds } } } } : {}),
       ...brandWhere,
       ...(excludeId ? { id: { not: excludeId } } : {}),
-      ...(search
-        ? {
-            OR: [
-              { titleEn: { contains: search, mode: 'insensitive' } },
-              { titleBn: { contains: search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
+      ...searchWhere,
       ...(extraAnd.length ? { AND: extraAnd } : {}),
     };
 
@@ -400,14 +413,7 @@ router.get('/', productCache, async (req: Request, res: Response) => {
     ...(catIds ? { productCategories: { some: { categoryId: { in: catIds } } } } : {}),
     ...brandWhere,
     ...(excludeId ? { id: { not: excludeId } } : {}),
-    ...(search
-      ? {
-          OR: [
-            { titleEn: { contains: search, mode: 'insensitive' } },
-            { titleBn: { contains: search, mode: 'insensitive' } },
-          ],
-        }
-      : {}),
+    ...searchWhere,
     ...(extraAnd.length ? { AND: extraAnd } : {}),
   };
 

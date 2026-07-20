@@ -125,6 +125,8 @@ router.get('/suggest', async (req: Request, res: Response) => {
           OR: [
             { titleEn: { contains: q, mode: 'insensitive' } },
             { titleBn: { contains: q, mode: 'insensitive' } },
+            { brandRelation: { nameEn: { contains: q, mode: 'insensitive' } } },
+            { brandRelation: { nameBn: { contains: q, mode: 'insensitive' } } },
           ],
         },
         include: {

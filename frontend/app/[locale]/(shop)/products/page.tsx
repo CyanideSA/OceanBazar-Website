@@ -27,7 +27,8 @@ function ProductsPageInner() {
 
   // ─── Filter state ──────────────────────────────────────────────────────────
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
+  const urlSearch = (searchParams.get('search') || searchParams.get('q') || '').trim();
+  const [search, setSearch] = useState(urlSearch);
   const [sort, setSort] = useState('createdAt_desc');
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -40,16 +41,21 @@ function ProductsPageInner() {
     collection: '',
   });
 
-  // Sync URL searchParams → filter state (e.g. when clicking a subcategory link from mega menu)
+  // Sync URL searchParams → filter state (header search, category links, etc.)
   useEffect(() => {
     const urlCategory = searchParams.get('category') ?? '';
     const urlBrand = searchParams.get('brand') ?? '';
+    const nextSearch = (searchParams.get('search') || searchParams.get('q') || '').trim();
+    setSearch(nextSearch);
     setFilters((prev) => ({
       ...prev,
       category: urlCategory,
       brands: urlBrand ? [urlBrand] : prev.brands.length > 0 && !urlBrand ? prev.brands : [],
     }));
     setPage(1);
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'search-fix',hypothesisId:'P1',location:'products/page.tsx:url-sync',message:'Synced search from URL',data:{nextSearch,urlCategory,urlBrand},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   }, [searchParams]);
 
   // Fetch filter metadata from DB

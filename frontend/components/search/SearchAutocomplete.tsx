@@ -7,8 +7,8 @@ import { useLocale } from 'next-intl';
 import { Search, Loader2, TrendingUp, Clock, X, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getMediaUrl } from '@/lib/mediaUrl';
+import { resolvePublicApiBase } from '@/lib/api';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
 const RECENT_KEY = 'ob_recent_searches';
 const MAX_RECENT = 6;
 
@@ -45,7 +45,7 @@ function clearRecentSearches() {
 
 async function fetchSuggestions(q: string, lang: string): Promise<Suggestion[]> {
   try {
-    const res = await fetch(`${BASE_URL}/api/search/suggest?q=${encodeURIComponent(q)}&lang=${lang}&limit=8`);
+    const res = await fetch(`${resolvePublicApiBase()}/api/search/suggest?q=${encodeURIComponent(q)}&lang=${lang}&limit=8`);
     const data = await res.json();
     return data.suggestions ?? [];
   } catch { return []; }
@@ -53,7 +53,7 @@ async function fetchSuggestions(q: string, lang: string): Promise<Suggestion[]> 
 
 async function fetchTrending(lang: string): Promise<string[]> {
   try {
-    const res = await fetch(`${BASE_URL}/api/search/trending?lang=${lang}&limit=8`);
+    const res = await fetch(`${resolvePublicApiBase()}/api/search/trending?lang=${lang}&limit=8`);
     const data = await res.json();
     return data.trending ?? [];
   } catch {
@@ -124,7 +124,7 @@ export default function SearchAutocomplete({ className }: { className?: string }
     setOpen(false);
     setQuery('');
     // Log search for analytics
-    fetch(`${BASE_URL}/api/search/log`, {
+    fetch(`${resolvePublicApiBase()}/api/search/log`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: term }),
