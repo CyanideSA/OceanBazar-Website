@@ -12,6 +12,7 @@ import ChatVisitorClaim from '@/components/chat/ChatVisitorClaim';
 import DynamicFavicon from '@/components/shared/DynamicFavicon';
 import PushNotificationInit from '@/components/shared/PushNotificationInit';
 import PwaAnalyticsInit from '@/components/shared/PwaAnalyticsInit';
+import AuthSessionBootstrap from '@/components/auth/AuthSessionBootstrap';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -41,6 +42,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider>
       <DynamicFavicon />
       <QueryClientProvider client={queryClient}>
+        <AuthSessionBootstrap />
         <CatalogSyncProvider />
         <NotificationListener />
         <PushNotificationInit />

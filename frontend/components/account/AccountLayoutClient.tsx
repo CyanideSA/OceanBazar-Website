@@ -26,7 +26,7 @@ function mapMeUser(raw: Record<string, unknown>): User {
 export default function AccountLayoutClient({ children }: { children: React.ReactNode }) {
   const locale = useLocale();
   const router = useRouter();
-  const { isAuthenticated, updateUser } = useAuthStore();
+  const { isAuthenticated, updateUser, logout } = useAuthStore();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -39,8 +39,17 @@ export default function AccountLayoutClient({ children }: { children: React.Reac
         const u = (r.data as { user: Record<string, unknown> }).user;
         if (u) updateUser(mapMeUser(u));
       })
-      .catch(() => {});
-  }, [isAuthenticated, locale, router, updateUser]);
+      .catch((err) => {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S3',location:'AccountLayoutClient.tsx:me-fail',message:'Account /me failed',data:{status:status??null},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        if (status === 401) {
+          logout();
+          router.replace(`/${locale}/auth/login`);
+        }
+      });
+  }, [isAuthenticated, locale, router, updateUser, logout]);
 
   if (!isAuthenticated) {
     return (

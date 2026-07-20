@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { normalizeCartSummary } from './cart';
 import type { CartSummary } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
 
 /** BFF origin: env at build time; in dev (loopback env), match page hostname so LAN/docker access works. */
 export function resolvePublicApiBase(): string {
@@ -71,6 +72,15 @@ function refreshAccessToken(): Promise<string> {
   return refreshInFlight;
 }
 
+function clearZombieClientAuth() {
+  try {
+    useAuthStore.getState().logout();
+  } catch {
+    localStorage.removeItem('ob_access_token');
+    localStorage.removeItem('ob-auth');
+  }
+}
+
 // Auto-refresh on 401
 api.interceptors.response.use(
   (res) => res,
@@ -79,32 +89,35 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true;
 
-      // Only attempt refresh if the user had a token (was previously authenticated).
-      // For truly anonymous calls (wishlist/cart sync etc.) there's no token, so we
-      // silently reject without redirecting — guests should be able to browse freely.
+      // Attempt refresh when we have an access token OR the UI still claims the
+      // customer is logged in (persisted Zustand). Otherwise guests stay anonymous.
       const hadToken = typeof window !== 'undefined' && !!localStorage.getItem('ob_access_token');
+      const claimedAuth =
+        typeof window !== 'undefined' &&
+        (localStorage.getItem('ob-auth')?.includes('"isAuthenticated":true') ||
+          useAuthStore.getState().isAuthenticated);
       // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:response-401',message:'API request received first 401',data:{url:String(original?.url||''),method:String(original?.method||''),hadToken,isAuthenticatedPersisted:typeof window!=='undefined'&&localStorage.getItem('ob-auth')?.includes('"isAuthenticated":true')},timestamp:Date.now()})}).catch(()=>{});
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1,S2',location:'frontend/lib/api.ts:response-401',message:'API request received first 401',data:{url:String(original?.url||''),method:String(original?.method||''),hadToken,claimedAuth},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
-      if (!hadToken) {
+      if (!hadToken && !claimedAuth) {
         return Promise.reject(err);
       }
 
       try {
         // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:refresh-start',message:'Refresh requested after 401 (single-flight shared)',data:{url:String(original?.url||''),sharedInFlight:Boolean(refreshInFlight)},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'frontend/lib/api.ts:refresh-start',message:'Refresh requested after 401 (single-flight shared)',data:{url:String(original?.url||''),sharedInFlight:Boolean(refreshInFlight)},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
         const access = await refreshAccessToken();
         // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:refresh-success',message:'Refresh succeeded and request will retry',data:{url:String(original?.url||'')},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'frontend/lib/api.ts:refresh-success',message:'Refresh succeeded and request will retry',data:{url:String(original?.url||'')},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
         original.headers.Authorization = `Bearer ${access}`;
         return api(original);
       } catch (refreshError) {
         // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'post-fix',hypothesisId:'R1',location:'frontend/lib/api.ts:refresh-failure',message:'Refresh failed and access token will be removed',data:{url:String(original?.url||''),refreshStatus:(refreshError as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S2',location:'frontend/lib/api.ts:refresh-failure',message:'Refresh failed — clearing zombie auth state',data:{url:String(original?.url||''),refreshStatus:(refreshError as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
-        localStorage.removeItem('ob_access_token');
+        clearZombieClientAuth();
         if (typeof window !== 'undefined') {
           const path = window.location.pathname;
           // Only redirect to login from protected pages (account, orders, checkout)

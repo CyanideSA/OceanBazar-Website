@@ -45,6 +45,10 @@ setkv CONTENT_ID_APP_URL "$CONTENTID"
 setkv MS_CONTENT_ID_REDIRECT_URI "${API}/api/content-id/auth/sso/microsoft/callback"
 setkv MS_SSO_REDIRECT_URI "${API}/api/admin/auth/sso/microsoft/callback"
 
+# Persist storefront refresh cookies across subdomains + HTTPS.
+setkv COOKIE_DOMAIN .oceanbazar.com.bd
+setkv COOKIE_SECURE true
+
 setkv MAINTENANCE_MODE false
 setkv MAINTENANCE_COOKIE_DOMAIN .oceanbazar.com.bd
 

@@ -26,6 +26,23 @@ import {
 
 const router = Router();
 
+/** HttpOnly refresh cookie — must survive laptop sleep / browser reopen. */
+function refreshCookieOptions() {
+  const secure =
+    process.env.NODE_ENV === 'production' ||
+    process.env.TRUST_PROXY === '1' ||
+    process.env.COOKIE_SECURE === 'true';
+  const domain = (process.env.COOKIE_DOMAIN || '').trim() || undefined;
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure,
+    path: '/',
+    maxAge: 7 * 86400_000,
+    ...(domain ? { domain } : {}),
+  };
+}
+
 // ─── Setup Passport strategies (only if real OAuth creds are configured) ─────
 
 const hasGoogle = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -127,7 +144,7 @@ router.post(
       const access = issueAccessToken(user.id, user.userType);
       const refresh = await issueRefreshSession(user.id, req);
       res
-        .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
+        .cookie('refreshToken', refresh, refreshCookieOptions())
         .json({ access, user: sanitizeUser(user) });
     } catch (e: unknown) {
       const err = e as Error & { status?: number };
@@ -178,7 +195,7 @@ router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
   const access = issueAccessToken(user.id, user.userType);
   const refresh = await issueRefreshSession(user.id, req, { verified: true });
   res
-    .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
+    .cookie('refreshToken', refresh, refreshCookieOptions())
     .json({ access, user: sanitizeUser(user) });
 });
 
@@ -214,7 +231,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     const access = issueAccessToken(user.id, user.userType);
     const refresh = await issueRefreshSession(user.id, req);
     res
-      .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
+      .cookie('refreshToken', refresh, refreshCookieOptions())
       .json({ access, user: sanitizeUser(user) });
   } catch (e: unknown) {
     const err = e as Error & { status?: number };
@@ -236,7 +253,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     const access = issueAccessToken(user.id, user.userType);
     const refresh = await issueRefreshSession(user.id, req);
     res
-      .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
+      .cookie('refreshToken', refresh, refreshCookieOptions())
       .json({ access });
   } catch {
     res.status(401).json({ error: 'Invalid refresh token' });
@@ -256,7 +273,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
 router.post('/logout', async (req: Request, res: Response) => {
   const token = req.cookies?.refreshToken;
   if (token) await revokeRefreshSessionByToken(token);
-  res.clearCookie('refreshToken').json({ message: 'Logged out' });
+  res.clearCookie('refreshToken', refreshCookieOptions()).json({ message: 'Logged out' });
 });
 
 // ─── POST /api/auth/forgot-password ──────────────────────────────────────────
@@ -349,7 +366,7 @@ router.post('/firebase', async (req: Request, res: Response) => {
     console.log(`[AUTH] Firebase login for uid: ${fbUser.uid}, provider: ${provider}, user: ${user.id}`);
 
     res
-      .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
+      .cookie('refreshToken', refresh, refreshCookieOptions())
       .json({ access, user: sanitizeUser(user) });
   } catch (e: unknown) {
     const err = e as Error;
@@ -399,7 +416,7 @@ async function socialCallback(req: Request, res: Response) {
   const access = issueAccessToken(user.id, user.userType);
   const refresh = await issueRefreshSession(user.id, req);
   res
-    .cookie('refreshToken', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 86400_000 })
+    .cookie('refreshToken', refresh, refreshCookieOptions())
     .redirect(`${process.env.CLIENT_URL}/auth/callback?token=${access}`);
 }
 

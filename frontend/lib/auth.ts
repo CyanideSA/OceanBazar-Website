@@ -17,16 +17,23 @@ export function clearAccessToken(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
 }
 
-export function isAuthenticated(): boolean {
-  const token = getAccessToken();
+/** True when a JWT is present and its exp claim is still in the future. */
+export function isAccessTokenValid(token: string | null = getAccessToken()): boolean {
   if (!token) return false;
   try {
     const [, payload] = token.split('.');
-    const decoded = JSON.parse(atob(payload));
-    return decoded.exp * 1000 > Date.now();
+    if (!payload) return false;
+    const decoded = JSON.parse(atob(payload)) as { exp?: number };
+    if (!decoded.exp) return false;
+    // 30s skew so we refresh slightly before hard expiry
+    return decoded.exp * 1000 > Date.now() + 30_000;
   } catch {
     return false;
   }
+}
+
+export function isAuthenticated(): boolean {
+  return isAccessTokenValid();
 }
 
 export function getUserFromToken(): Partial<User> | null {
