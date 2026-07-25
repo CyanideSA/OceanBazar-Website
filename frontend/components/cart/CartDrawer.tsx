@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import { X, ShoppingBag, Minus, Plus, Trash2, Tag, ArrowRight } from 'lucide-react';
@@ -21,13 +21,22 @@ export default function CartDrawer() {
   const t = useTranslations('cart');
   const tc = useTranslations('common');
   const locale = useLocale();
-  const { isOpen, setOpen, setCart, appliedCoupon, setAppliedCoupon, appliedObPoints } = useCartStore();
+  const { isOpen, setOpen, setCart, appliedCoupon, setAppliedCoupon, appliedObPoints, updateLocalQty, removeLocalItem } = useCartStore();
   const [couponInput, setCouponInput] = useState('');
   const { success, error: toastError } = useToast();
 
   const safeCart = useNormalizedCart();
-  const { user } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const isWholesaleUser = user?.userType === 'wholesale';
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen]);
 
   // Same per-product cap as the product page: retail tier-3 threshold from the
   // admin CRM (falling back to the global retail cap), bounded by stock.
@@ -39,8 +48,10 @@ export default function CartDrawer() {
   };
 
   const updateMutation = useMutation({
-    mutationFn: ({ productId, quantity }: { productId: string; quantity: number }) =>
-      cartApi.update(productId, quantity),
+    mutationFn: async ({ productId, quantity, variantId }: { productId: string; quantity: number; variantId?: string | null }) => {
+      if (!isAuthenticated) return updateLocalQty(productId, quantity, variantId);
+      return cartApi.update(productId, quantity, variantId);
+    },
     onSuccess: setCart,
     onError: (e: unknown) => {
       const ax = e as { response?: { data?: { error?: string; message?: string } } };
@@ -49,19 +60,22 @@ export default function CartDrawer() {
   });
 
   const removeMutation = useMutation({
-    mutationFn: (productId: string) => cartApi.remove(productId),
+    mutationFn: async ({ productId, variantId }: { productId: string; variantId?: string | null }) => {
+      if (!isAuthenticated) return removeLocalItem(productId, variantId);
+      return cartApi.remove(productId, variantId);
+    },
     onSuccess: setCart,
     onError: () => toastError(tc('error')),
   });
 
   const changeQuantity = (item: CartItem, nextQty: number) => {
     if (nextQty <= 0) {
-      removeMutation.mutate(item.productId);
+      removeMutation.mutate({ productId: item.productId, variantId: item.variantId });
       return;
     }
     const clamped = Math.min(nextQty, maxQtyFor(item));
     if (clamped === item.quantity) return;
-    updateMutation.mutate({ productId: item.productId, quantity: clamped });
+    updateMutation.mutate({ productId: item.productId, quantity: clamped, variantId: item.variantId });
   };
 
   const couponMutation = useMutation({
@@ -87,24 +101,31 @@ export default function CartDrawer() {
 
   return (
     <>
-      {/* Backdrop — blurs the rest of the screen */}
+      {/* Backdrop — solid tint only (backdrop-blur paints white on old iOS Safari) */}
       <div
-        className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-[6px] transition-opacity duration-300"
+        className="fixed inset-0 z-[60] transition-opacity duration-300"
+        style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
         onClick={() => setOpen(false)}
         aria-hidden
+        data-ob-cart-backdrop="1"
       />
 
-      {/* Drawer — slides from right, half-screen on desktop, 85% on mobile */}
+      {/* Drawer — solid panel; width without max-w-[50vw] trap on mobile */}
       <div
         className={cn(
-          'fixed inset-y-0 right-0 z-[70] flex flex-col bg-background text-foreground shadow-2xl',
-          'w-[85vw] max-w-[50vw] border-l border-border/60',
+          'fixed inset-y-0 right-0 z-[70] flex flex-col shadow-2xl',
+          'w-[min(85vw,400px)] border-l',
           'animate-slide-in-right',
-          'max-[640px]:max-w-[85vw]',
         )}
+        style={{
+          backgroundColor: 'hsl(var(--background, 0 0% 100%))',
+          color: 'hsl(var(--foreground, 222 84% 5%))',
+          borderColor: 'hsl(var(--border, 214 32% 91%))',
+        }}
         role="dialog"
         aria-modal
         aria-labelledby="cart-drawer-title"
+        data-ob-cart-drawer="1"
       >
 
         {/* Header */}
@@ -150,7 +171,7 @@ export default function CartDrawer() {
             <ul className="space-y-3 sm:space-y-4">
               {safeCart.items.map((item) => (
                 <li
-                  key={item.productId || String(item.id)}
+                  key={`${item.productId}:${item.variantId ?? 'base'}`}
                   className="flex gap-3 rounded-xl border border-border/40 bg-card p-3 transition-colors hover:border-border sm:gap-4 sm:p-4"
                 >
                   {/* Image */}
@@ -205,7 +226,7 @@ export default function CartDrawer() {
                   <div className="flex flex-col items-end justify-between">
                     <button
                       type="button"
-                      onClick={() => removeMutation.mutate(item.productId)}
+                      onClick={() => removeMutation.mutate({ productId: item.productId, variantId: item.variantId })}
                       className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive sm:h-9 sm:w-9"
                       aria-label={t('remove')}
                     >
@@ -223,7 +244,13 @@ export default function CartDrawer() {
 
         {/* Footer */}
         {safeCart && safeCart.items.length > 0 && (
-          <div className="space-y-3 border-t border-border/60 bg-background/95 px-4 py-4 backdrop-blur-sm sm:space-y-4 sm:px-5 sm:py-5" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+          <div
+            className="space-y-3 border-t border-border/60 px-4 py-4 sm:space-y-4 sm:px-5 sm:py-5"
+            style={{
+              backgroundColor: 'hsl(var(--background, 0 0% 100%))',
+              paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            }}
+          >
             {/* Coupon */}
             <div className="rounded-xl border border-border/40 bg-muted/30 p-3 sm:p-3.5">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -242,8 +269,14 @@ export default function CartDrawer() {
                 />
                 <button
                   type="button"
-                  disabled={!couponInput.trim() || couponMutation.isPending}
-                  onClick={() => couponMutation.mutate(couponInput.trim())}
+                  disabled={!couponInput.trim() || couponMutation.isPending || !isAuthenticated}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      toastError(t('couponLoginRequired'));
+                      return;
+                    }
+                    couponMutation.mutate(couponInput.trim());
+                  }}
                   className="shrink-0 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50 sm:px-5"
                 >
                   {t('applyCoupon')}

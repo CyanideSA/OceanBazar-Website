@@ -113,16 +113,18 @@
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 
+  /* Opaque sticky chrome — backdrop-filter blanks old iOS Safari when fixed overlays (cart) open. */
   .glass {
-    @apply bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60;
+    @apply bg-background;
   }
 
+  /* Solid chat surfaces — backdrop-blur paints blank on old iOS Safari (iPhone 7 / iOS 12–15). */
   .chat-surface {
-    @apply rounded-2xl border border-border/60 bg-background/85 shadow-lg backdrop-blur-xl;
+    @apply rounded-2xl border border-border/60 bg-card shadow-lg;
   }
 
   .chat-bubble-bot {
-    @apply rounded-2xl rounded-bl-sm glass px-3.5 py-2.5 text-sm shadow-sm;
+    @apply rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm text-foreground shadow-sm;
   }
 
   .chat-bubble-user {
@@ -134,7 +136,8 @@
   }
 
   .container-tight {
-    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+    /* Near-full width: no 1280px cap; 0.5in empty gutter each side on desktop */
+    @apply mx-auto w-full px-4 sm:px-6 lg:px-[0.5in];
   }
 
   /* Ensure minimum 44×44px touch targets on mobile */
@@ -169,6 +172,20 @@ html, body {
 /* Smooth momentum scrolling on iOS */
 * {
   -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Touch WebKit: backdrop-filter + sticky/fixed stacks can blank the entire compositor
+ * (white screen until hard reload) — especially when the cart drawer mounts after add-to-cart.
+ * Desktop browsers keep blur utilities; phones/tablets get solid paint.
+ */
+@media (hover: none) and (pointer: coarse) {
+  *,
+  *::before,
+  *::after {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
 }
 
 /* ── Mobile typography fluid scale ── */
@@ -207,9 +224,9 @@ html, body {
   will-change: transform;
 }
 
-/* ── Slide-in-right animation (CartDrawer) ── */
+/* ── Slide-in-right animation (CartDrawer) — no opacity:0 (old iOS can stick invisible) ── */
 .animate-slide-in-right {
-  animation: slideInRight 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  animation: slideInRight 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
 /* ── Slide-up animation (mobile sheet) ── */
@@ -234,8 +251,8 @@ html, body {
 }
 
 @keyframes slideInRight {
-  from { opacity: 0; transform: translateX(100%); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
 }
 
 @keyframes slideInUp {
@@ -393,11 +410,27 @@ html, body {
   }
 }
 
-/* ── Hide reCAPTCHA Enterprise badge (invisible v3) ────────────── */
-/* We use programmatic reCAPTCHA; the badge is hidden per Google's  */
-/* Terms: https://developers.google.com/recaptcha/docs/faq         */
+/* ── reCAPTCHA Enterprise badge ─────────────────────────────────── */
+/* Hidden on most pages; shown fully on register / password-reset /  */
+/* account password settings via html.ob-recaptcha-badge.            */
+/* Google defaults to right:-186px (collapsed); force fully on-screen*/
+/* https://developers.google.com/recaptcha/docs/faq                  */
 .grecaptcha-badge {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
+}
+html.ob-recaptcha-badge .grecaptcha-badge {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 2147483646 !important;
+  position: fixed !important;
+  bottom: 14px !important;
+  right: 14px !important;
+  left: auto !important;
+  transform: none !important;
+  width: 256px !important;
+  height: 60px !important;
+  overflow: visible !important;
 }

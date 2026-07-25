@@ -10,6 +10,8 @@ import { AlertTriangle, Truck, Bell } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { productsApi, cartApi, stockNotifyApi } from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
+import { useAuthStore } from '@/stores/authStore';
+import { calculatePrice } from '@/lib/pricing';
 import PricingBlock from '@/components/product/PricingBlock';
 import ProductZoomGallery from '@/components/product/ProductZoomGallery';
 import ProductVariantSelectors from '@/components/product/ProductVariantSelectors';
@@ -19,7 +21,7 @@ import ProductBannerCarousel from '@/components/product/ProductBannerCarousel';
 import ProductRelatedSections from '@/components/product/ProductRelatedSections';
 import ProductActionsBar from '@/components/product/ProductActionsBar';
 import type { ProductDetail } from '@/types';
-import { filterImagesByColor, pickVariant } from '@/lib/variants';
+import { filterImagesByColor, pickVariant, requiresVariantSelection } from '@/lib/variants';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { useTrackRecentlyViewed } from '@/hooks/useRecentlyViewed';
 import RecentlyViewedProducts from '@/components/product/RecentlyViewedProducts';
@@ -33,13 +35,15 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   const t = useTranslations('product');
   const td = useTranslations('productDetail');
   const tc = useTranslations('common');
-  const { setCart, setOpen } = useCartStore();
+  const { setCart, setOpen, addLocalItem } = useCartStore();
+  const { isAuthenticated, user } = useAuthStore();
   const { success, error: toastError } = useToast();
   const router = useShopRouter();
 
   const [activeImage, setActiveImage] = useState(0);
   const [colorSlug, setColorSlug] = useState<string | null>(null);
   const [sizeSel, setSizeSel] = useState<string | null>(null);
+  const [styleSel, setStyleSel] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'description' | 'specs' | 'attributes' | 'tags' | 'reviews' | 'qa'>('description');
   const [stickyQty, setStickyQty] = useState(1);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
@@ -99,21 +103,10 @@ export default function ProductDetailClient({ productId, locale }: Props) {
       }),
   });
 
-  const addMutation = useMutation({
-    mutationFn: (args: { qty: number; variantId?: string | null }) =>
-      cartApi.add(product?.id || productId, args.qty, args.variantId ?? undefined),
-    onError: (err: any) => {
-      const status = err?.response?.status;
-      if (status === 401) toastError('Please log in to add items to cart');
-      else if (status === 404) toastError('This product is currently unavailable');
-      else toastError(tc('error'));
-    },
-  });
-
   const variants = product?.variants ?? [];
   const matchedVariant = useMemo(
-    () => pickVariant(variants, colorSlug, sizeSel),
-    [variants, colorSlug, sizeSel]
+    () => pickVariant(variants, colorSlug, sizeSel, styleSel),
+    [variants, colorSlug, sizeSel, styleSel]
   );
 
   const allImages = product?.images ?? [];
@@ -136,7 +129,43 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   }, [product, matchedVariant, variants]);
 
   const variantPriceOverride = matchedVariant?.priceOverride ?? null;
+  const needsVariantPick = requiresVariantSelection(variants) && !matchedVariant;
   const variantIdForCart = matchedVariant?.id ?? (variants.length === 1 ? variants[0].id : null);
+
+  const addMutation = useMutation({
+    mutationFn: async (args: { qty: number; variantId?: string | null }) => {
+      const id = product?.id || productId;
+      if (!isAuthenticated) {
+        const userType = user?.userType ?? 'retail';
+        const unit =
+          variantPriceOverride ??
+          (product?.pricing
+            ? calculatePrice(userType, product.pricing, args.qty, product?.moq).unitPrice
+            : null) ??
+          product?.pricing?.retail?.price ??
+          product?.retailPrice ??
+          0;
+        return addLocalItem({
+          productId: id,
+          title: product?.title || 'Product',
+          image: product?.primaryImage ?? null,
+          unitPrice: typeof unit === 'number' ? unit : 0,
+          quantity: args.qty,
+          variantId: args.variantId ?? null,
+          stock: effectiveStock,
+          moq: product?.moq,
+          retailMaxQty: (product?.pricing?.retail as { maxQty?: number } | undefined)?.maxQty ?? null,
+        });
+      }
+      return cartApi.add(id, args.qty, args.variantId ?? undefined);
+    },
+    onError: (err: any) => {
+      const status = err?.response?.status;
+      if (status === 401) toastError('Please sign in at checkout to complete your order');
+      else if (status === 404) toastError('This product is currently unavailable');
+      else toastError(tc('error'));
+    },
+  });
 
   // Track recently viewed
   const retailPrice = product?.pricing?.retail?.price ?? product?.retailPrice ?? null;
@@ -144,7 +173,7 @@ export default function ProductDetailClient({ productId, locale }: Props) {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-8">
+      <div className="container-tight py-8">
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
           <div className="aspect-square animate-pulse rounded-2xl bg-muted" />
           <div className="space-y-4">
@@ -170,7 +199,7 @@ export default function ProductDetailClient({ productId, locale }: Props) {
 
   return (
     <>
-    <div className="mx-auto max-w-7xl px-3 pb-28 pt-4 sm:px-6 sm:pb-6 sm:pt-6 lg:px-8 lg:pb-10 lg:pt-10">
+    <div className="container-tight pb-28 pt-4 sm:pb-6 sm:pt-6 lg:pb-10 lg:pt-10">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-12">
         <ProductZoomGallery
           images={visibleImages.length ? visibleImages : allImages}
@@ -250,10 +279,17 @@ export default function ProductDetailClient({ productId, locale }: Props) {
             variants={variants}
             selectedColorSlug={colorSlug}
             selectedSize={sizeSel}
+            selectedStyle={styleSel}
             onColor={setColorSlug}
             onSize={setSizeSel}
-            onReset={() => { setColorSlug(null); setSizeSel(null); }}
+            onStyle={setStyleSel}
+            onReset={() => { setColorSlug(null); setSizeSel(null); setStyleSel(null); }}
           />
+          {needsVariantPick && (
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+              {td('selectOption')}
+            </p>
+          )}
 
           {/* ── Stock warnings ── */}
           {effectiveStock > 0 && effectiveStock < 10 && (
@@ -297,21 +333,33 @@ export default function ProductDetailClient({ productId, locale }: Props) {
           <PricingBlock
             product={product}
             variantPriceOverride={variantPriceOverride}
-            effectiveStock={effectiveStock}
+            effectiveStock={needsVariantPick ? 0 : effectiveStock}
             variantId={variantIdForCart}
-            onAddToCart={(qty, vid) =>
+            onAddToCart={(qty, vid) => {
+              if (needsVariantPick) {
+                toastError(td('selectOption'));
+                return;
+              }
               addMutation.mutate(
                 { qty, variantId: vid },
                 {
                   onSuccess: (data) => {
-                    setCart(data);
-                    setOpen(true);
-                    success(t('addedToCart'));
+                    try {
+                      setCart(data);
+                      setOpen(true);
+                      success(t('addedToCart'));
+                    } catch {
+                      toastError(tc('error'));
+                    }
                   },
                 }
-              )
-            }
+              );
+            }}
             onBuyNow={async (qty, vid) => {
+              if (needsVariantPick) {
+                toastError(td('selectOption'));
+                return;
+              }
               const data = await addMutation.mutateAsync({ qty, variantId: vid });
               setCart(data);
               router.push(`/${locale}/checkout`);
@@ -341,7 +389,10 @@ export default function ProductDetailClient({ productId, locale }: Props) {
     </div>
 
     {/* ── Sticky bottom bar — mobile only ── */}
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 px-4 pb-[env(safe-area-inset-bottom,0px)] pt-3 backdrop-blur-sm sm:hidden">
+    <div
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 px-4 pb-[env(safe-area-inset-bottom,0px)] pt-3 sm:hidden"
+      style={{ backgroundColor: 'hsl(var(--background, 0 0% 100%))' }}
+    >
       <div className="flex items-center gap-3">
         <div className="flex items-center overflow-hidden rounded-lg border border-border">
           <button
@@ -358,27 +409,39 @@ export default function ProductDetailClient({ productId, locale }: Props) {
         </div>
         <button
           type="button"
-          disabled={effectiveStock === 0}
-          onClick={() =>
+          disabled={effectiveStock === 0 || needsVariantPick}
+          onClick={() => {
+            if (needsVariantPick) {
+              toastError(td('selectOption'));
+              return;
+            }
             addMutation.mutate(
               { qty: stickyQty, variantId: variantIdForCart },
               {
                 onSuccess: (data) => {
-                  setCart(data);
-                  setOpen(true);
-                  success(t('addedToCart'));
+                  try {
+                    setCart(data);
+                    setOpen(true);
+                    success(t('addedToCart'));
+                  } catch {
+                    toastError(tc('error'));
+                  }
                 },
               }
-            )
-          }
+            );
+          }}
           className="flex h-11 flex-1 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
         >
-          {effectiveStock === 0 ? tc('outOfStock') : t('addToCart')}
+          {effectiveStock === 0 ? tc('outOfStock') : needsVariantPick ? td('selectOption') : t('addToCart')}
         </button>
         <button
           type="button"
-          disabled={effectiveStock === 0}
+          disabled={effectiveStock === 0 || needsVariantPick}
           onClick={async () => {
+            if (needsVariantPick) {
+              toastError(td('selectOption'));
+              return;
+            }
             const data = await addMutation.mutateAsync({ qty: stickyQty, variantId: variantIdForCart });
             setCart(data);
             router.push(`/${locale}/checkout`);

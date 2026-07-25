@@ -35,8 +35,8 @@ function ProductCard({ product }: Props) {
   const locale = useLocale();
   const tc = useTranslations('common');
   const tp = useTranslations('product');
-  const { setCart, setOpen } = useCartStore();
-  const { user } = useAuthStore();
+  const { setCart, setOpen, addLocalItem } = useCartStore();
+  const { user, isAuthenticated } = useAuthStore();
   const { success, error: toastError } = useToast();
   const [imgError, setImgError] = useState(false);
   const userType = user?.userType ?? 'retail';
@@ -54,14 +54,33 @@ function ProductCard({ product }: Props) {
   const isTopTrending = Array.isArray(product.tags) && product.tags.includes('ob_top_trending');
 
   const addMutation = useMutation({
-    mutationFn: () => cartApi.add(product.id, 1),
+    mutationFn: async () => {
+      if (!isAuthenticated) {
+        return addLocalItem({
+          productId: product.id,
+          title: product.title,
+          image: product.primaryImage ?? null,
+          unitPrice: priceResult.unitPrice,
+          quantity: 1,
+          stock: typeof product.stock === 'number' ? product.stock : null,
+          moq: product.moq,
+          retailMaxQty: (product as { retailMaxQty?: number }).retailMaxQty ?? null,
+        });
+      }
+      return cartApi.add(product.id, 1);
+    },
     onSuccess: (data) => {
-      setCart(data);
-      setOpen(true);
-      success(tp('addedToCart'));
+      try {
+        setCart(data);
+        setOpen(true);
+        success(tp('addedToCart'));
+      } catch {
+        toastError(tc('error'));
+        return;
+      }
       void trackAbOutcome('add_to_cart', {
         value: priceResult.unitPrice,
-        metadata: { productId: product.id, source: product.flashDeal ? 'flash_sale' : 'product_card' },
+        metadata: { productId: product.id, source: product.flashDeal ? 'flash_sale' : 'product_card', guest: !isAuthenticated },
       });
     },
     onError: (err: any) => {
@@ -140,7 +159,7 @@ function ProductCard({ product }: Props) {
 
         {/* Out of stock */}
         {product.stock === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
             <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
               {tc('outOfStock')}
             </span>

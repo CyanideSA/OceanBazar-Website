@@ -15,7 +15,8 @@ import { cn } from '@/lib/utils';
 import Logo from '@/components/shared/Logo';
 import type { User } from '@/types';
 import { normalizePhoneTarget } from '@/lib/phoneNormalize';
-import { signInWithFacebook, signInWithGoogle } from '@/lib/firebase';
+import { signInWithGoogle } from '@/lib/firebase';
+import { loadRecaptchaScript, executeRecaptcha } from '@/lib/recaptcha';
 
 type Step = 'method' | 'otp';
 type Method = 'email' | 'phone' | 'password';
@@ -49,6 +50,10 @@ export default function LoginDialog() {
       setPassword('');
       setError('');
       setSocialLoading(null);
+      void loadRecaptchaScript().catch(() => {});
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'recaptcha-fix',hypothesisId:'H1',location:'LoginDialog.tsx:open',message:'login dialog opened — loading recaptcha',data:{},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
     }
   }, [loginDialogOpen]);
 
@@ -63,13 +68,26 @@ export default function LoginDialog() {
   }, [loginDialogOpen]);
 
   function extractError(e: unknown) {
-    const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } }; message?: string };
-    return err.response?.data?.error?.message
-      ?? err.response?.data?.detail
-      ?? err.response?.data?.message
-      ?? (err.response?.data as { error?: string })?.error
+    const err = e as {
+      response?: {
+        data?: {
+          error?: { message?: string } | string;
+          message?: string;
+          detail?: string;
+          reason?: string;
+        };
+      };
+      message?: string;
+    };
+    const data = err.response?.data;
+    const base =
+      (typeof data?.error === 'object' ? data.error?.message : data?.error)
+      ?? data?.detail
+      ?? data?.message
       ?? err.message
       ?? tc('error');
+    if (data?.reason) return `${base} (${data.reason}${data.detail ? `: ${data.detail}` : ''})`;
+    return base;
   }
 
   function onSuccess(data: { user: User; token?: string; access?: string }) {
@@ -84,6 +102,10 @@ export default function LoginDialog() {
   }
 
   async function handleSendOtp() {
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'recaptcha-fix',hypothesisId:'H1',location:'LoginDialog.tsx:handleSendOtp',message:'login dialog sendOtp attempt',data:{method,blocked:method==='phone'},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    if (method === 'phone') return;
     setLoading(true); setError('');
     try {
       await authApi.sendOtp(resolveTarget(target), 'login');
@@ -104,7 +126,15 @@ export default function LoginDialog() {
   async function handlePasswordLogin() {
     setLoading(true); setError('');
     try {
-      const { data } = await authApi.login(resolveTarget(target), password);
+      const recaptchaToken = await executeRecaptcha('login');
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'recaptcha-fix',hypothesisId:'H1',location:'LoginDialog.tsx:passwordLogin',message:'password login with captcha token',data:{tokenLen:recaptchaToken?.length||0},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      if (!recaptchaToken) {
+        setError('Security check failed to load. Disable blockers for Google reCAPTCHA and try again.');
+        return;
+      }
+      const { data } = await authApi.login(resolveTarget(target), password, recaptchaToken);
       if (data.requiresEmailOtp) {
         setTarget(data.verificationTarget);
         setMethod('email');
@@ -118,10 +148,11 @@ export default function LoginDialog() {
   }
 
   async function handleSocialLogin(provider: 'google' | 'facebook') {
+    if (provider === 'facebook') return;
     setSocialLoading(provider);
     setError('');
     try {
-      const idToken = provider === 'google' ? await signInWithGoogle() : await signInWithFacebook();
+      const idToken = await signInWithGoogle();
       const { data } = await authApi.firebaseLogin(idToken);
       onSuccess(data);
     } catch (e: unknown) {
@@ -146,7 +177,8 @@ export default function LoginDialog() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/50 backdrop-blur-md"
+            className="absolute inset-0"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
             onClick={() => setLoginDialogOpen(false)}
           />
 
@@ -201,20 +233,40 @@ export default function LoginDialog() {
                   <div className="flex overflow-hidden rounded-xl border border-border">
                     {(['email', 'phone', 'password'] as Method[]).map((m) => {
                       const Icon = METHOD_ICONS[m];
+                      const phoneSoon = m === 'phone';
                       return (
                         <button
                           key={m}
                           type="button"
-                          onClick={() => setMethod(m)}
+                          onClick={() => {
+                            // #region agent log
+                            fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'phone-soon',hypothesisId:'H1',location:'LoginDialog.tsx:tabClick',message:'login dialog method tab click',data:{m,phoneSoon,blocked:phoneSoon},timestamp:Date.now()})}).catch(()=>{});
+                            // #endregion
+                            if (!phoneSoon) setMethod(m);
+                          }}
+                          disabled={phoneSoon}
+                          aria-disabled={phoneSoon}
+                          title={phoneSoon ? t('phoneComingSoon') : undefined}
                           className={cn(
                             'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-all',
-                            method === m
-                              ? 'bg-primary text-primary-foreground shadow-sm'
-                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                            phoneSoon
+                              ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-70'
+                              : method === m
+                                ? 'bg-primary text-primary-foreground shadow-sm'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                           )}
                         >
                           <Icon className="h-3.5 w-3.5" />
-                          {m === 'email' ? t('email').split(' ')[0] : m === 'phone' ? t('phone').split(' ')[0] : t('password')}
+                          {m === 'email'
+                            ? t('email').split(' ')[0]
+                            : m === 'phone'
+                              ? (
+                                <span className="flex flex-col items-center leading-none gap-0.5">
+                                  <span>{t('phone').split(' ')[0]}</span>
+                                  <span className="text-[9px] font-medium opacity-80">{t('comingSoon')}</span>
+                                </span>
+                              )
+                              : t('password')}
                         </button>
                       );
                     })}
@@ -238,6 +290,18 @@ export default function LoginDialog() {
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
+                  )}
+
+                  {method === 'password' && (
+                    <div className="flex justify-end -mt-2">
+                      <Link
+                        href={`/${locale}/auth/forgot-password`}
+                        onClick={() => setLoginDialogOpen(false)}
+                        className="text-xs font-semibold text-primary hover:underline"
+                      >
+                        {t('forgotPassword')}
+                      </Link>
+                    </div>
                   )}
 
                   <button
@@ -271,16 +335,13 @@ export default function LoginDialog() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleSocialLogin('facebook')}
-                      disabled={!!socialLoading}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-border py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                      disabled
+                      aria-disabled="true"
+                      title={t('facebookComingSoon')}
+                      className="relative flex cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/30 py-2.5 text-xs font-semibold text-muted-foreground opacity-70"
                     >
-                      {socialLoading === 'facebook' ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                      )}
-                      Facebook
+                      <svg className="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="#1877F2" aria-hidden><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                      <span className="leading-tight">{t('facebookComingSoon')}</span>
                     </button>
                   </div>
 

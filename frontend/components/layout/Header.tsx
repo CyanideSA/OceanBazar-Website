@@ -18,8 +18,9 @@ import { useShopRouter } from '@/lib/shopNavigation';
 import { cn } from '@/lib/utils';
 import FlashSaleBanner from '@/components/flash-sale/FlashSaleBanner';
 import LiveChatLink from '@/components/chat/LiveChatLink';
+import type { FlashSaleMeta } from '@/lib/flashDeals';
 
-export default function Header() {
+export default function Header({ initialFlashSale }: { initialFlashSale?: FlashSaleMeta | null }) {
   const t = useTranslations('nav');
   const tp = useTranslations('product');
   const locale = useLocale();
@@ -55,7 +56,7 @@ export default function Header() {
   return (
     <>
       <div className="sticky top-0 z-50 w-full">
-        <FlashSaleBanner />
+        <FlashSaleBanner initialSale={initialFlashSale} />
         <header className={cn(
           'w-full border-b border-border/60 glass transition-shadow duration-300',
           scrolled ? 'shadow-md' : 'shadow-soft',
@@ -124,7 +125,7 @@ export default function Header() {
         </div>
 
         {/* ── Desktop Header ── */}
-        <div className="hidden w-full px-4 sm:px-6 lg:px-8 md:block">
+        <div className="hidden w-full px-4 sm:px-6 lg:px-[0.5in] md:block">
           {/* Row 1: Logo | Categories | Search | Right cluster */}
           <div className="flex w-full items-center gap-3 pt-3 pb-1">
             <Link href={`/${locale}`} className="header-logo-link flex shrink-0 items-center overflow-visible">
@@ -231,7 +232,8 @@ export default function Header() {
       {/* ── Mobile drawer overlay ── */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-[60] md:hidden"
+          style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
           aria-hidden
           onClick={closeAll}
         />
