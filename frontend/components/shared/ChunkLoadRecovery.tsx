@@ -6,7 +6,8 @@ import { debugSessionLog } from '@/lib/debugSessionLog';
 
 /**
  * Recovers tabs that sat open across a deploy: Next chunk 404s surface as
- * "Something went wrong" until a full reload. Auto-reload once on those errors.
+ * "Something went wrong" until a full reload. Auto-reload at most once.
+ * Does NOT poll script HEAD on visibility — that re-triggered reload loops.
  */
 export default function ChunkLoadRecovery() {
   useEffect(() => {
@@ -14,7 +15,7 @@ export default function ChunkLoadRecovery() {
       const err = event.error || event.message;
       // #region agent log
       debugSessionLog({
-        hypothesisId: 'H4',
+        hypothesisId: 'H9',
         location: 'ChunkLoadRecovery.tsx:window-error',
         message: 'window error',
         data: {
@@ -22,6 +23,7 @@ export default function ChunkLoadRecovery() {
           filename: String(event.filename || '').slice(0, 120),
           chunk: isChunkLoadError(err) || isChunkLoadError(event.message),
         },
+        runId: 'post-test-noloop',
       });
       // #endregion
       if (isChunkLoadError(err) || isChunkLoadError(event.message)) {
@@ -31,13 +33,14 @@ export default function ChunkLoadRecovery() {
     const onRejection = (event: PromiseRejectionEvent) => {
       // #region agent log
       debugSessionLog({
-        hypothesisId: 'H4',
+        hypothesisId: 'H9',
         location: 'ChunkLoadRecovery.tsx:unhandledrejection',
         message: 'unhandledrejection',
         data: {
           reason: String(event.reason || '').slice(0, 200),
           chunk: isChunkLoadError(event.reason),
         },
+        runId: 'post-test-noloop',
       });
       // #endregion
       if (isChunkLoadError(event.reason)) {
@@ -45,31 +48,11 @@ export default function ChunkLoadRecovery() {
       }
     };
 
-    // Returning from background after a long idle — soft check for stale build id.
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      try {
-        const meta = document.querySelector('script[src*="/_next/static/"]') as HTMLScriptElement | null;
-        const src = meta?.src || '';
-        if (!src) return;
-        // Fire-and-forget HEAD; 404 means the old chunk is gone after deploy.
-        fetch(src, { method: 'HEAD', cache: 'no-store' })
-          .then((res) => {
-            if (res.status === 404) reloadOnceForChunkError('stale-next-chunk-404');
-          })
-          .catch(() => {});
-      } catch {
-        /* ignore */
-      }
-    };
-
     window.addEventListener('error', onError);
     window.addEventListener('unhandledrejection', onRejection);
-    document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener('error', onError);
       window.removeEventListener('unhandledrejection', onRejection);
-      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 

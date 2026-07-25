@@ -20,41 +20,52 @@ export function isChunkLoadError(error: unknown): boolean {
   );
 }
 
-const RELOAD_KEY = 'ob_chunk_reload_at';
-const RELOAD_COUNT_KEY = 'ob_chunk_reload_n';
+const RELOAD_KEY = 'ob_chunk_reload_v2';
 
 /**
- * One automatic hard navigation per minute (up to 2 per tab session).
- * Soft `location.reload()` often reuses a broken document/runtime on iOS 15;
- * replace + cache-bust forces a fresh HTML shell and chunk map.
- * After a deploy that changes chunk hashes, the first recovery should land on
- * new URLs; a second attempt covers a race with a mid-deploy HTML shell.
+ * At most ONE automatic recovery per browser profile (localStorage).
+ * Previous sessionStorage + visibility HEAD reloads caused a storefront ↔
+ * "Something went wrong" loop on iPhone 7 / Pixel 4 when a deploy removed
+ * still-referenced chunk URLs (and 404s were cached as immutable).
  */
 export function reloadOnceForChunkError(reason: string): boolean {
   if (typeof window === 'undefined') return false;
-  let count = 0;
+
   try {
-    const last = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
-    count = Number(sessionStorage.getItem(RELOAD_COUNT_KEY) || 0);
-    if (count >= 2) return false;
-    if (Date.now() - last < 15_000) return false;
-    sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
-    sessionStorage.setItem(RELOAD_COUNT_KEY, String(count + 1));
+    if (localStorage.getItem(RELOAD_KEY) === '1') {
+      // #region agent log
+      debugSessionLog({
+        hypothesisId: 'H9',
+        location: 'chunkLoadRecovery.ts:reloadOnce',
+        message: 'skip recovery — already attempted once',
+        data: { reason: String(reason || '').slice(0, 220) },
+        runId: 'post-fix-noloop',
+      });
+      // #endregion
+      return false;
+    }
+    localStorage.setItem(RELOAD_KEY, '1');
   } catch {
-    /* private mode — still try reload */
+    // Private mode: never auto-reload — that path looped forever.
+    // #region agent log
+    debugSessionLog({
+      hypothesisId: 'H9',
+      location: 'chunkLoadRecovery.ts:reloadOnce',
+      message: 'skip recovery — storage unavailable',
+      data: { reason: String(reason || '').slice(0, 220) },
+      runId: 'post-test-noloop',
+    });
+    // #endregion
+    return false;
   }
 
   // #region agent log
   debugSessionLog({
-    hypothesisId: 'H8',
+    hypothesisId: 'H9',
     location: 'chunkLoadRecovery.ts:reloadOnce',
-    message: 'hard cache-bust recovery for chunk error',
-    data: {
-      reason: String(reason || '').slice(0, 220),
-      attempt: count + 1,
-      runId: 'post-fix-hashsalt',
-    },
-    runId: 'post-fix-hashsalt',
+    message: 'single hard recovery for chunk error',
+    data: { reason: String(reason || '').slice(0, 220) },
+    runId: 'post-test-noloop',
   });
   // #endregion
 
@@ -80,8 +91,8 @@ export function reloadOnceForChunkError(reason: string): boolean {
 
   try {
     const url = new URL(window.location.href);
+    url.searchParams.delete('_obcb');
     url.searchParams.set('_obcb', String(Date.now()));
-    // Drop prior bust params that can accumulate
     window.location.replace(url.toString());
   } catch {
     window.location.reload();

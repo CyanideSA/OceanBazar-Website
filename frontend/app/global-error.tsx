@@ -75,7 +75,14 @@ export default function GlobalError({
         ) : null}
         <button
           type="button"
-          onClick={reset}
+          onClick={() => {
+            try {
+              localStorage.removeItem('ob_chunk_reload_v2');
+            } catch {
+              /* ignore */
+            }
+            window.location.replace(`/bn?_obcb=${Date.now()}`);
+          }}
           style={{
             padding: '0.65rem 1.25rem',
             borderRadius: '0.75rem',

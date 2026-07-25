@@ -60,8 +60,15 @@ const nextConfig = {
               headers: securityHeaders,
             },
             {
+              // Avoid `immutable` — browsers were caching chunk 404s forever after deploys,
+              // which trapped older phones in a reload / "Something went wrong" loop.
               source: '/_next/static/:path*',
-              headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+              headers: [
+                {
+                  key: 'Cache-Control',
+                  value: 'public, max-age=3600, stale-while-revalidate=86400',
+                },
+              ],
             },
             // HTML/RSC documents must not be long-cached — stale shells request dead chunk hashes on iOS.
             {
