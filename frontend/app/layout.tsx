@@ -101,19 +101,36 @@ const EARLY_ERROR_CAPTURE = `(function(){
 })();`;
 // #endregion
 
-/** ES5: send low-memory / low-core devices to the Lite storefront unless they chose Full. */
+/**
+ * ES5: only auto-send truly old iOS (≤15) to Lite — same rule as nginx.
+ * Never use deviceMemory / hardwareConcurrency: Safari on modern iPhones
+ * (incl. 14 Pro Max) under-reports cores as ≤4 and was false-positive redirecting.
+ */
 const LITE_DEVICE_HINT = `(function(){
   try {
     if (/[?&]ob_view=full(?:&|$)/.test(location.search)) return;
     var m = document.cookie.match(/(?:^|; )ob_view=([^;]*)/);
     var view = m ? decodeURIComponent(m[1]) : '';
-    if (view === 'full' || view === 'lite') return;
-    var mem = navigator.deviceMemory;
-    var cores = navigator.hardwareConcurrency;
+    if (view === 'full') return;
     var ua = navigator.userAgent || '';
     var oldIos = /iP(hone|od|ad).*OS (1[0-5])_/.test(ua);
-    var weak = oldIos || (typeof mem === 'number' && mem <= 4) || (typeof cores === 'number' && cores > 0 && cores <= 4);
-    if (!weak) return;
+    var mem = navigator.deviceMemory;
+    var cores = navigator.hardwareConcurrency;
+    // #region agent log
+    try {
+      var snap = { sessionId:'078c95', runId:'lite-redirect-fix', hypothesisId:'H2',
+        location:'layout.tsx:LITE_DEVICE_HINT', message:'device hint evaluate',
+        data:{ view: view || null, oldIos: oldIos, mem: (typeof mem==='number'?mem:null),
+          cores: (typeof cores==='number'?cores:null), willRedirect: !!oldIos,
+          ua: ua.slice(0,140) }, timestamp: Date.now() };
+      var body = JSON.stringify({ message:'[debug-078c95] device hint evaluate',
+        url: location.href, userAgent: ua, snapshot: snap });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/client-errors', new Blob([body],{type:'application/json'}));
+      }
+    } catch (e1) {}
+    // #endregion
+    if (!oldIos) return;
     var lite = ${JSON.stringify(
       (process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://lite.oceanbazar.com.bd').replace(/\/$/, ''),
     )};
