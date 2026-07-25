@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Loader2 } from 'lucide-react';
 import { routeKeyFromLocation } from '@/lib/navigationRouteKey';
 import { useNavigationLoadingContext } from '@/components/shared/NavigationLoadingContext';
+import { debugSessionLog } from '@/lib/debugSessionLog';
 
 /**
  * Full-screen loading during in-app navigation.
@@ -59,6 +60,14 @@ export default function NavigationLoadingOverlay() {
       const curKey = routeKeyFromLocation(window.location.pathname, new URLSearchParams(window.location.search).toString());
       if (nextKey === curKey) return;
 
+      // #region agent log
+      debugSessionLog({
+        hypothesisId: 'H1',
+        location: 'NavigationLoadingOverlay.tsx:begin',
+        message: 'nav loading overlay started',
+        data: { href: url.pathname, nextKey, curKey },
+      });
+      // #endregion
       beginLinkNavigation();
     };
 

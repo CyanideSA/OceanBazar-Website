@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
 import { isIosSafari } from '@/lib/iosSafari';
+import { debugSessionLog } from '@/lib/debugSessionLog';
 
 interface Props {
   product: Product;
@@ -74,6 +75,14 @@ function ProductCard({ product }: Props) {
       return cartApi.add(product.id, 1);
     },
     onSuccess: (data) => {
+      // #region agent log
+      debugSessionLog({
+        hypothesisId: 'H5',
+        location: 'ProductCard.tsx:add-success',
+        message: 'add to cart success',
+        data: { productId: product.id, ios: isIosSafari(), itemCount: data?.itemCount ?? null },
+      });
+      // #endregion
       try {
         setCart(data);
         // iOS Safari: skip drawer mount — only update badge. Drawer open was blanking the page.
@@ -83,7 +92,15 @@ function ProductCard({ product }: Props) {
           setOpen(true);
           success(tp('addedToCart'));
         }
-      } catch {
+      } catch (e) {
+        // #region agent log
+        debugSessionLog({
+          hypothesisId: 'H5',
+          location: 'ProductCard.tsx:add-success-catch',
+          message: 'add to cart UI update threw',
+          data: { err: e instanceof Error ? e.message : String(e) },
+        });
+        // #endregion
         toastError(tc('error'));
         return;
       }
@@ -115,6 +132,16 @@ function ProductCard({ product }: Props) {
         className="relative aspect-square overflow-hidden bg-muted"
         data-no-nav-loading="true"
         onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
+        onClick={() => {
+          // #region agent log
+          debugSessionLog({
+            hypothesisId: 'H1',
+            location: 'ProductCard.tsx:image-link-click',
+            message: 'product image link clicked',
+            data: { productId: product.id, ios: isIosSafari() },
+          });
+          // #endregion
+        }}
       >
         {product.primaryImage && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -184,6 +211,14 @@ function ProductCard({ product }: Props) {
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              // #region agent log
+              debugSessionLog({
+                hypothesisId: 'H5',
+                location: 'ProductCard.tsx:quick-add-click',
+                message: 'quick-add clicked on card image',
+                data: { productId: product.id, ios: isIosSafari() },
+              });
+              // #endregion
               addMutation.mutate();
             }}
             disabled={product.stock === 0 || addMutation.isPending}

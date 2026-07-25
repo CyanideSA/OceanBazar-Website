@@ -12,6 +12,7 @@ import { productsApi, cartApi, stockNotifyApi } from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
 import { useAuthStore } from '@/stores/authStore';
 import { isIosSafari } from '@/lib/iosSafari';
+import { debugSessionLog } from '@/lib/debugSessionLog';
 import { calculatePrice } from '@/lib/pricing';
 import PricingBlock from '@/components/product/PricingBlock';
 import ProductZoomGallery from '@/components/product/ProductZoomGallery';
@@ -54,10 +55,30 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifySent, setNotifySent] = useState(false);
 
-  const { data: product, isLoading, error } = useQuery({
+  useEffect(() => {
+    // #region agent log
+    debugSessionLog({
+      hypothesisId: 'H2',
+      location: 'ProductDetailClient.tsx:mount',
+      message: 'product detail client mounted',
+      data: { productId, locale, ios: isIosSafari() },
+    });
+    // #endregion
+  }, [productId, locale]);
+
+  const { data: product, isLoading, error, isFetching, status } = useQuery({
     queryKey: ['product', productId, locale],
-    queryFn: () =>
-      productsApi.get(productId, locale).then((r) => {
+    queryFn: async () => {
+      try {
+        const r = await productsApi.get(productId, locale);
+        // #region agent log
+        debugSessionLog({
+          hypothesisId: 'H2',
+          location: 'ProductDetailClient.tsx:queryFn-ok',
+          message: 'product API resolved',
+          data: { productId, status: r.status, hasData: Boolean(r.data) },
+        });
+        // #endregion
         const raw = r.data as Record<string, any>;
         const d = (raw.product ?? raw) as Record<string, any>;
         return {
@@ -104,7 +125,22 @@ export default function ProductDetailClient({ productId, locale }: Props) {
           hasFreeShipping: Boolean(d.hasFreeShipping ?? d.freeShipping ?? false),
           banners: Array.isArray(d.banners) ? d.banners : [],
         } as ProductDetail;
-      }),
+      } catch (err) {
+        // #region agent log
+        debugSessionLog({
+          hypothesisId: 'H2',
+          location: 'ProductDetailClient.tsx:queryFn-fail',
+          message: 'product API failed',
+          data: {
+            productId,
+            errMsg: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
+            status: (err as { response?: { status?: number } })?.response?.status ?? null,
+          },
+        });
+        // #endregion
+        throw err;
+      }
+    },
   });
 
   const variants = product?.variants ?? [];
@@ -175,9 +211,28 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   const retailPrice = product?.pricing?.retail?.price ?? product?.retailPrice ?? null;
   useTrackRecentlyViewed(product?.id ?? '', product?.title, product?.primaryImage, typeof retailPrice === 'number' ? retailPrice : null);
 
+  useEffect(() => {
+    // #region agent log
+    debugSessionLog({
+      hypothesisId: 'H2',
+      location: 'ProductDetailClient.tsx:query-state',
+      message: 'product query state',
+      data: {
+        productId,
+        isLoading,
+        isFetching,
+        status,
+        hasProduct: Boolean(product),
+        errName: error instanceof Error ? error.name : null,
+        errMsg: error instanceof Error ? error.message.slice(0, 160) : null,
+      },
+    });
+    // #endregion
+  }, [productId, isLoading, isFetching, status, product, error]);
+
   if (isLoading) {
     return (
-      <div className="container-tight py-8">
+      <div className="container-tight py-8" data-ob-debug="product-skeleton">
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
           <div className="aspect-square animate-pulse rounded-2xl bg-muted" />
           <div className="space-y-4">
@@ -190,6 +245,18 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   }
 
   if (error || !product) {
+    // #region agent log
+    debugSessionLog({
+      hypothesisId: 'H6',
+      location: 'ProductDetailClient.tsx:notFound',
+      message: 'product missing/error → notFound()',
+      data: {
+        productId,
+        hasProduct: Boolean(product),
+        errMsg: error instanceof Error ? error.message.slice(0, 160) : String(error ?? ''),
+      },
+    });
+    // #endregion
     notFound();
   }
 
