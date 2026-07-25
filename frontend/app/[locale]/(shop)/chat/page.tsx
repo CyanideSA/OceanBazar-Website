@@ -427,7 +427,6 @@ function EnabledChatPage() {
     socket.on('chat:not_resolved', onNotResolved);
 
     return () => {
-      socket.off('connect', onConnect);
       socket.emit('leave:chat', sessionId);
       socket.off('chat:message', onMsg);
       socket.off('chat:agent_joined', onAgentJoined);
