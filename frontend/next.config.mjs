@@ -107,15 +107,10 @@ const nextConfig = {
           ];
         },
       }),
-  webpack: (config, { isServer, buildId }) => {
-    // iPhone WebKit can cache a failed response for `/_next/static/chunks/*`
-    // under `immutable` forever. Contenthashes for shared intl chunks (e.g. 1567)
-    // were stable across deploys, so recovery reloads kept requesting the poisoned URL.
-    // Salt hashes with buildId so every production build gets fresh chunk filenames.
-    config.output = {
-      ...config.output,
-      hashSalt: `oceanbazar-${buildId || 'dev'}-iosbust-v1`,
-    };
+  webpack: (config, { isServer }) => {
+    // Do not salt contenthashes — changing every chunk URL on each deploy broke
+    // older phones that still referenced prior filenames (and 404s were cached).
+    // Retention of prior `/_next/static` files is handled by docker-entrypoint.sh.
     if (isServer) {
       config.ignoreWarnings = [
         ...(config.ignoreWarnings ?? []),
