@@ -40,7 +40,6 @@ export default function Toaster() {
             role="alert"
             className={cn(
               'flex max-w-xs items-start gap-3 rounded-xl border px-4 py-3 shadow-lg',
-              // opacity+transform toast mount blanks old iOS Safari with the cart drawer
               !skipMotion && 'animate-[slideInUp_0.25s_ease-out]',
               'sm:max-w-sm',
               STYLES[t.variant],

@@ -119,10 +119,16 @@ export default function ChatWidget() {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
+    let token = '';
+    try {
+      token = localStorage.getItem('ob_access_token') || '';
+    } catch {
+      token = '';
+    }
     const socket = io(BFF_URL, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
-      auth: { token: localStorage.getItem('ob_access_token') || '' },
+      transports: ['polling', 'websocket'],
+      auth: { token },
     });
     socketRef.current = socket;
 
@@ -333,13 +339,13 @@ export default function ChatWidget() {
   const onFullPageChat = Boolean(pathname?.includes('/chat'));
   if (!LIVE_CHAT_ENABLED || !isAuthenticated || onFullPageChat) return null;
 
-  // Launcher button
+  // Desktop-only FAB — phones use the bottom-nav Live Chat tab instead.
   const Launcher = (
     <button
       type="button"
       onClick={() => setWidgetState('open')}
       className={cn(
-        'fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-xl ring-4 ring-primary/20 transition-transform hover:scale-105 active:scale-95'
+        'fixed bottom-6 right-6 z-50 hidden h-14 w-14 items-center justify-center rounded-full bg-primary shadow-xl ring-4 ring-primary/20 transition-transform hover:scale-105 active:scale-95 md:flex'
       )}
       aria-label="Open chat"
     >
@@ -356,21 +362,30 @@ export default function ChatWidget() {
 
   return (
     <>
+      {/* Solid tint only — backdrop-blur paints white on old iOS Safari */}
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] sm:hidden',
+          'fixed inset-0 z-40 sm:hidden',
           widgetState !== 'open' ? 'hidden' : ''
         )}
+        style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
         onClick={() => setWidgetState('minimised')}
+        aria-hidden
       />
       <div
         className={cn(
-          'fixed bottom-6 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-border/60 glass shadow-2xl transition-all sm:right-6 sm:w-[420px]',
-          widgetState === 'minimised' ? 'h-14' : 'h-[500px] max-h-[80vh]',
+          'fixed bottom-20 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-border shadow-2xl transition-all sm:bottom-6 sm:right-6 sm:w-[420px]',
+          widgetState === 'minimised' ? 'h-14' : 'h-[min(500px,70vh)] max-h-[70vh]',
         )}
+        style={{
+          backgroundColor: 'hsl(var(--background, 0 0% 100%))',
+          color: 'hsl(var(--foreground, 222 84% 5%))',
+          borderColor: 'hsl(var(--border, 214 32% 91%))',
+        }}
+        data-ob-chat-widget="1"
       >
         {/* Header */}
-        <div className="flex h-14 flex-none items-center justify-between gap-2 border-b border-border/60 bg-primary/95 px-4 backdrop-blur-md">
+        <div className="flex h-14 flex-none items-center justify-between gap-2 border-b border-border/60 bg-primary px-4">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
               <Bot className="h-4 w-4 text-primary-foreground" />

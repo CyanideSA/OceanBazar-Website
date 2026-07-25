@@ -9,10 +9,10 @@ import { cn } from '@/lib/utils';
  */
 export const LOGO_SRC_MASTER_JPG = '/header-logo.jpg';
 /** Bump when replacing public PNGs so browsers skip stale cached logos. */
-export const LOGO_ASSET_VERSION = '5';
-/** Transparent header mark — header, auth, dialogs, welcome popup (no spaces: reliable cache + alpha) */
+export const LOGO_ASSET_VERSION = '7';
+/** Transparent header mark — header, auth, login dialog (no spaces: reliable cache + alpha) */
 export const LOGO_SRC_BRAND = `/ob-brand-logo.png?v=${LOGO_ASSET_VERSION}`;
-/** Transparent footer mark — storefront footer */
+/** Transparent footer mark — storefront footer + Admin CRM shell */
 export const LOGO_SRC_TRANSPARENT = `/ob-footer-logo.png?v=${LOGO_ASSET_VERSION}`;
 
 export type LogoInteraction = 'brand' | 'footer' | 'none';
@@ -44,6 +44,7 @@ export default function Logo({
   void _variant;
   // Footer sits in a narrow grid column on tablet; fixed px width overflows into SHOP.
   const fluid = interaction === 'footer';
+
 
   return (
     <span

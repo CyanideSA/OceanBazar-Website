@@ -12,7 +12,7 @@ export default async function SupportPage(props: { params: Promise<{ locale: str
   const t = await getTranslations({ locale, namespace: 'support' });
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="container-tight py-10">
 
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <div className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/90 to-primary px-8 py-10 text-primary-foreground shadow-soft md:px-12">

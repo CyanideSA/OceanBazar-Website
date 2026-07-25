@@ -52,9 +52,6 @@ export default function AuthSessionBootstrap() {
     const restore = async () => {
       const token = getAccessToken();
       const tokenValid = isAccessTokenValid(token);
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'AuthSessionBootstrap.tsx:restore-start',message:'Reconciling persisted auth session',data:{hasToken:Boolean(token),tokenValid,hasUser:Boolean(user)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
 
       try {
         if (!tokenValid) {
@@ -65,9 +62,6 @@ export default function AuthSessionBootstrap() {
           );
           if (!data?.access) throw new Error('refresh_missing_access');
           setAccessToken(data.access);
-          // #region agent log
-          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'AuthSessionBootstrap.tsx:refresh-ok',message:'Silent refresh restored access token',data:{},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
         }
 
         const me = await authApi.me();
@@ -79,9 +73,6 @@ export default function AuthSessionBootstrap() {
         }
       } catch (err) {
         if (cancelled) return;
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1,S2',location:'AuthSessionBootstrap.tsx:restore-fail',message:'Session restore failed — clearing zombie auth',data:{status:(err as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         logout();
         await authApi.logout().catch(() => {});
       }

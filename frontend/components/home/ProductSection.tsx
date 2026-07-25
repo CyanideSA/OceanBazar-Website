@@ -46,17 +46,21 @@ function SkeletonCard() {
 export default function ProductSection({
   titleKey,
   categoryId,
+  initialProducts,
 }: {
   titleKey: SectionKey;
   categoryId?: string;
+  /** Server-prefetched products so old Safari still sees cards without client JS. */
+  initialProducts?: Product[];
 }) {
   const locale = useLocale();
   const t = useTranslations('home.sections');
   const collection = sectionToCollectionSlug(titleKey);
   const GRID_SIZE = 12;
   const MOBILE_LIMIT = 9;
+  const hasInitial = Array.isArray(initialProducts) && initialProducts.length > 0;
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['home-section', titleKey, categoryId, locale],
     queryFn: () =>
       productsApi
@@ -67,9 +71,13 @@ export default function ProductSection({
           ...(categoryId ? { category: categoryId } : {}),
         })
         .then((r) => r.data),
+    initialData: hasInitial ? { products: initialProducts } : undefined,
+    staleTime: 60_000,
   });
 
-  const products: Product[] = data?.products ?? [];
+  const products: Product[] = data?.products ?? initialProducts ?? [];
+  // Never flash skeletons when SSR already seeded cards (old Safari remounts used to wipe the grid).
+  const showSkeleton = isLoading && products.length < 1;
 
   const title = t(titleKey);
   const allHref = `/${locale}/products/${collection}`;
@@ -77,10 +85,14 @@ export default function ProductSection({
   const desktopGrid = 'sm:grid-cols-6';
   const mobileGrid  = 'grid-cols-3';
 
-  if (!isLoading && products.length < 1) return null;
+  if (!showSkeleton && products.length < 1) return null;
 
   return (
-    <section className="section-padding content-visibility-auto">
+    <section
+      className="section-padding"
+      data-ob-section={titleKey}
+      data-ob-product-count={String(products.length)}
+    >
       <div className="container-tight">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between gap-2 sm:mb-6">
@@ -98,7 +110,7 @@ export default function ProductSection({
         </div>
 
         {/* Product grid */}
-        {isLoading ? (
+        {showSkeleton ? (
           <>
             {/* Mobile skeleton: 9 cards (3×3) */}
             <div className={cn('grid gap-2 sm:hidden', mobileGrid)}>

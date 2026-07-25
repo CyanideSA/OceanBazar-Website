@@ -40,7 +40,7 @@ export default async function SeoContent({
       {faq.length > 0 && <FaqJsonLd faq={faq} />}
 
       {showVisible && (blocks.length > 0 || faq.length > 0) && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 border-t border-border mt-8">
+        <section className="container-tight border-t border-border mt-8 py-8">
           {blocks.map((b, i) => (
             <div key={i} className="prose prose-sm max-w-none text-muted-foreground mb-6">
               {b.heading && <h2 className="text-lg font-bold text-foreground mb-2">{b.heading}</h2>}

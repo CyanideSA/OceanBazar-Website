@@ -9,26 +9,41 @@ export function getSocket(): Socket {
     socket = io(BASE_URL, {
       withCredentials: true,
       autoConnect: false,
-      transports: ['websocket', 'polling'],
+      // Polling first: old iOS Safari / flaky mobile networks often stall on WS upgrade.
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      randomizationFactor: 0.5
+      randomizationFactor: 0.5,
     });
 
-    // Add disconnection handler for error logging or callbacks if needed in components
     socket.on('disconnect', (reason) => {
       console.error('Socket disconnected:', reason);
-      // Optionally, integrate with a global error handler or toast notification
     });
   }
   return socket;
 }
 
-export function connectSocket(auth?: { token?: string; visitorId?: string }): Socket {
+type SocketAuth = { token?: string; visitorId?: string };
+
+/** Connect (or reconnect) with auth. Always refresh auth so guest visitorId is not dropped. */
+export function connectSocket(auth?: SocketAuth): Socket {
   const s = getSocket();
-  if (!s.connected && auth) s.auth = auth;
+  if (auth) {
+    const prev = JSON.stringify(s.auth || {});
+    const merged: SocketAuth = {
+      ...((typeof s.auth === 'object' && s.auth ? s.auth : {}) as SocketAuth),
+      ...auth,
+    };
+    s.auth = merged;
+    const next = JSON.stringify(merged);
+    if (s.connected && prev !== next) {
+      s.disconnect();
+      s.connect();
+      return s;
+    }
+  }
   if (!s.connected) s.connect();
   return s;
 }

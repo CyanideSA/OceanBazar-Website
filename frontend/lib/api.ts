@@ -39,16 +39,13 @@ api.interceptors.request.use((config) => {
     if (token) config.headers.Authorization = `Bearer ${token}`;
     let deviceId = localStorage.getItem('ob_device_id');
     if (!deviceId) {
-      deviceId =
-        (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
-        `device-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+      // Avoid crypto.randomUUID — missing on older Safari; optional-call syntax can also
+      // fail to parse if the bundle is not downleveled for iOS < 13.1.
+      deviceId = `device-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
       localStorage.setItem('ob_device_id', deviceId);
     }
     config.headers['X-Device-Id'] = deviceId;
-    const rid =
-      (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
-      `ob-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-    config.headers['X-Request-Id'] = rid;
+    config.headers['X-Request-Id'] = `ob-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   }
   return config;
 });
@@ -96,27 +93,15 @@ api.interceptors.response.use(
         typeof window !== 'undefined' &&
         (localStorage.getItem('ob-auth')?.includes('"isAuthenticated":true') ||
           useAuthStore.getState().isAuthenticated);
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1,S2',location:'frontend/lib/api.ts:response-401',message:'API request received first 401',data:{url:String(original?.url||''),method:String(original?.method||''),hadToken,claimedAuth},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (!hadToken && !claimedAuth) {
         return Promise.reject(err);
       }
 
       try {
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'frontend/lib/api.ts:refresh-start',message:'Refresh requested after 401 (single-flight shared)',data:{url:String(original?.url||''),sharedInFlight:Boolean(refreshInFlight)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         const access = await refreshAccessToken();
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'frontend/lib/api.ts:refresh-success',message:'Refresh succeeded and request will retry',data:{url:String(original?.url||'')},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         original.headers.Authorization = `Bearer ${access}`;
         return api(original);
       } catch (refreshError) {
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S2',location:'frontend/lib/api.ts:refresh-failure',message:'Refresh failed — clearing zombie auth state',data:{url:String(original?.url||''),refreshStatus:(refreshError as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         clearZombieClientAuth();
         if (typeof window !== 'undefined') {
           const path = window.location.pathname;
@@ -191,9 +176,14 @@ export const cartApi = {
   get: async () => cartRequest(api.get('/cart')),
   add: (productId: string, quantity: number, variantId?: string) =>
     cartRequest(api.post('/cart/add', { productId, quantity, variantId })),
-  update: (productId: string, quantity: number) =>
-    cartRequest(api.put('/cart/update', { productId, quantity })),
-  remove: (productId: string) => cartRequest(api.delete(`/cart/remove/${productId}`)),
+  update: (productId: string, quantity: number, variantId?: string | null) =>
+    cartRequest(api.put('/cart/update', { productId, quantity, variantId: variantId ?? undefined })),
+  remove: (productId: string, variantId?: string | null) =>
+    cartRequest(
+      api.delete(`/cart/remove/${productId}`, {
+        params: variantId ? { variantId } : undefined,
+      })
+    ),
   applyCoupon: (code: string) => api.post('/cart/apply-coupon', { code }),
   applyObPoints: (points: number) => api.post('/cart/apply-ob-points', { points }),
 };

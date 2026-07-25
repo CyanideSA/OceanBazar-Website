@@ -8,21 +8,29 @@ import FlashDealSection from '@/components/home/FlashDealSection';
 import ProductSection from '@/components/home/ProductSection';
 import CategoryGrid from '@/components/product/CategoryGrid';
 import TrustBadgeStrip from '@/components/shared/TrustBadgeStrip';
+import type { HomeCatalog } from '@/lib/fetchHomeCatalog';
 
-export default function HomePageContent() {
+export default function HomePageContent({ catalog }: { catalog?: HomeCatalog }) {
   return (
-    <div className="bg-background">
-      <HeroSection />
+    <div className="bg-background" data-ob-ssr-products={String(
+      Object.values(catalog?.sections ?? {}).reduce((n, s) => n + (s?.products?.length ?? 0), 0)
+    )}>
+      <HeroSection
+        initial={{
+          heroSlides: (catalog?.heroSlides as never) || [],
+          defaultBannerRotationMs: catalog?.defaultBannerRotationMs || 6000,
+        }}
+      />
       <TrustBadgeStrip />
       <FrequentlySearched />
       <ProductBanners />
-      <CategoryGrid />
-      <TopBrandsRow />
-      <FlashDealSection />
-      <ProductSection titleKey="featured" />
-      <ProductSection titleKey="bestRated" />
-      <ProductSection titleKey="mostSold" />
-      <ProductSection titleKey="trending" />
+      <CategoryGrid initialCategories={catalog?.categories} />
+      <TopBrandsRow initialBrands={catalog?.brands} />
+      <FlashDealSection initialCampaigns={catalog?.flashCampaigns} />
+      <ProductSection titleKey="featured" initialProducts={catalog?.sections?.featured?.products} />
+      <ProductSection titleKey="bestRated" initialProducts={catalog?.sections?.bestRated?.products} />
+      <ProductSection titleKey="mostSold" initialProducts={catalog?.sections?.mostSold?.products} />
+      <ProductSection titleKey="trending" initialProducts={catalog?.sections?.trending?.products} />
     </div>
   );
 }

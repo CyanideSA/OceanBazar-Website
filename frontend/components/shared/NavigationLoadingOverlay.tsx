@@ -27,7 +27,11 @@ export default function NavigationLoadingOverlay() {
 
     const ignoreSubtree = (el: EventTarget | null) => {
       if (!(el instanceof Element)) return false;
-      return Boolean(el.closest('[data-no-nav-loading="true"]'));
+      return Boolean(
+        el.closest('[data-no-nav-loading="true"]') ||
+          el.closest('button') ||
+          el.closest('[role="button"]'),
+      );
     };
 
     const onClick = (e: MouseEvent) => {
@@ -66,7 +70,8 @@ export default function NavigationLoadingOverlay() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-background/75 backdrop-blur-sm"
+      className="fixed inset-0 z-[2147483647] flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(15, 23, 42, 0.72)' }}
       role="status"
       aria-live="polite"
       aria-busy="true"

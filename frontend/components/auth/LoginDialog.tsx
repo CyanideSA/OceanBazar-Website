@@ -51,9 +51,6 @@ export default function LoginDialog() {
       setError('');
       setSocialLoading(null);
       void loadRecaptchaScript().catch(() => {});
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'recaptcha-fix',hypothesisId:'H1',location:'LoginDialog.tsx:open',message:'login dialog opened — loading recaptcha',data:{},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     }
   }, [loginDialogOpen]);
 
@@ -102,9 +99,6 @@ export default function LoginDialog() {
   }
 
   async function handleSendOtp() {
-    // #region agent log
-    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'recaptcha-fix',hypothesisId:'H1',location:'LoginDialog.tsx:handleSendOtp',message:'login dialog sendOtp attempt',data:{method,blocked:method==='phone'},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (method === 'phone') return;
     setLoading(true); setError('');
     try {
@@ -127,9 +121,6 @@ export default function LoginDialog() {
     setLoading(true); setError('');
     try {
       const recaptchaToken = await executeRecaptcha('login');
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'recaptcha-fix',hypothesisId:'H1',location:'LoginDialog.tsx:passwordLogin',message:'password login with captcha token',data:{tokenLen:recaptchaToken?.length||0},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (!recaptchaToken) {
         setError('Security check failed to load. Disable blockers for Google reCAPTCHA and try again.');
         return;
@@ -239,9 +230,6 @@ export default function LoginDialog() {
                           key={m}
                           type="button"
                           onClick={() => {
-                            // #region agent log
-                            fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'phone-soon',hypothesisId:'H1',location:'LoginDialog.tsx:tabClick',message:'login dialog method tab click',data:{m,phoneSoon,blocked:phoneSoon},timestamp:Date.now()})}).catch(()=>{});
-                            // #endregion
                             if (!phoneSoon) setMethod(m);
                           }}
                           disabled={phoneSoon}

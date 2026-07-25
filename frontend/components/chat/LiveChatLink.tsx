@@ -27,7 +27,17 @@ export default function LiveChatLink({ href, className, children, onOpen }: Prop
   }
 
   if (!isAuthenticated) {
-    return <Link href={href} className={className}>{children}</Link>;
+    return (
+      <Link
+        href={href}
+        className={className}
+        onClick={() => {
+          onOpen?.();
+        }}
+      >
+        {children}
+      </Link>
+    );
   }
 
   return (

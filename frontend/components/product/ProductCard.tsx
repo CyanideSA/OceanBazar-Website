@@ -36,8 +36,11 @@ function ProductCard({ product }: Props) {
   const locale = useLocale();
   const tc = useTranslations('common');
   const tp = useTranslations('product');
-  const { setCart, setOpen, addLocalItem } = useCartStore();
-  const { user, isAuthenticated } = useAuthStore();
+  const setCart = useCartStore((s) => s.setCart);
+  const setOpen = useCartStore((s) => s.setOpen);
+  const addLocalItem = useCartStore((s) => s.addLocalItem);
+  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { success, error: toastError } = useToast();
   const [imgError, setImgError] = useState(false);
   const userType = user?.userType ?? 'retail';
@@ -73,9 +76,13 @@ function ProductCard({ product }: Props) {
     onSuccess: (data) => {
       try {
         setCart(data);
-        setOpen(true);
-        // Skip toast on iOS Safari — toast opacity animation + cart drawer mount blanks the page.
-        if (!isIosSafari()) success(tp('addedToCart'));
+        // iOS Safari: skip drawer mount — only update badge. Drawer open was blanking the page.
+        if (isIosSafari()) {
+          success(tp('addedToCart'));
+        } else {
+          setOpen(true);
+          success(tp('addedToCart'));
+        }
       } catch {
         toastError(tc('error'));
         return;
@@ -97,7 +104,7 @@ function ProductCard({ product }: Props) {
     <div
       className={cn(
         'group relative flex flex-col overflow-hidden rounded-xl border border-border/60 bg-card text-card-foreground',
-        'shadow-soft transition-all duration-300 content-visibility-auto',
+        'shadow-soft transition-all duration-300',
         'hover:border-primary/20 hover:shadow-soft-lg hover:-translate-y-0.5',
       )}
     >
@@ -106,6 +113,7 @@ function ProductCard({ product }: Props) {
         href={`/${locale}/product/${product.id}`}
         prefetch
         className="relative aspect-square overflow-hidden bg-muted"
+        data-no-nav-loading="true"
         onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
       >
         {product.primaryImage && !imgError ? (
@@ -171,7 +179,13 @@ function ProductCard({ product }: Props) {
         {/* Quick-add overlay */}
         <div className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/60 to-transparent p-3 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
           <button
-            onClick={(e) => { e.preventDefault(); addMutation.mutate(); }}
+            type="button"
+            data-no-nav-loading="true"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              addMutation.mutate();
+            }}
             disabled={product.stock === 0 || addMutation.isPending}
             className={cn(
               'flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground',

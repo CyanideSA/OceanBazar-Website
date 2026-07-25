@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 export function GlassPanel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('glass rounded-2xl border border-border/60 shadow-lg backdrop-blur-xl', className)}>
+    <div className={cn('rounded-2xl border border-border/60 bg-card shadow-lg', className)}>
       {children}
     </div>
   );

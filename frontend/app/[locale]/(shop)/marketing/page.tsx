@@ -12,7 +12,7 @@ export default async function MarketingPage(props: { params: Promise<{ locale: s
   const t = await getTranslations({ locale, namespace: 'marketing' });
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="container-tight py-10">
 
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <div className="mb-12 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/90 to-primary px-8 py-14 text-primary-foreground shadow-soft md:px-14">

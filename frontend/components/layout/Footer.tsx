@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -11,15 +10,27 @@ import PaymentLogos from '@/components/layout/PaymentLogos';
 import Logo, { LOGO_SRC_TRANSPARENT } from '@/components/shared/Logo';
 import OceanVideoBackground from '@/components/shared/OceanVideoBackground';
 import LiveChatLink from '@/components/chat/LiveChatLink';
+import { ThreadsIcon } from '@/components/shared/ThreadsIcon';
+import type { StorefrontPublicSettings } from '@/lib/fetchStorefrontCatalog';
+import {
+  STOREFRONT_SETTINGS_QUERY_KEY,
+  coalesceStorefrontSettings,
+} from '@/lib/storefrontSettings';
 import {
   Facebook,
   Twitter,
   Instagram,
   Youtube,
   Mail,
+  Phone,
 } from 'lucide-react';
 
-export default function Footer() {
+/**
+ * Footer is intentionally free of framer-motion opacity:0 / whileInView gates.
+ * Older Safari often fails to run Next 15 client bundles; motion-hidden content
+ * would stay invisible forever. Links must remain visible in plain SSR HTML.
+ */
+export default function Footer({ initialSettings }: { initialSettings?: StorefrontPublicSettings }) {
   const locale = useLocale();
   const t = useTranslations('footer');
   const tPolicy = useTranslations('policies');
@@ -28,89 +39,95 @@ export default function Footer() {
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterState, setNewsletterState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: { staggerChildren: 0.08, delayChildren: 0.15 },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { y: 24, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] as const },
-    },
-  };
-
-  const { data: siteSettings } = useQuery({
-    queryKey: ['storefront-settings'],
+  const { data: remoteSettings } = useQuery({
+    queryKey: STOREFRONT_SETTINGS_QUERY_KEY,
     queryFn: () => storefrontApi.settings().then((r) => r.data),
     staleTime: 5 * 60 * 1000,
+    initialData: initialSettings,
   });
 
-  const socialLinks = useMemo(() => [
-    { icon: Facebook, href: siteSettings?.facebookUrl || '#', label: 'Facebook' },
-    { icon: Twitter, href: siteSettings?.twitterUrl || '#', label: 'Twitter' },
-    { icon: Instagram, href: siteSettings?.instagramUrl || '#', label: 'Instagram' },
-    { icon: Youtube, href: siteSettings?.youtubeUrl || '#', label: 'YouTube' },
-  ].filter((s) => s.href && s.href !== '#'), [siteSettings]);
+  const siteSettings = useMemo(
+    () => coalesceStorefrontSettings(remoteSettings, initialSettings),
+    [remoteSettings, initialSettings]
+  );
+
+  const supportEmail = String(siteSettings?.supportEmail || '').trim();
+  const supportPhone = String(siteSettings?.supportPhone || '').trim();
+
+  const socialLinks = useMemo(() => {
+    const items: Array<{ icon: typeof Facebook | typeof ThreadsIcon; href: string; label: string }> = [
+      { icon: Facebook, href: siteSettings?.facebookUrl || '', label: 'Facebook' },
+      { icon: Instagram, href: siteSettings?.instagramUrl || '', label: 'Instagram' },
+      { icon: Youtube, href: siteSettings?.youtubeUrl || '', label: 'YouTube' },
+      { icon: ThreadsIcon, href: siteSettings?.threadsUrl || '', label: 'Threads' },
+      { icon: Twitter, href: siteSettings?.twitterUrl || '', label: 'Twitter' },
+    ];
+    if (supportEmail) items.push({ icon: Mail, href: `mailto:${supportEmail}`, label: 'Email' });
+    const visible = items.filter((s) => s.href && s.href !== '#');
+    return visible;
+  }, [siteSettings, supportEmail, supportPhone, initialSettings, remoteSettings]);
 
   return (
-    <footer className="relative overflow-hidden text-white">
+    <footer className="relative overflow-hidden text-white" data-ob-footer="visible">
       <OceanVideoBackground overlayClassName="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-blue-950/85 to-slate-950/95" />
 
-      {/* Animated shimmer across the footer */}
-      <div className="footer-shimmer absolute inset-0 pointer-events-none" />
+      <div className="footer-shimmer absolute inset-0 pointer-events-none" aria-hidden />
 
-      {/* Top accent line */}
       <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-400/50 to-transparent" />
 
-      {/* ── Content ── */}
       <div className="relative z-10">
-        <motion.div
-          className="w-full px-4 sm:px-6 lg:px-8"
-          variants={containerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: '-60px' }}
-        >
-          <div className="grid grid-cols-1 gap-x-6 gap-y-8 pt-14 pb-10 xs:grid-cols-2 sm:gap-x-8 md:grid-cols-4 md:pt-16 md:pb-12">
-            {/* Brand — min-w-0 so the grid column can shrink below the logo's intrinsic size */}
-            <motion.div variants={itemVariants} className="col-span-1 min-w-0 xs:col-span-2 md:col-span-1 md:row-span-1">
-              <div className="mb-3 -ml-1 w-full max-w-[11rem] xs:max-w-[13rem] md:max-w-full lg:max-w-[17.5rem]">
+        <div className="w-full px-4 sm:px-6 lg:px-[0.5in]">
+          <div className="grid grid-cols-1 gap-x-8 gap-y-10 pt-14 pb-10 sm:grid-cols-2 lg:grid-cols-4 lg:pt-16 lg:pb-12">
+            <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+              <div className="mb-3 -ml-1 w-full max-w-[13rem] sm:max-w-[15rem] lg:max-w-[17.5rem]">
                 <Logo
-                  width={282}
-                  height={173}
+                  width={300}
+                  height={85}
                   src={LOGO_SRC_TRANSPARENT}
                   interaction="footer"
                 />
               </div>
-              <p className="text-sm leading-relaxed text-blue-100/80 text-justify md:max-w-xs">
+              <p className="max-w-md text-sm leading-relaxed text-blue-100/80 text-pretty lg:max-w-xs">
                 {t('tagline')}
               </p>
-              <div className="mt-3 flex items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center gap-2.5" data-ob-footer-socials={String(socialLinks.length)}>
                 {socialLinks.map((social) => (
-                  <motion.a
+                  <a
                     key={social.label}
                     href={social.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-blue-200 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
+                    target={social.href.startsWith('mailto:') ? undefined : '_blank'}
+                    rel={social.href.startsWith('mailto:') ? undefined : 'noopener noreferrer'}
+                    className="flex h-11 w-11 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-md transition-colors hover:bg-cyan-300"
                     aria-label={social.label}
-                    whileHover={{ scale: 1.1, y: -2 }}
-                    whileTap={{ scale: 0.95 }}
+                    title={social.label}
                   >
-                    <social.icon className="h-4 w-4" />
-                  </motion.a>
+                    <social.icon className="h-5 w-5" strokeWidth={2.25} />
+                  </a>
                 ))}
+                <Link
+                  href={`/${locale}/contact`}
+                  className="flex h-11 items-center gap-1.5 rounded-full bg-white px-4 text-xs font-bold text-slate-900 shadow-md transition-colors hover:bg-cyan-50"
+                >
+                  {t('contactUs')}
+                </Link>
               </div>
-            </motion.div>
+              {(supportEmail || supportPhone) && (
+                <div className="mt-3 space-y-1.5 text-sm text-blue-50">
+                  {supportEmail ? (
+                    <a href={`mailto:${supportEmail}`} className="flex items-center gap-1.5 hover:text-white">
+                      <Mail className="h-3.5 w-3.5 shrink-0" /> {supportEmail}
+                    </a>
+                  ) : null}
+                  {supportPhone ? (
+                    <a href={`tel:${supportPhone.replace(/\s/g, '')}`} className="flex items-center gap-1.5 hover:text-white">
+                      <Phone className="h-3.5 w-3.5 shrink-0" /> {supportPhone}
+                    </a>
+                  ) : null}
+                </div>
+              )}
+            </div>
 
-            {/* Shop */}
-            <motion.div variants={itemVariants}>
+            <div>
               <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-cyan-300">{t('shopSection')}</h4>
               <ul className="space-y-1.5 text-sm text-blue-100/80">
                 <li><Link href={`/${locale}/products`} className="block py-1 transition-colors hover:text-white">{t('allProducts')}</Link></li>
@@ -119,10 +136,9 @@ export default function Footer() {
                 <li><Link href={`/${locale}/products/most-sold`} className="block py-1 transition-colors hover:text-white">{t('mostSold')}</Link></li>
                 <li><Link href={`/${locale}/products/best-rated`} className="block py-1 transition-colors hover:text-white">{t('bestRated')}</Link></li>
               </ul>
-            </motion.div>
+            </div>
 
-            {/* Account */}
-            <motion.div variants={itemVariants}>
+            <div>
               <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-cyan-300">{tNav('account')}</h4>
               <ul className="space-y-1.5 text-sm text-blue-100/80">
                 <li><Link href={`/${locale}/account`} className="block py-1 transition-colors hover:text-white">{t('myAccount')}</Link></li>
@@ -134,10 +150,9 @@ export default function Footer() {
                 <li><Link href={`/${locale}/returns`} className="block py-1 transition-colors hover:text-white">{t('returnsRefunds')}</Link></li>
                 <li><Link href={`/${locale}/tickets`} className="block py-1 transition-colors hover:text-white">{t('supportTickets')}</Link></li>
               </ul>
-            </motion.div>
+            </div>
 
-            {/* Business & Legal */}
-            <motion.div variants={itemVariants}>
+            <div>
               <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-cyan-300">{t('business')}</h4>
               <ul className="space-y-1.5 text-sm text-blue-100/80">
                 <li><Link href={`/${locale}/marketing`} className="block py-1 transition-colors hover:text-white">{t('whyOceanBazar')}</Link></li>
@@ -147,10 +162,10 @@ export default function Footer() {
                 <li><Link href={`/${locale}/policies/returns`} className="block py-1 transition-colors hover:text-white">{tPolicy('returnPolicy')}</Link></li>
                 <li><Link href={`/${locale}/policies/terms`} className="block py-1 transition-colors hover:text-white">{tPolicy('termsConditions')}</Link></li>
               </ul>
-            </motion.div>
+            </div>
           </div>
 
-          <motion.div variants={itemVariants} className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm sm:p-5">
+          <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm sm:p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <div className="flex-1">
                 <p className="text-sm font-semibold text-white">Newsletter</p>
@@ -193,34 +208,24 @@ export default function Footer() {
             </div>
             {newsletterState === 'done' && <p className="mt-2 text-xs text-emerald-300">Subscribed successfully.</p>}
             {newsletterState === 'error' && <p className="mt-2 text-xs text-rose-300">Could not subscribe right now.</p>}
-          </motion.div>
+          </div>
 
-          {/* Payment methods — full-bleed strip spanning the whole screen width */}
-          <motion.div variants={itemVariants} className="-mx-4 mb-8 sm:-mx-6 lg:-mx-8">
+          <div className="-mx-4 mb-8 sm:-mx-6 lg:-mx-8">
             <PaymentLogos />
-          </motion.div>
+          </div>
 
-          {/* Divider */}
-          <motion.div
-            className="border-t border-white/10"
-            initial={{ scaleX: 0 }}
-            whileInView={{ scaleX: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-          />
+          <div className="border-t border-white/10" />
 
-          {/* Bottom bar */}
-          <motion.div
+          <div
             className="flex flex-col items-center gap-3 py-5 text-center sm:flex-row sm:justify-between sm:text-left"
             style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
-            variants={itemVariants}
           >
             <p className="text-xs text-blue-200/70">
               &copy; {year} Oceanbazar &middot; Made in Bangladesh
             </p>
             <LanguageSelect variant="footer" className="justify-end" />
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       </div>
 
       <style jsx>{`

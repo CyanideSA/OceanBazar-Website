@@ -6,6 +6,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authApi, profileApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import LanguageSelect from '@/components/shared/LanguageSelect';
+import { useRecaptchaBadge } from '@/lib/useRecaptchaBadge';
+import RecaptchaLegalNotice from '@/components/auth/RecaptchaLegalNotice';
 import type { User } from '@/types';
 
 function mapProfileUser(raw: Record<string, unknown>): Partial<User> {
@@ -22,6 +24,8 @@ export default function AccountSettingsPage() {
   const locale = useLocale();
   const { user, updateUser } = useAuthStore();
   const queryClient = useQueryClient();
+
+  useRecaptchaBadge('account-settings-password');
 
   const [name, setName] = useState(user?.name ?? '');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -140,6 +144,7 @@ export default function AccountSettingsPage() {
         >
           {ta('changePassword')}
         </button>
+        <RecaptchaLegalNotice />
       </section>
     </div>
   );

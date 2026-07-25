@@ -325,7 +325,7 @@ export default function TicketsPage() {
   const tickets: TicketRow[] = Array.isArray(rawData) ? rawData : (rawData as any)?.tickets ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-5 sm:py-8">
+    <div className="container-tight py-5 sm:py-8">
 
       {/* Page header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3 sm:mb-6 sm:gap-4">

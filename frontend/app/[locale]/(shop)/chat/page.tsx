@@ -127,10 +127,7 @@ function MessageBubble({
           ) : null}
         </div>
 
-        {/* Quick replies */}
-        {!isUser && msg.quickReplies && msg.quickReplies.length > 0 && isLast && (
-          <QuickReplies replies={msg.quickReplies} onSelect={() => {}} />
-        )}
+        {/* Quick replies are rendered once below the thread (wired to handleQuickReply). */}
 
         {/* Timestamp + read receipt */}
         <div className={cn('mt-1 flex items-center gap-1 text-[10px] text-muted-foreground', isUser ? 'flex-row-reverse' : 'flex-row')}>
@@ -190,7 +187,7 @@ function IntakeFormModal({
     setForm((p) => ({ ...p, [k]: e.target.value }));
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-6">
+    <div className="flex flex-1 flex-col overflow-y-auto p-4 sm:items-center sm:justify-center sm:p-6">
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -327,6 +324,15 @@ function EnabledChatPage() {
 
   const sessionId = session?.id;
   const userId = user ? (user as any).userId || (user as any).id : visitorId;
+  const shellRef = useRef<HTMLDivElement>(null);
+
+  /* ── Old-device layout / capability probe ─── */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const shell = shellRef.current;
+    const rect = shell?.getBoundingClientRect();
+    const cs = shell ? window.getComputedStyle(shell) : null;
+  }, [sessionId]);
 
   /* ── Load existing session on mount ─────────── */
   useEffect(() => {
@@ -358,10 +364,17 @@ function EnabledChatPage() {
   /* ── Socket.IO ─────────────────────────────── */
   useEffect(() => {
     if (!sessionId) return;
+    let token: string | undefined;
+    try {
+      token = typeof window !== 'undefined' ? localStorage.getItem('ob_access_token') || undefined : undefined;
+    } catch {
+      token = undefined;
+    }
     const socket = connectSocket({
-      token: typeof window !== 'undefined' ? localStorage.getItem('ob_access_token') || undefined : undefined,
+      token,
       visitorId: !isAuthenticated ? visitorId : undefined,
     });
+
 
     socket.emit('join:user', userId);
     socket.emit('join:chat', sessionId);
@@ -414,6 +427,7 @@ function EnabledChatPage() {
     socket.on('chat:not_resolved', onNotResolved);
 
     return () => {
+      socket.off('connect', onConnect);
       socket.emit('leave:chat', sessionId);
       socket.off('chat:message', onMsg);
       socket.off('chat:agent_joined', onAgentJoined);
@@ -461,7 +475,11 @@ function EnabledChatPage() {
     setMessages((p) => [...p, optimistic]);
 
     try {
-      const { data } = await api.post('/chat/message', { sessionId, message: msg, visitorId });
+      const { data } = await api.post('/chat/message', {
+        sessionId,
+        message: msg,
+        visitorId: isAuthenticated ? undefined : visitorId,
+      });
       setMessages((p) => {
         const without = p.filter((m) => m.id !== optimistic.id);
         const updated = Array.isArray(data.session?.messages) ? data.session.messages : without;
@@ -473,7 +491,7 @@ function EnabledChatPage() {
     } catch { /* keep optimistic */ } finally {
       setSending(false);
     }
-  }, [draft, sessionId, visitorId, sending]);
+  }, [draft, sessionId, visitorId, sending, isAuthenticated]);
 
   /* ── Typing indicator ──────────────────────── */
   const handleTyping = () => {
@@ -484,7 +502,10 @@ function EnabledChatPage() {
   /* ── Quick reply select ────────────────────── */
   const handleQuickReply = (reply: string) => {
     if (reply === 'Talk to a human' || reply === 'Yes, connect me to an agent') {
-      api.post('/chat/escalate', { sessionId, visitorId })
+      api.post('/chat/escalate', {
+        sessionId,
+        visitorId: isAuthenticated ? undefined : visitorId,
+      })
         .then(({ data }) => {
           if (data.session) setSession((s) => s ? { ...s, status: 'waiting_agent' } : s);
         }).catch(() => null);
@@ -518,8 +539,21 @@ function EnabledChatPage() {
 
   /* ── Render ────────────────────────────────── */
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" style={{ height: 'calc(100vh - 130px)', minHeight: 560, display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="mx-auto max-w-3xl px-3 pt-3 sm:px-6 sm:py-6"
+      style={{ paddingBottom: 'calc(4.75rem + env(safe-area-inset-bottom, 0px))' }}
+    >
+      <div
+        ref={shellRef}
+        data-ob-chat-shell="1"
+        className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+        style={{
+          // Leave room for site header + mobile bottom nav; avoid minHeight:560 which overflows iPhone 7 (667px).
+          height: 'calc(100vh - 9.5rem)',
+          minHeight: 320,
+          maxHeight: 'calc(100vh - 9.5rem)',
+        }}
+      >
 
         {/* No session yet — show intake form */}
         {!session ? (

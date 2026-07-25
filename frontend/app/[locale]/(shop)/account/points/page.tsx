@@ -53,7 +53,7 @@ export default function AccountPointsPage() {
   const perkKeys = ['perkDiscount', 'perkEarlyAccess', 'perkPrioritySupport'] as const;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
+    <div className="container-tight py-8 sm:py-12">
       {/* Back + title */}
       <div className="mb-8 flex items-center gap-3">
         <Link href={`/${locale}/account`} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground">

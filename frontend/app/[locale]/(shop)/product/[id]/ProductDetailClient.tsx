@@ -36,8 +36,11 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   const t = useTranslations('product');
   const td = useTranslations('productDetail');
   const tc = useTranslations('common');
-  const { setCart, setOpen, addLocalItem } = useCartStore();
-  const { isAuthenticated, user } = useAuthStore();
+  const setCart = useCartStore((s) => s.setCart);
+  const setOpen = useCartStore((s) => s.setOpen);
+  const addLocalItem = useCartStore((s) => s.addLocalItem);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
   const { success, error: toastError } = useToast();
   const router = useShopRouter();
 
@@ -347,8 +350,11 @@ export default function ProductDetailClient({ productId, locale }: Props) {
                   onSuccess: (data) => {
                     try {
                       setCart(data);
-                      setOpen(true);
-                      if (!isIosSafari()) success(t('addedToCart'));
+                      if (isIosSafari()) success(t('addedToCart'));
+                      else {
+                        setOpen(true);
+                        success(t('addedToCart'));
+                      }
                     } catch {
                       toastError(tc('error'));
                     }
@@ -422,8 +428,11 @@ export default function ProductDetailClient({ productId, locale }: Props) {
                 onSuccess: (data) => {
                   try {
                     setCart(data);
-                    setOpen(true);
-                    if (!isIosSafari()) success(t('addedToCart'));
+                    if (isIosSafari()) success(t('addedToCart'));
+                    else {
+                      setOpen(true);
+                      success(t('addedToCart'));
+                    }
                   } catch {
                     toastError(tc('error'));
                   }

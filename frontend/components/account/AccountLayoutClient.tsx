@@ -41,9 +41,6 @@ export default function AccountLayoutClient({ children }: { children: React.Reac
       })
       .catch((err) => {
         const status = (err as { response?: { status?: number } })?.response?.status;
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S3',location:'AccountLayoutClient.tsx:me-fail',message:'Account /me failed',data:{status:status??null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         if (status === 401) {
           logout();
           router.replace(`/${locale}/auth/login`);
@@ -53,14 +50,14 @@ export default function AccountLayoutClient({ children }: { children: React.Reac
 
   if (!isAuthenticated) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-16">
+      <div className="container-tight py-16">
         <div className="h-40 animate-pulse rounded-2xl bg-muted" aria-hidden />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-8 pt-4 sm:px-6 sm:pt-6 lg:px-8 lg:pb-8 lg:pt-8">
+    <div className="container-tight pb-8 pt-4 sm:pt-6 lg:pb-8 lg:pt-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-8">
         <AccountSidebar />
         <div className="min-w-0 flex-1">{children}</div>

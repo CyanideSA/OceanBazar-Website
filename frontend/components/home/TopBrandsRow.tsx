@@ -17,7 +17,7 @@ type TopBrandRow = {
 
 const HOME_BRAND_COUNT = 8;
 
-export default function TopBrandsRow() {
+export default function TopBrandsRow({ initialBrands }: { initialBrands?: TopBrandRow[] }) {
   const locale = useLocale();
   const t = useTranslations('home.brands');
 
@@ -25,9 +25,10 @@ export default function TopBrandsRow() {
     queryKey: ['products-top-brands'],
     queryFn: () => productsApi.topBrands().then((r) => r.data as { brands: TopBrandRow[] }),
     staleTime: 5 * 60_000,
+    initialData: initialBrands?.length ? { brands: initialBrands } : undefined,
   });
 
-  const displayed = (data?.brands ?? []).slice(0, HOME_BRAND_COUNT);
+  const displayed = (data?.brands ?? initialBrands ?? []).slice(0, HOME_BRAND_COUNT);
 
   if (!isLoading && displayed.length < 1) return null;
 

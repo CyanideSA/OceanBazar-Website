@@ -3,56 +3,57 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { Home, ShoppingBag, User, LayoutGrid } from 'lucide-react';
-import { useNormalizedCart } from '@/hooks/useNormalizedCart';
-import { useCartStore } from '@/stores/cartStore';
+import { Home, MessageCircle, User, LayoutGrid } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
+import LiveChatLink from '@/components/chat/LiveChatLink';
+import { LIVE_CHAT_ENABLED } from '@/lib/features';
 
 export default function MobileBottomNav() {
   const locale = useLocale();
   const pathname = usePathname();
   const t = useTranslations('nav');
-  const { setOpen: setCartOpen } = useCartStore();
   const { isAuthenticated } = useAuthStore();
-  const safeCart = useNormalizedCart();
-  const count = safeCart?.itemCount ?? 0;
+  const chatHref = `/${locale}/chat`;
+  const chatActive = Boolean(pathname?.includes('/chat'));
 
   const tabs = [
     { href: `/${locale}`, label: t('home'), icon: Home },
     { href: `/${locale}/products`, label: t('products'), icon: LayoutGrid },
-    { href: '__cart__', label: t('cart') ?? 'Cart', icon: ShoppingBag, badge: count },
+    { href: '__live_chat__', label: t('chat'), icon: MessageCircle },
     { href: isAuthenticated ? `/${locale}/account` : `/${locale}/auth/login`, label: t('account'), icon: User },
   ];
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-[55] border-t border-border/60 bg-background/95 backdrop-blur-lg md:hidden"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      className="fixed inset-x-0 bottom-0 z-[55] border-t border-border/60 bg-background md:hidden"
+      style={{
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        backgroundColor: 'hsl(var(--background, 0 0% 100%))',
+      }}
     >
       <div className="flex items-stretch">
         {tabs.map((tab) => {
-          const isCart = tab.href === '__cart__';
-          const isActive = !isCart && pathname === tab.href;
+          const isLiveChat = tab.href === '__live_chat__';
+          const isActive = isLiveChat ? chatActive : pathname === tab.href;
 
-          if (isCart) {
+          if (isLiveChat) {
             return (
-              <button
-                key="cart"
-                type="button"
-                onClick={() => setCartOpen(true)}
-                className="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-muted-foreground transition-colors active:text-primary"
+              <LiveChatLink
+                key="live-chat"
+                href={chatHref}
+                className={cn(
+                  'relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors active:text-primary',
+                  !LIVE_CHAT_ENABLED && 'pointer-events-none',
+                  isActive ? 'text-primary' : 'text-muted-foreground',
+                )}
+                onOpen={() => {
+                }}
               >
-                <span className="relative">
-                  <tab.icon className="h-5 w-5" />
-                  {tab.badge != null && tab.badge > 0 && (
-                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground ring-2 ring-background">
-                      {tab.badge > 99 ? '99+' : tab.badge}
-                    </span>
-                  )}
-                </span>
-                <span className="text-[10px] font-medium">{tab.label}</span>
-              </button>
+                <tab.icon className="h-5 w-5" />
+                <span className={cn('text-[10px] font-medium', isActive && 'font-semibold')}>{tab.label}</span>
+                {isActive && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-primary" />}
+              </LiveChatLink>
             );
           }
 

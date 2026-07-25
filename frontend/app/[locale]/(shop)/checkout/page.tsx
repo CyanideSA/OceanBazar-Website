@@ -7,6 +7,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useShopRouter } from '@/lib/shopNavigation';
 import { ChevronDown, Loader2, MapPin, Package, CreditCard, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
 import { useCartStore } from '@/stores/cartStore';
+import { useAuthStore } from '@/stores/authStore';
+import { useUIStore } from '@/stores/uiStore';
 import { cartApi, ordersApi, profileApi } from '@/lib/api';
 import { normalizeCartSummary } from '@/lib/cart';
 import { canRetryOnlinePayment, startOrderPayment } from '@/lib/orderPayment';
@@ -25,21 +27,34 @@ import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
 function CheckoutLoginRequired({ locale }: { locale: string }) {
   const t = useTranslations('checkout');
   const loginVariant = useAbVariant(AB_TESTS.CHECKOUT_LOGIN);
+  const setLoginDialogOpen = useUIStore((s) => s.setLoginDialogOpen);
+  const cart = useCartStore((s) => s.cart);
+  const itemCount = cart?.itemCount ?? 0;
+
   return (
     <div className="mx-auto max-w-lg px-4 py-20 text-center">
       <Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/40" />
       <h1 className="text-xl font-semibold text-foreground">{t('loginRequiredTitle')}</h1>
-      <p className="mt-2 text-muted-foreground">
-        {loginVariant === 'B'
-          ? 'Sign in securely to keep this cart, earn OB Points, and track delivery from one place.'
-          : t('loginRequiredHint')}
-      </p>
-      <Link
-        href={`/${locale}/auth/login?next=/${locale}/checkout`}
-        className="mt-6 inline-block rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground"
-      >
-        {loginVariant === 'B' ? 'Sign in & keep my benefits' : t('loginToCheckout')}
-      </Link>
+      {itemCount > 0 && (
+        <p className="mt-3 text-sm font-medium text-foreground">
+          {itemCount} {itemCount === 1 ? 'item' : 'items'} waiting in your cart
+        </p>
+      )}
+      <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+        <button
+          type="button"
+          onClick={() => setLoginDialogOpen(true)}
+          className="inline-block rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground"
+        >
+          {loginVariant === 'B' ? 'Sign in & keep my benefits' : t('loginToCheckout')}
+        </button>
+        <Link
+          href={`/${locale}/auth/register?next=/${locale}/checkout`}
+          className="inline-block rounded-xl border border-border px-6 py-3 font-semibold text-foreground hover:bg-accent"
+        >
+          {t('createAccountToCheckout')}
+        </Link>
+      </div>
     </div>
   );
 }
@@ -54,6 +69,7 @@ export default function CheckoutPage() {
   const checkoutCtaVariant = useAbVariant(AB_TESTS.CHECKOUT_CTA);
   const couponVariant = useAbVariant(AB_TESTS.COUPON_DISCOVERY);
   const { cart, appliedCoupon, appliedObPoints, setCart, clearCart, setAppliedCoupon } = useCartStore();
+  const { isAuthenticated } = useAuthStore();
 
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState('');
@@ -106,6 +122,7 @@ export default function CheckoutPage() {
 
   const { data: cartData, isLoading: cartLoading, isError: cartError, error: cartQueryError } = useQuery({
     queryKey: ['cart'],
+    enabled: isAuthenticated,
     queryFn: async () => {
       const summary = await cartApi.get();
       return summary ?? normalizeCartSummary({ items: [] });
@@ -225,11 +242,16 @@ export default function CheckoutPage() {
     },
     onError: (e: unknown) => {
       const ax = e as { response?: { status?: number; data?: { error?: string; errors?: string[] } } };
-      setError(ax.response?.data?.error ?? tc('error'));
+      const fromList = ax.response?.data?.errors?.filter(Boolean).join(' ');
+      setError(ax.response?.data?.error ?? fromList ?? tc('error'));
     },
   });
 
   const cartStatus = (cartQueryError as { response?: { status?: number } } | undefined)?.response?.status;
+
+  if (!isAuthenticated) {
+    return <CheckoutLoginRequired locale={locale} />;
+  }
 
   if (cartLoading) {
     return (
@@ -537,7 +559,7 @@ export default function CheckoutPage() {
 
   return (
     <>
-    <div className="mx-auto max-w-7xl px-3 pb-32 pt-3 sm:px-6 sm:py-6 lg:px-8 lg:py-10">
+    <div className="container-tight pb-32 pt-3 sm:py-6 lg:py-10">
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2 border-b border-border pb-3 sm:mb-5 sm:gap-3 sm:pb-4">
         <div>

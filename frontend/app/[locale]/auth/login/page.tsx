@@ -10,14 +10,13 @@ import { validatePassword } from '@/lib/passwordRules';
 import {
   confirmPhoneSignIn,
   resetPhoneSignIn,
-  signInWithFacebook,
   signInWithGoogle,
-  startPhoneSignIn,
 } from '@/lib/firebase';
 import Logo from '@/components/shared/Logo';
 import { loadRecaptchaScript, executeRecaptcha } from '@/lib/recaptcha';
 import type { User } from '@/types';
 import { normalizePhoneTarget } from '@/lib/phoneNormalize';
+import { resolveAuthNextPath } from '@/lib/authNext';
 
 type Step = 'method' | 'otp' | 'password';
 type Method = 'email' | 'phone' | 'password';
@@ -31,6 +30,8 @@ export default function LoginPage() {
   const locale = params.locale as string;
   const { setUser } = useAuthStore();
 
+  const goAfterLogin = () => router.push(resolveAuthNextPath(locale));
+
   const [method, setMethod] = useState<Method>('email');
   const [step, setStep] = useState<Step>('method');
   const [target, setTarget] = useState('');
@@ -41,7 +42,9 @@ export default function LoginPage() {
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
   const [error, setError] = useState('');
 
-  useEffect(() => { loadRecaptchaScript(); }, []);
+  useEffect(() => {
+    loadRecaptchaScript();
+  }, []);
 
   function resolveTarget(value: string) {
     const v = value.trim();
@@ -49,6 +52,7 @@ export default function LoginPage() {
   }
 
   async function handleSendOtp() {
+    if (method === 'phone') return;
     setLoading(true); setError('');
     try {
       await authApi.sendOtp(resolveTarget(target), 'login');
@@ -73,7 +77,7 @@ export default function LoginPage() {
         : await authApi.verifyOtp(resolveTarget(target), otp);
       const token = data.token || data.access;
       setUser(data.user as User, token);
-      router.push(`/${locale}`);
+      goAfterLogin();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } } };
       const msg = err.response?.data?.error?.message 
@@ -85,39 +89,14 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   }
 
-  async function handleFirebasePhoneSend() {
-    setLoading(true); setError('');
-    try {
-      await startPhoneSignIn(
-        normalizePhoneTarget(target),
-        'firebase-phone-sign-in-button',
-        locale === 'bn' ? 'bn' : 'en',
-      );
-      setOtpProvider('firebase');
-      setStep('otp');
-    } catch (e: unknown) {
-      const err = e as {
-        code?: string;
-        message?: string;
-        response?: { data?: { error?: { message?: string } | string; message?: string; detail?: string } };
-      };
-      const apiError = err.response?.data?.error;
-      setError(
-        (typeof apiError === 'object' ? apiError?.message : apiError)
-        ?? err.response?.data?.detail
-        ?? err.response?.data?.message
-        ?? err.message
-        ?? tc('error'),
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handlePasswordLogin() {
     setLoading(true); setError('');
     try {
       const recaptchaToken = await executeRecaptcha('login');
+      if (!recaptchaToken) {
+        setError('Security check failed to load. Disable blockers for Google reCAPTCHA and try again.');
+        return;
+      }
       const { data } = await authApi.login(resolveTarget(target), password, recaptchaToken);
       if (data.requiresEmailOtp) {
         setTarget(data.verificationTarget);
@@ -129,26 +108,28 @@ export default function LoginPage() {
       }
       const token = data.token || data.access;
       setUser(data.user as User, token);
-      router.push(`/${locale}`);
+      goAfterLogin();
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } } };
-      const msg = err.response?.data?.error?.message 
-        ?? err.response?.data?.detail 
-        ?? err.response?.data?.message 
-        ?? (err.response?.data as any)?.error 
+      const err = e as { response?: { data?: { error?: { message?: string } | string; message?: string; detail?: string; reason?: string } } };
+      const data = err.response?.data;
+      const base =
+        (typeof data?.error === 'object' ? data.error?.message : data?.error)
+        ?? data?.detail
+        ?? data?.message
         ?? tc('error');
-      setError(msg);
+      setError(data?.reason ? `${base} (${data.reason}${data.detail ? `: ${data.detail}` : ''})` : base);
     } finally { setLoading(false); }
   }
 
   async function handleSocialLogin(provider: 'google' | 'facebook') {
+    if (provider === 'facebook') return;
     setSocialLoading(provider); setError('');
     try {
-      const idToken = provider === 'google' ? await signInWithGoogle() : await signInWithFacebook();
+      const idToken = await signInWithGoogle();
       const { data } = await authApi.firebaseLogin(idToken);
       const token = data.token || data.access;
       setUser(data.user as User, token);
-      router.push(`/${locale}`);
+      goAfterLogin();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } } };
       // Firebase popup closed by user is not a real error
@@ -188,17 +169,39 @@ export default function LoginPage() {
             <div className="space-y-4">
               {/* Method tabs */}
               <div className="flex rounded-lg border border-border overflow-hidden">
-                {(['email', 'phone', 'password'] as Method[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMethod(m)}
-                    className={`flex-1 py-2 text-sm font-medium transition-colors ${
-                      method === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
-                    }`}
-                  >
-                    {m === 'email' ? t('email').split(' ')[0] : m === 'phone' ? t('phone').split(' ')[0] : t('password')}
-                  </button>
-                ))}
+                {(['email', 'phone', 'password'] as Method[]).map((m) => {
+                  const phoneSoon = m === 'phone';
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        if (!phoneSoon) setMethod(m);
+                      }}
+                      disabled={phoneSoon}
+                      aria-disabled={phoneSoon}
+                      title={phoneSoon ? t('phoneComingSoon') : undefined}
+                      className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                        phoneSoon
+                          ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-70'
+                          : method === m
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-accent'
+                      }`}
+                    >
+                      {m === 'email'
+                        ? t('email').split(' ')[0]
+                        : m === 'phone'
+                          ? (
+                            <span className="inline-flex flex-col items-center leading-none gap-0.5">
+                              <span>{t('phone').split(' ')[0]}</span>
+                              <span className="text-[9px] font-medium opacity-80">{t('comingSoon')}</span>
+                            </span>
+                          )
+                          : t('password')}
+                    </button>
+                  );
+                })}
               </div>
 
               <input
@@ -237,23 +240,6 @@ export default function LoginPage() {
                 {loading ? tc('loading') : method === 'password' ? t('login') : t('sendOtp')}
               </button>
 
-              {method === 'phone' && (
-                <>
-                  <button
-                    id="firebase-phone-sign-in-button"
-                    type="button"
-                    onClick={handleFirebasePhoneSend}
-                    disabled={loading || !target}
-                    className="w-full border border-primary/40 text-primary py-3 rounded-xl font-semibold hover:bg-primary/5 disabled:opacity-50 transition-colors"
-                  >
-                    Verify with Firebase SMS
-                  </button>
-                  <p className="text-center text-xs leading-relaxed text-muted-foreground">
-                    Phone verification may send an SMS. Standard messaging rates may apply.
-                  </p>
-                </>
-              )}
-
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
                 <div className="relative text-center text-xs text-muted-foreground bg-card px-3 w-fit mx-auto">{t('orContinueWith')}</div>
@@ -273,16 +259,14 @@ export default function LoginPage() {
                   Google
                 </button>
                 <button
-                  onClick={() => handleSocialLogin('facebook')}
-                  disabled={!!socialLoading}
-                  className="flex items-center justify-center gap-1.5 border border-border rounded-xl py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title={t('facebookComingSoon')}
+                  className="relative flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-muted/30 py-2.5 text-sm font-medium text-muted-foreground opacity-70"
                 >
-                  {socialLoading === 'facebook' ? (
-                    <span className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
-                  ) : (
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                  )}
-                  Facebook
+                  <svg className="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="#1877F2" aria-hidden><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                  <span className="leading-tight">{t('facebookComingSoon')}</span>
                 </button>
               </div>
 

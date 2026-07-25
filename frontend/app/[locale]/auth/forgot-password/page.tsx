@@ -9,6 +9,8 @@ import { validatePassword, getPasswordStrength } from '@/lib/passwordRules';
 import Logo from '@/components/shared/Logo';
 import { CheckCircle2, Mail, Phone } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useRecaptchaBadge } from '@/lib/useRecaptchaBadge';
+import RecaptchaLegalNotice from '@/components/auth/RecaptchaLegalNotice';
 
 type Step = 'choose' | 'target' | 'otp' | 'newpw' | 'success';
 type Method = 'email' | 'phone';
@@ -22,6 +24,8 @@ export default function ForgotPasswordPage() {
   const router = useRouter();
   const params = useParams();
   const locale = params.locale as string;
+
+  useRecaptchaBadge('forgot-password');
 
   const [step, setStep] = useState<Step>('choose');
   const [method, setMethod] = useState<Method>('email');
@@ -138,6 +142,7 @@ export default function ForgotPasswordPage() {
               >
                 {loading ? tc('loading') : t('sendOtp')}
               </button>
+              <RecaptchaLegalNotice />
               <button
                 onClick={() => { setStep('choose'); setTarget(''); setError(''); }}
                 className="w-full text-muted-foreground text-sm hover:underline"
@@ -246,6 +251,7 @@ export default function ForgotPasswordPage() {
               >
                 {loading ? tc('loading') : t('resetPassword')}
               </button>
+              <RecaptchaLegalNotice />
               <button
                 onClick={() => { setStep('otp'); setNewPassword(''); setConfirmPw(''); setPwErrors([]); setError(''); }}
                 className="w-full text-muted-foreground text-sm hover:underline"

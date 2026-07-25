@@ -154,9 +154,6 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
         const ax = err as { response?: { status?: number; data?: { code?: string } } };
         // After SSL return, access token may be stale — refresh once then retry
         if (ax.response?.status === 401 || ax.response?.status === 404) {
-          // #region agent log
-          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'pre-fix',hypothesisId:'A',location:'frontend/components/orders/OrderDetailClient.tsx:manual-refresh',message:'Order detail triggering manual auth refresh',data:{orderId,status:ax.response?.status??null,code:ax.response?.data?.code??null},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           try {
             await authApi.refresh();
             const r2 = await ordersApi.get(orderId);

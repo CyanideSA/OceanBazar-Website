@@ -60,7 +60,7 @@ export function ChatMessageRenderer({ msg, userInitial = 'U', onQuickReply, onAc
       <div
         className={cn(
           'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm',
-          isUser ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm glass text-foreground',
+          isUser ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted text-foreground',
         )}
       >
         {!isUser && (
