@@ -261,6 +261,7 @@ function ProductCard({ product }: Props) {
         <Link
           href={productHref}
           prefetch={false}
+          data-no-nav-loading="true"
           onMouseEnter={() => {
             if (!isIosWebKit()) router.prefetch(productHref);
           }}
