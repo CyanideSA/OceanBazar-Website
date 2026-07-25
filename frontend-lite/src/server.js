@@ -12,6 +12,7 @@ const { mountCart } = require('./routes/cart');
 const { mountCheckout } = require('./routes/checkout');
 const { mountAuth } = require('./routes/auth');
 const { mountAccount } = require('./routes/account');
+const { BASE_PATH, bp } = require('./config');
 
 const PORT = Number(process.env.PORT || 3001);
 const app = express();
@@ -31,21 +32,25 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
-app.use(
+
+// Docker / nginx health (no prefix)
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, service: 'oceanbazar-web-lite', basePath: BASE_PATH || '/' });
+});
+
+const root = express.Router();
+
+root.use(
   express.static(path.join(__dirname, '..', 'public'), {
     maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
     etag: true,
   }),
 );
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'oceanbazar-web-lite' });
-});
+root.use(preferRouter);
 
-app.use(preferRouter);
-
-app.get('/', (_req, res) => {
-  res.redirect(302, `/${DEFAULT_LOCALE}`);
+root.get('/', (_req, res) => {
+  res.redirect(302, bp(`/${DEFAULT_LOCALE}`));
 });
 
 const shop = localeRouter((router) => {
@@ -56,9 +61,9 @@ const shop = localeRouter((router) => {
   mountAccount(router);
 });
 
-app.use(shop);
+root.use(shop);
 
-app.use((err, req, res, _next) => {
+root.use((err, req, res, _next) => {
   console.error('[lite]', err);
   const locale = req.locale || DEFAULT_LOCALE;
   if (res.headersSent) return;
@@ -68,6 +73,8 @@ app.use((err, req, res, _next) => {
     locale,
     t: (k) => k,
     helpers: require('./helpers'),
+    bp,
+    basePath: BASE_PATH,
     settings: {},
     user: null,
     cartCount: 0,
@@ -85,7 +92,7 @@ app.use((err, req, res, _next) => {
   });
 });
 
-app.use((req, res) => {
+root.use((req, res) => {
   const locale = req.locale || DEFAULT_LOCALE;
   res.status(404).render('error', {
     title: '404',
@@ -93,6 +100,8 @@ app.use((req, res) => {
     locale,
     t: (k) => k,
     helpers: require('./helpers'),
+    bp,
+    basePath: BASE_PATH,
     settings: {},
     user: null,
     cartCount: 0,
@@ -110,6 +119,13 @@ app.use((req, res) => {
   });
 });
 
+if (BASE_PATH) {
+  app.use(BASE_PATH, root);
+  app.get('/', (_req, res) => res.redirect(302, bp(`/${DEFAULT_LOCALE}`)));
+} else {
+  app.use(root);
+}
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`oceanbazar-web-lite listening on :${PORT}`);
+  console.log(`oceanbazar-web-lite listening on :${PORT} basePath=${BASE_PATH || '/'}`);
 });

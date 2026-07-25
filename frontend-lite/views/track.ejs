@@ -3,7 +3,7 @@
 
 <section class="section narrow">
   <h1><%= t('orderTracking') %></h1>
-  <form method="post" action="/<%= locale %>/track" class="stack">
+  <form method="post" action="<%= basePath %>/<%= locale %>/track" class="stack">
     <label class="field">
       <span><%= t('orderNumber') %></span>
       <input name="orderNumber" value="<%= typeof orderNumber !== 'undefined' ? orderNumber : '' %>" required />

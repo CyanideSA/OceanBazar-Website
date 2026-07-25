@@ -1,5 +1,6 @@
 const { authedFetch, requireAuth, readTokens } = require('../session');
 const { unwrapList } = require('../helpers');
+const { bp } = require('../config');
 
 function mountCart(router) {
   router.get('/:locale/cart', async (req, res) => {
@@ -45,9 +46,9 @@ function mountCart(router) {
         },
       });
     } catch (err) {
-      return res.redirect(`/${locale}/cart?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${bp(`/${locale}/cart`)}?error=${encodeURIComponent(err.message)}`);
     }
-    res.redirect(`/${locale}/cart`);
+    res.redirect(bp(`/${locale}/cart`));
   });
 
   router.post('/:locale/cart/remove', requireAuth, async (req, res) => {
@@ -57,9 +58,9 @@ function mountCart(router) {
     try {
       await authedFetch(req, res, `/api/cart/remove/${productId}${qs}`, { method: 'DELETE' });
     } catch (err) {
-      return res.redirect(`/${locale}/cart?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${bp(`/${locale}/cart`)}?error=${encodeURIComponent(err.message)}`);
     }
-    res.redirect(`/${locale}/cart`);
+    res.redirect(bp(`/${locale}/cart`));
   });
 
   router.post('/:locale/cart/coupon', requireAuth, async (req, res) => {
@@ -70,9 +71,9 @@ function mountCart(router) {
         body: { code: String(req.body.code || '').trim() },
       });
     } catch (err) {
-      return res.redirect(`/${locale}/cart?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${bp(`/${locale}/cart`)}?error=${encodeURIComponent(err.message)}`);
     }
-    res.redirect(`/${locale}/cart`);
+    res.redirect(bp(`/${locale}/cart`));
   });
 
   router.post('/:locale/cart/points', requireAuth, async (req, res) => {
@@ -83,9 +84,9 @@ function mountCart(router) {
         body: { points: Number(req.body.points) || 0 },
       });
     } catch (err) {
-      return res.redirect(`/${locale}/cart?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${bp(`/${locale}/cart`)}?error=${encodeURIComponent(err.message)}`);
     }
-    res.redirect(`/${locale}/cart`);
+    res.redirect(bp(`/${locale}/cart`));
   });
 }
 

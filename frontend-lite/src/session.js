@@ -148,8 +148,11 @@ async function logoutUser(req, res) {
 function requireAuth(req, res, next) {
   const { accessToken, refreshToken } = readTokens(req);
   if (!accessToken && !refreshToken) {
+    const { bp } = require('./config');
     const locale = req.locale || 'bn';
-    return res.redirect(`/${locale}/auth/login?next=${encodeURIComponent(req.originalUrl)}`);
+    return res.redirect(
+      `${bp(`/${locale}/auth/login`)}?next=${encodeURIComponent(req.originalUrl)}`,
+    );
   }
   return next();
 }

@@ -3,7 +3,7 @@
 
 <section class="section narrow">
   <h1><%= t('register') %></h1>
-  <form method="post" action="/<%= locale %>/auth/register" class="stack">
+  <form method="post" action="<%= basePath %>/<%= locale %>/auth/register" class="stack">
     <input type="hidden" name="next" value="<%= next %>" />
     <label class="field"><span><%= t('name') %></span><input name="name" required /></label>
     <label class="field"><span><%= t('phone') %></span><input name="phone" /></label>
@@ -11,7 +11,7 @@
     <label class="field"><span><%= t('password') %></span><input type="password" name="password" required minlength="6" /></label>
     <button type="submit" class="btn btn-primary"><%= t('register') %></button>
   </form>
-  <p class="muted"><a href="/<%= locale %>/auth/login"><%= t('login') %></a></p>
+  <p class="muted"><a href="<%= basePath %>/<%= locale %>/auth/login"><%= t('login') %></a></p>
 </section>
 
 <%- include('partials/footer') %>

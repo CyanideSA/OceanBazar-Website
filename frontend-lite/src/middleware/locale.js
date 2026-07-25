@@ -3,12 +3,13 @@ const helpers = require('../helpers');
 const { loadUser, readTokens } = require('../session');
 const { bffGet } = require('../bffClient');
 const { authedFetch } = require('../session');
+const { BASE_PATH, bp } = require('../config');
 
 async function attachLocals(req, res, next) {
   const locale = req.locale || DEFAULT_LOCALE;
   const t = makeT(locale);
   const fullSiteOrigin = (process.env.FULL_SITE_ORIGIN || 'https://oceanbazar.com.bd').replace(/\/$/, '');
-  const liteOrigin = (process.env.PUBLIC_ORIGIN || '').replace(/\/$/, '');
+  const liteOrigin = (process.env.PUBLIC_ORIGIN || '').replace(/\/$/, '') || `${fullSiteOrigin}${BASE_PATH}`;
 
   let user = null;
   let settings = {};
@@ -52,6 +53,8 @@ async function attachLocals(req, res, next) {
     locales: LOCALES,
     t,
     helpers,
+    bp,
+    basePath: BASE_PATH,
     user,
     settings,
     flash,

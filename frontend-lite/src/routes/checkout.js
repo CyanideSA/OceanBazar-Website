@@ -1,6 +1,7 @@
 const { authedFetch, requireAuth } = require('../session');
 const { normalizeCart } = require('./cart');
 const { unwrapList } = require('../helpers');
+const { bp } = require('../config');
 
 function mountCheckout(router) {
   router.get('/:locale/checkout', requireAuth, async (req, res) => {
@@ -12,11 +13,11 @@ function mountCheckout(router) {
       const { data } = await authedFetch(req, res, '/api/cart');
       cart = normalizeCart(data);
     } catch (err) {
-      return res.redirect(`/${locale}/cart?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${bp(`/${locale}/cart`)}?error=${encodeURIComponent(err.message)}`);
     }
 
     if (!cart.items.length) {
-      return res.redirect(`/${locale}/cart`);
+      return res.redirect(bp(`/${locale}/cart`));
     }
 
     try {
@@ -52,9 +53,9 @@ function mountCheckout(router) {
         },
       });
     } catch (err) {
-      return res.redirect(`/${locale}/checkout?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${bp(`/${locale}/checkout`)}?error=${encodeURIComponent(err.message)}`);
     }
-    res.redirect(`/${locale}/checkout`);
+    res.redirect(bp(`/${locale}/checkout`));
   });
 
   router.post('/:locale/checkout/place', requireAuth, async (req, res) => {
@@ -65,7 +66,7 @@ function mountCheckout(router) {
 
     if (!shippingAddressId) {
       return res.redirect(
-        `/${locale}/checkout?error=${encodeURIComponent('Select a shipping address')}`,
+        `${bp(`/${locale}/checkout`)}?error=${encodeURIComponent('Select a shipping address')}`,
       );
     }
 
@@ -77,21 +78,22 @@ function mountCheckout(router) {
       });
       order = data?.order || data;
     } catch (err) {
-      return res.redirect(`/${locale}/checkout?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${bp(`/${locale}/checkout`)}?error=${encodeURIComponent(err.message)}`);
     }
 
     const orderId = order?.id || order?.orderId;
     if (!orderId) {
-      return res.redirect(`/${locale}/account/orders?flash=${encodeURIComponent(res.locals.t('orderPlaced'))}`);
+      return res.redirect(
+        `${bp(`/${locale}/account/orders`)}?flash=${encodeURIComponent(res.locals.t('orderPlaced'))}`,
+      );
     }
 
     if (paymentMethod === 'cod') {
       return res.redirect(
-        `/${locale}/account/orders/${orderId}?flash=${encodeURIComponent(res.locals.t('orderPlaced'))}`,
+        `${bp(`/${locale}/account/orders/${orderId}`)}?flash=${encodeURIComponent(res.locals.t('orderPlaced'))}`,
       );
     }
 
-    // Initiate online payment and redirect to gateway URL when present
     const pathByMethod = {
       sslcommerz: '/api/payments/sslcommerz/initiate',
       bkash: '/api/payments/bkash/initiate',
@@ -101,7 +103,7 @@ function mountCheckout(router) {
     };
     const payPath = pathByMethod[paymentMethod];
     if (!payPath) {
-      return res.redirect(`/${locale}/account/orders/${orderId}`);
+      return res.redirect(bp(`/${locale}/account/orders/${orderId}`));
     }
 
     try {
@@ -118,11 +120,11 @@ function mountCheckout(router) {
       if (url) return res.redirect(url);
     } catch (err) {
       return res.redirect(
-        `/${locale}/account/orders/${orderId}?error=${encodeURIComponent(err.message)}`,
+        `${bp(`/${locale}/account/orders/${orderId}`)}?error=${encodeURIComponent(err.message)}`,
       );
     }
 
-    res.redirect(`/${locale}/account/orders/${orderId}`);
+    res.redirect(bp(`/${locale}/account/orders/${orderId}`));
   });
 }
 

@@ -9,7 +9,7 @@
   <ul class="menu-list">
     <% orders.forEach(function(o) { %>
     <li>
-      <a href="/<%= locale %>/account/orders/<%= encodeURIComponent(o.id) %>">
+      <a href="<%= basePath %>/<%= locale %>/account/orders/<%= encodeURIComponent(o.id) %>">
         #<%= o.orderNumber || o.id %>
         · <%= o.status || '' %>
         · <%= helpers.money(o.total || o.grandTotal || 0) %>

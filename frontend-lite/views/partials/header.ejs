@@ -1,38 +1,38 @@
 <div class="lite-note"><%= t('liteBanner') %>
-  <a href="/prefer?view=full&amp;next=<%= encodeURIComponent('/' + locale + (path || '')) %>"><%= t('fullSite') %></a>
+  <a href="<%= basePath %>/prefer?view=full&amp;next=<%= encodeURIComponent('/' + locale + (path || '')) %>"><%= t('fullSite') %></a>
 </div>
 <header class="site-header">
   <div class="bar">
     <button type="button" class="icon-btn" id="menuBtn" aria-controls="navDrawer" aria-expanded="false"><%= t('menu') %></button>
-    <a class="logo" href="/<%= locale %>"><%= t('siteName') %></a>
-    <a class="icon-btn cart-link" href="/<%= locale %>/cart"><%= t('cart') %><% if (cartCount) { %> <span class="badge"><%= cartCount %></span><% } %></a>
+    <a class="logo" href="<%= basePath %>/<%= locale %>"><%= t('siteName') %></a>
+    <a class="icon-btn cart-link" href="<%= basePath %>/<%= locale %>/cart"><%= t('cart') %><% if (cartCount) { %> <span class="badge"><%= cartCount %></span><% } %></a>
   </div>
-  <form class="search" action="/<%= locale %>/search" method="get" role="search">
+  <form class="search" action="<%= basePath %>/<%= locale %>/search" method="get" role="search">
     <input type="search" name="q" placeholder="<%= t('searchPlaceholder') %>" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>" autocomplete="off" />
     <button type="submit"><%= t('search') %></button>
   </form>
   <% if (flash && flashMs > 0) { %>
-  <a class="flash-bar" href="/<%= locale %>/flash-deals">
+  <a class="flash-bar" href="<%= basePath %>/<%= locale %>/flash-deals">
     <span><%= t('flashDeals') %></span>
     <span data-countdown="<%= flashMs %>" data-label="<%= t('endsIn') %>"><%= t('endsIn') %> <%= flashCountdown %></span>
   </a>
   <% } %>
 </header>
 <nav id="navDrawer" class="drawer" hidden>
-  <a href="/<%= locale %>"><%= t('home') %></a>
-  <a href="/<%= locale %>/products"><%= t('products') %></a>
-  <a href="/<%= locale %>/flash-deals"><%= t('flashDeals') %></a>
-  <a href="/<%= locale %>/track"><%= t('trackOrder') %></a>
+  <a href="<%= basePath %>/<%= locale %>"><%= t('home') %></a>
+  <a href="<%= basePath %>/<%= locale %>/products"><%= t('products') %></a>
+  <a href="<%= basePath %>/<%= locale %>/flash-deals"><%= t('flashDeals') %></a>
+  <a href="<%= basePath %>/<%= locale %>/track"><%= t('trackOrder') %></a>
   <% if (user) { %>
-  <a href="/<%= locale %>/account"><%= t('account') %></a>
-  <a href="/<%= locale %>/account/orders"><%= t('orders') %></a>
-  <a href="/<%= locale %>/auth/logout"><%= t('logout') %></a>
+  <a href="<%= basePath %>/<%= locale %>/account"><%= t('account') %></a>
+  <a href="<%= basePath %>/<%= locale %>/account/orders"><%= t('orders') %></a>
+  <a href="<%= basePath %>/<%= locale %>/auth/logout"><%= t('logout') %></a>
   <% } else { %>
-  <a href="/<%= locale %>/auth/login"><%= t('login') %></a>
-  <a href="/<%= locale %>/auth/register"><%= t('register') %></a>
+  <a href="<%= basePath %>/<%= locale %>/auth/login"><%= t('login') %></a>
+  <a href="<%= basePath %>/<%= locale %>/auth/register"><%= t('register') %></a>
   <% } %>
-  <a href="/<%= locale === 'bn' ? '/en' : '/bn' %>"><%= locale === 'bn' ? 'English' : 'বাংলা' %></a>
-  <a href="/prefer?view=full&amp;next=/<%= locale %>"><%= t('fullSite') %></a>
+  <a href="<%= basePath %><%= locale === 'bn' ? '/en' : '/bn' %>"><%= locale === 'bn' ? 'English' : 'বাংলা' %></a>
+  <a href="<%= basePath %>/prefer?view=full&amp;next=<%= encodeURIComponent('/' + locale) %>"><%= t('fullSite') %></a>
 </nav>
 <% if (flashMsg) { %><div class="banner ok" role="status"><%= flashMsg %></div><% } %>
 <% if (errorMsg) { %><div class="banner err" role="alert"><%= errorMsg %></div><% } %>

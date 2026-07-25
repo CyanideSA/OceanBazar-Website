@@ -8,12 +8,12 @@
   </p>
   <% } %>
   <p>
-    <a href="/prefer?view=full&amp;next=/<%= locale %>"><%= t('fullSite') %></a>
+    <a href="<%= basePath %>/prefer?view=full&amp;next=/<%= locale %>"><%= t('fullSite') %></a>
     ·
-    <a href="/<%= locale %>/track"><%= t('trackOrder') %></a>
+    <a href="<%= basePath %>/<%= locale %>/track"><%= t('trackOrder') %></a>
   </p>
   <p class="muted">&copy; <%= year %> OceanBazar</p>
 </footer>
-<script src="/app.js" defer></script>
+<script src="<%= basePath %>/app.js" defer></script>
 </body>
 </html>

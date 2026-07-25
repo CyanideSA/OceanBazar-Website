@@ -1,5 +1,6 @@
 const { authedFetch, requireAuth } = require('../session');
 const { unwrapList } = require('../helpers');
+const { bp } = require('../config');
 
 function mountAccount(router) {
   router.get('/:locale/account', requireAuth, (req, res) => {
@@ -94,9 +95,11 @@ function mountAccount(router) {
         },
       });
     } catch (err) {
-      return res.redirect(`/${locale}/account/addresses?error=${encodeURIComponent(err.message)}`);
+      return res.redirect(
+        `${bp(`/${locale}/account/addresses`)}?error=${encodeURIComponent(err.message)}`,
+      );
     }
-    res.redirect(`/${locale}/account/addresses`);
+    res.redirect(bp(`/${locale}/account/addresses`));
   });
 
   router.get('/:locale/track', (req, res) => {

@@ -18,7 +18,7 @@
   <% } %>
 
   <h2><%= t('addAddress') %></h2>
-  <form method="post" action="/<%= locale %>/account/addresses" class="stack">
+  <form method="post" action="<%= basePath %>/<%= locale %>/account/addresses" class="stack">
     <label class="field"><span><%= t('name') %></span><input name="name" required /></label>
     <label class="field"><span><%= t('phone') %></span><input name="phone" required /></label>
     <label class="field"><span><%= t('addressLine') %></span><input name="addressLine" required /></label>

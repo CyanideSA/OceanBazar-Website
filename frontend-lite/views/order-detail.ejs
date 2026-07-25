@@ -2,7 +2,7 @@
 <%- include('partials/header') %>
 
 <section class="section">
-  <p><a href="/<%= locale %>/account/orders">&larr; <%= t('back') %></a></p>
+  <p><a href="<%= basePath %>/<%= locale %>/account/orders">&larr; <%= t('back') %></a></p>
   <h1>#<%= order.orderNumber || order.id %></h1>
   <p><%= t('status') %>: <strong><%= order.status || '' %></strong></p>
   <p><%= t('paymentMethod') %>: <%= order.paymentMethod || '' %></p>

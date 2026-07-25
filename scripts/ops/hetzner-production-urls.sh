@@ -17,7 +17,8 @@ BASE="${PROD_BASE:-https://oceanbazar.com.bd}"
 API="${PROD_API:-https://api.oceanbazar.com.bd}"
 ADMIN="${PROD_ADMIN:-https://admin.oceanbazar.com.bd}"
 CONTENTID="${PROD_CONTENTID:-https://contentid.oceanbazar.com.bd}"
-LITE="${PROD_LITE:-https://lite.oceanbazar.com.bd}"
+# Path-based Lite on apex (reachable without lite.* DNS/TLS)
+LITE="${PROD_LITE:-https://oceanbazar.com.bd/lite}"
 
 setkv CLIENT_URL "$BASE"
 setkv ADMIN_URL "$ADMIN"

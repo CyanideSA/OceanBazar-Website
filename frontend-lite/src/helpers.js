@@ -40,13 +40,18 @@ function productCompareAt(product) {
 }
 
 function productHref(locale, product) {
+  const { bp } = require('./config');
   const id = product?.id || product?.productId || '';
-  return `/${locale}/product/${encodeURIComponent(id)}`;
+  return bp(`/${locale}/product/${encodeURIComponent(id)}`);
 }
 
 function safeNext(raw, fallback = '/bn') {
-  if (!raw || typeof raw !== 'string') return fallback;
-  if (!raw.startsWith('/') || raw.startsWith('//')) return fallback;
+  const { BASE_PATH, bp } = require('./config');
+  if (!raw || typeof raw !== 'string') return bp(fallback);
+  if (!raw.startsWith('/') || raw.startsWith('//')) return bp(fallback);
+  if (BASE_PATH && !raw.startsWith(BASE_PATH) && !raw.startsWith('/prefer')) {
+    return bp(raw);
+  }
   return raw;
 }
 

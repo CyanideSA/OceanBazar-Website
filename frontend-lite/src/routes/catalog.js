@@ -2,6 +2,7 @@ const express = require('express');
 const { bffGet, BffError } = require('../bffClient');
 const { unwrapList, paginationMeta, pickName } = require('../helpers');
 const { authedFetch } = require('../session');
+const { bp } = require('../config');
 
 function mountCatalog(router) {
   router.get('/:locale', async (req, res) => {
@@ -137,16 +138,18 @@ function mountCatalog(router) {
     const quantity = Math.max(1, Number(req.body.quantity) || 1);
     const variantId = req.body.variantId || undefined;
     const buyNow = String(req.body.buyNow || '') === '1';
-    const next = req.body.next || `/${locale}/cart`;
+    const next = req.body.next || bp(`/${locale}/cart`);
 
     if (!productId) {
-      return res.redirect(`/${locale}/cart?error=${encodeURIComponent('Missing product')}`);
+      return res.redirect(`${bp(`/${locale}/cart`)}?error=${encodeURIComponent('Missing product')}`);
     }
 
     const { accessToken, refreshToken } = require('../session').readTokens(req);
     if (!accessToken && !refreshToken) {
       return res.redirect(
-        `/${locale}/auth/login?next=${encodeURIComponent(req.headers.referer || `/${locale}/product/${productId}`)}`,
+        `${bp(`/${locale}/auth/login`)}?next=${encodeURIComponent(
+          req.headers.referer || bp(`/${locale}/product/${productId}`),
+        )}`,
       );
     }
 
@@ -158,9 +161,11 @@ function mountCatalog(router) {
     } catch (err) {
       const msg = err.message || res.locals.t('errorGeneric');
       if (buyNow) {
-        return res.redirect(`/${locale}/product/${productId}?error=${encodeURIComponent(msg)}`);
+        return res.redirect(
+          `${bp(`/${locale}/product/${productId}`)}?error=${encodeURIComponent(msg)}`,
+        );
       }
-      const ref = req.headers.referer || `/${locale}/product/${productId}`;
+      const ref = req.headers.referer || bp(`/${locale}/product/${productId}`);
       return res.redirect(
         ref.includes('?')
           ? `${ref}&error=${encodeURIComponent(msg)}`
@@ -168,13 +173,15 @@ function mountCatalog(router) {
       );
     }
 
-    if (buyNow) return res.redirect(`/${locale}/checkout`);
+    if (buyNow) return res.redirect(bp(`/${locale}/checkout`));
     if (String(req.headers['x-requested-with'] || '').toLowerCase() === 'xmlhttprequest') {
       return res.json({ ok: true });
     }
-    return res.redirect(next.includes('?')
-      ? `${next}&flash=${encodeURIComponent(res.locals.t('addedToCart'))}`
-      : `${next}?flash=${encodeURIComponent(res.locals.t('addedToCart'))}`);
+    return res.redirect(
+      next.includes('?')
+        ? `${next}&flash=${encodeURIComponent(res.locals.t('addedToCart'))}`
+        : `${next}?flash=${encodeURIComponent(res.locals.t('addedToCart'))}`,
+    );
   });
 }
 

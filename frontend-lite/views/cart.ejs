@@ -6,10 +6,10 @@
 
   <% if (needsLogin) { %>
   <p class="empty"><%= t('needLogin') %></p>
-  <p><a class="btn btn-primary" href="/<%= locale %>/auth/login?next=/<%= locale %>/cart"><%= t('login') %></a></p>
+  <p><a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/auth/login?next=/<%= locale %>/cart"><%= t('login') %></a></p>
   <% } else if (!cart.items || !cart.items.length) { %>
   <p class="empty"><%= t('emptyCart') %></p>
-  <p><a class="btn" href="/<%= locale %>/products"><%= t('continueShopping') %></a></p>
+  <p><a class="btn" href="<%= basePath %>/<%= locale %>/products"><%= t('continueShopping') %></a></p>
   <% } else { %>
 
   <ul class="cart-list">
@@ -25,9 +25,9 @@
     <li class="cart-item">
       <img src="<%= pimg %>" alt="" width="72" height="72" />
       <div class="cart-meta">
-        <a href="/<%= locale %>/product/<%= encodeURIComponent(pid) %>"><%= pname %></a>
+        <a href="<%= basePath %>/<%= locale %>/product/<%= encodeURIComponent(pid) %>"><%= pname %></a>
         <div class="price"><%= helpers.money(unit) %></div>
-        <form method="post" action="/<%= locale %>/cart/update" class="qty-form" data-qty>
+        <form method="post" action="<%= basePath %>/<%= locale %>/cart/update" class="qty-form" data-qty>
           <input type="hidden" name="productId" value="<%= pid %>" />
           <% if (vid) { %><input type="hidden" name="variantId" value="<%= vid %>" /><% } %>
           <button type="button" class="qty-btn" data-qty-dec>−</button>
@@ -35,7 +35,7 @@
           <button type="button" class="qty-btn" data-qty-inc>+</button>
           <button type="submit" class="btn btn-sm"><%= t('update') %></button>
         </form>
-        <form method="post" action="/<%= locale %>/cart/remove">
+        <form method="post" action="<%= basePath %>/<%= locale %>/cart/remove">
           <input type="hidden" name="productId" value="<%= pid %>" />
           <% if (vid) { %><input type="hidden" name="variantId" value="<%= vid %>" /><% } %>
           <button type="submit" class="link-danger"><%= t('remove') %></button>
@@ -47,11 +47,11 @@
   </ul>
 
   <div class="cart-side">
-    <form method="post" action="/<%= locale %>/cart/coupon" class="inline">
+    <form method="post" action="<%= basePath %>/<%= locale %>/cart/coupon" class="inline">
       <input type="text" name="code" placeholder="<%= t('coupon') %>" value="<%= cart.couponCode || '' %>" />
       <button type="submit" class="btn btn-sm"><%= t('apply') %></button>
     </form>
-    <form method="post" action="/<%= locale %>/cart/points" class="inline">
+    <form method="post" action="<%= basePath %>/<%= locale %>/cart/points" class="inline">
       <input type="number" name="points" min="0" placeholder="<%= t('obPoints') %>" />
       <button type="submit" class="btn btn-sm"><%= t('applyPoints') %></button>
     </form>
@@ -64,7 +64,7 @@
       <div class="grand"><dt><%= t('total') %></dt><dd><%= helpers.money(cart.total || cart.subtotal) %></dd></div>
     </dl>
 
-    <a class="btn btn-primary btn-block" href="/<%= locale %>/checkout"><%= t('checkout') %></a>
+    <a class="btn btn-primary btn-block" href="<%= basePath %>/<%= locale %>/checkout"><%= t('checkout') %></a>
   </div>
   <% } %>
 </section>

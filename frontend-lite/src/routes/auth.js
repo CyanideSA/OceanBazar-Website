@@ -6,6 +6,7 @@ const {
   logoutUser,
 } = require('../session');
 const { safeNext } = require('../helpers');
+const { bp } = require('../config');
 
 function mountAuth(router) {
   router.get('/:locale/auth/login', (req, res) => {
@@ -27,7 +28,7 @@ function mountAuth(router) {
       return res.redirect(next);
     } catch (err) {
       return res.redirect(
-        `/${locale}/auth/login?next=${encodeURIComponent(next)}&error=${encodeURIComponent(err.message || res.locals.t('errorGeneric'))}`,
+        `${bp(`/${locale}/auth/login`)}?next=${encodeURIComponent(next)}&error=${encodeURIComponent(err.message || res.locals.t('errorGeneric'))}`,
       );
     }
   });
@@ -42,11 +43,11 @@ function mountAuth(router) {
         body: { target, type: 'login' },
       });
       return res.redirect(
-        `/${locale}/auth/login?mode=otp&target=${encodeURIComponent(target)}&next=${encodeURIComponent(next)}&flash=${encodeURIComponent('OTP sent')}`,
+        `${bp(`/${locale}/auth/login`)}?mode=otp&target=${encodeURIComponent(target)}&next=${encodeURIComponent(next)}&flash=${encodeURIComponent('OTP sent')}`,
       );
     } catch (err) {
       return res.redirect(
-        `/${locale}/auth/login?mode=otp&next=${encodeURIComponent(next)}&error=${encodeURIComponent(err.message)}`,
+        `${bp(`/${locale}/auth/login`)}?mode=otp&next=${encodeURIComponent(next)}&error=${encodeURIComponent(err.message)}`,
       );
     }
   });
@@ -61,7 +62,7 @@ function mountAuth(router) {
       return res.redirect(next);
     } catch (err) {
       return res.redirect(
-        `/${locale}/auth/login?mode=otp&target=${encodeURIComponent(target)}&next=${encodeURIComponent(next)}&error=${encodeURIComponent(err.message)}`,
+        `${bp(`/${locale}/auth/login`)}?mode=otp&target=${encodeURIComponent(target)}&next=${encodeURIComponent(next)}&error=${encodeURIComponent(err.message)}`,
       );
     }
   });
@@ -87,19 +88,19 @@ function mountAuth(router) {
     } catch (err) {
       const msg = err instanceof BffError ? err.message : res.locals.t('errorGeneric');
       return res.redirect(
-        `/${locale}/auth/register?next=${encodeURIComponent(next)}&error=${encodeURIComponent(msg)}`,
+        `${bp(`/${locale}/auth/register`)}?next=${encodeURIComponent(next)}&error=${encodeURIComponent(msg)}`,
       );
     }
   });
 
   router.post('/:locale/auth/logout', async (req, res) => {
     await logoutUser(req, res);
-    res.redirect(`/${req.locale}`);
+    res.redirect(bp(`/${req.locale}`));
   });
 
   router.get('/:locale/auth/logout', async (req, res) => {
     await logoutUser(req, res);
-    res.redirect(`/${req.locale}`);
+    res.redirect(bp(`/${req.locale}`));
   });
 }
 

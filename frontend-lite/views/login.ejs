@@ -5,12 +5,12 @@
   <h1><%= t('login') %></h1>
 
   <div class="tabs">
-    <a class="<%= mode !== 'otp' ? 'active' : '' %>" href="/<%= locale %>/auth/login?mode=password&amp;next=<%= encodeURIComponent(next) %>"><%= t('loginWithPassword') %></a>
-    <a class="<%= mode === 'otp' ? 'active' : '' %>" href="/<%= locale %>/auth/login?mode=otp&amp;next=<%= encodeURIComponent(next) %>"><%= t('loginWithOtp') %></a>
+    <a class="<%= mode !== 'otp' ? 'active' : '' %>" href="<%= basePath %>/<%= locale %>/auth/login?mode=password&amp;next=<%= encodeURIComponent(next) %>"><%= t('loginWithPassword') %></a>
+    <a class="<%= mode === 'otp' ? 'active' : '' %>" href="<%= basePath %>/<%= locale %>/auth/login?mode=otp&amp;next=<%= encodeURIComponent(next) %>"><%= t('loginWithOtp') %></a>
   </div>
 
   <% if (mode === 'otp') { %>
-  <form method="post" action="/<%= locale %>/auth/otp/send" class="stack">
+  <form method="post" action="<%= basePath %>/<%= locale %>/auth/otp/send" class="stack">
     <input type="hidden" name="next" value="<%= next %>" />
     <label class="field">
       <span><%= t('phoneOrEmail') %></span>
@@ -19,7 +19,7 @@
     <button type="submit" class="btn"><%= t('sendOtp') %></button>
   </form>
   <% if (target) { %>
-  <form method="post" action="/<%= locale %>/auth/otp/verify" class="stack">
+  <form method="post" action="<%= basePath %>/<%= locale %>/auth/otp/verify" class="stack">
     <input type="hidden" name="next" value="<%= next %>" />
     <input type="hidden" name="target" value="<%= target %>" />
     <label class="field">
@@ -30,7 +30,7 @@
   </form>
   <% } %>
   <% } else { %>
-  <form method="post" action="/<%= locale %>/auth/login" class="stack">
+  <form method="post" action="<%= basePath %>/<%= locale %>/auth/login" class="stack">
     <input type="hidden" name="next" value="<%= next %>" />
     <label class="field">
       <span><%= t('phoneOrEmail') %></span>
@@ -44,7 +44,7 @@
   </form>
   <% } %>
 
-  <p class="muted"><a href="/<%= locale %>/auth/register?next=<%= encodeURIComponent(next) %>"><%= t('register') %></a></p>
+  <p class="muted"><a href="<%= basePath %>/<%= locale %>/auth/register?next=<%= encodeURIComponent(next) %>"><%= t('register') %></a></p>
 </section>
 
 <%- include('partials/footer') %>

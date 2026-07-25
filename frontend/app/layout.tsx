@@ -132,7 +132,7 @@ const LITE_DEVICE_HINT = `(function(){
     // #endregion
     if (!oldIos) return;
     var lite = ${JSON.stringify(
-      (process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://lite.oceanbazar.com.bd').replace(/\/$/, ''),
+      (process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://oceanbazar.com.bd/lite').replace(/\/$/, ''),
     )};
     var next = location.pathname + location.search + location.hash;
     location.replace(lite + '/prefer?view=lite&next=' + encodeURIComponent(next || '/bn'));

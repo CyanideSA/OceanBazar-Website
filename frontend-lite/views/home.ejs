@@ -5,7 +5,7 @@
 <section class="hero">
   <% var slide = heroSlides[0]; %>
   <% var img = (slide && (slide.imageUrl || slide.image || slide.src)) || ''; %>
-  <% var href = (slide && (slide.href || slide.link || slide.url)) || ('/' + locale + '/products'); %>
+  <% var href = (slide && (slide.href || slide.link || slide.url)) || (basePath + '/' + locale + '/products'); %>
   <a href="<%= href %>">
     <% if (img) { %><img src="<%= img %>" alt="<%= slide.title || t('siteName') %>" /><% } %>
     <span class="hero-caption"><%= slide.title || slide.headline || t('tagline') %></span>
@@ -25,7 +25,7 @@
   </div>
   <div class="chips">
     <% categories.forEach(function(cat) { %>
-    <a class="chip" href="/<%= locale %>/category/<%= encodeURIComponent(cat.id || cat.slug) %>">
+    <a class="chip" href="<%= basePath %>/<%= locale %>/category/<%= encodeURIComponent(cat.id || cat.slug) %>">
       <%= helpers.pickName(cat, locale) %>
     </a>
     <% }) %>
@@ -38,7 +38,7 @@
 <section class="section">
   <div class="section-head">
     <h2><%= t(sec.titleKey) %></h2>
-    <a href="/<%= locale %>/products/<%= encodeURIComponent(sec.collection) %>"><%= t('seeAll') %></a>
+    <a href="<%= basePath %>/<%= locale %>/products/<%= encodeURIComponent(sec.collection) %>"><%= t('seeAll') %></a>
   </div>
   <div class="grid">
     <% sec.products.forEach(function(product) { %>

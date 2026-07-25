@@ -35,9 +35,9 @@
     <p class="badge-stock out"><%= t('outOfStock') %></p>
     <% } %>
 
-    <form method="post" action="/<%= locale %>/cart/add" class="buy-form" data-ajax-cart>
+    <form method="post" action="<%= basePath %>/<%= locale %>/cart/add" class="buy-form" data-ajax-cart>
       <input type="hidden" name="productId" value="<%= product.id %>" />
-      <input type="hidden" name="next" value="/<%= locale %>/cart" />
+      <input type="hidden" name="next" value="<%= basePath %>/<%= locale %>/cart" />
 
       <% if (variants && variants.length) { %>
       <label class="field">

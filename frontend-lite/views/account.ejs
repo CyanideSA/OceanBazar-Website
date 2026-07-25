@@ -7,10 +7,10 @@
   <p><strong><%= user.name || user.email || user.phone || '' %></strong></p>
   <% } %>
   <ul class="menu-list">
-    <li><a href="/<%= locale %>/account/orders"><%= t('orders') %></a></li>
-    <li><a href="/<%= locale %>/account/addresses"><%= t('addresses') %></a></li>
-    <li><a href="/<%= locale %>/track"><%= t('trackOrder') %></a></li>
-    <li><a href="/<%= locale %>/auth/logout"><%= t('logout') %></a></li>
+    <li><a href="<%= basePath %>/<%= locale %>/account/orders"><%= t('orders') %></a></li>
+    <li><a href="<%= basePath %>/<%= locale %>/account/addresses"><%= t('addresses') %></a></li>
+    <li><a href="<%= basePath %>/<%= locale %>/track"><%= t('trackOrder') %></a></li>
+    <li><a href="<%= basePath %>/<%= locale %>/auth/logout"><%= t('logout') %></a></li>
   </ul>
 </section>
 

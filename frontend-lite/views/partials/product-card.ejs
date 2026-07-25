@@ -15,10 +15,10 @@
       <strong><%= helpers.money(price) %></strong>
       <% if (compare) { %><s><%= helpers.money(compare) %></s><% } %>
     </div>
-    <form method="post" action="/<%= locale %>/cart/add" class="inline-add" data-ajax-cart>
+    <form method="post" action="<%= basePath %>/<%= locale %>/cart/add" class="inline-add" data-ajax-cart>
       <input type="hidden" name="productId" value="<%= product.id %>" />
       <input type="hidden" name="quantity" value="1" />
-      <input type="hidden" name="next" value="/<%= locale %>/cart" />
+      <input type="hidden" name="next" value="<%= basePath %>/<%= locale %>/cart" />
       <button type="submit" class="btn btn-sm"><%= t('addToCart') %></button>
     </form>
   </div>
