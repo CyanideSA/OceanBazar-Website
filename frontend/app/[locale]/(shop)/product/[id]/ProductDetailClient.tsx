@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/useToast';
 import { productsApi, cartApi, stockNotifyApi } from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
 import { useAuthStore } from '@/stores/authStore';
-import { isIosSafari } from '@/lib/iosSafari';
+import { isIosSafari, isIosWebKit } from '@/lib/iosSafari';
 import { debugSessionLog } from '@/lib/debugSessionLog';
 import { calculatePrice } from '@/lib/pricing';
 import PricingBlock from '@/components/product/PricingBlock';
@@ -28,12 +28,83 @@ import { getMediaUrl } from '@/lib/mediaUrl';
 import { useTrackRecentlyViewed } from '@/hooks/useRecentlyViewed';
 import RecentlyViewedProducts from '@/components/product/RecentlyViewedProducts';
 import SizeGuideModal from '@/components/product/SizeGuideModal';
+
+function normalizeProductDetail(raw: Record<string, any>): ProductDetail {
+  const d = (raw.product ?? raw) as Record<string, any>;
+  return {
+    ...d,
+    title: d.title ?? d.name ?? '',
+    description: d.description ?? null,
+    categoryId: d.categoryId ?? d.category ?? '',
+    status: d.status ?? 'active',
+    moq: d.moq ?? 1,
+    stock: d.stock ?? 0,
+    tags: Array.isArray(d.tags) ? d.tags : [],
+    primaryImage: d.primaryImage ?? d.image ?? null,
+    images: Array.isArray(d.richImages)
+      ? d.richImages.map((img: any) => ({
+          id: img.id,
+          url: img.url,
+          altEn: img.altEn ?? null,
+          altBn: img.altBn ?? null,
+          sortOrder: img.sortOrder ?? 0,
+          mediaType: img.mediaType ?? 'image',
+          isPrimary: img.isPrimary ?? false,
+          colorKey: img.colorKey ?? null,
+        }))
+      : Array.isArray(d.images)
+        ? d.images.map((item: any, i: number) => {
+            if (typeof item === 'string') {
+              return {
+                id: i,
+                url: item,
+                altEn: null,
+                altBn: null,
+                sortOrder: i,
+                mediaType: 'image' as const,
+                isPrimary: i === 0,
+                colorKey: null,
+              };
+            }
+            return {
+              id: item.id ?? i,
+              url: item.url,
+              altEn: item.altEn ?? null,
+              altBn: item.altBn ?? null,
+              sortOrder: item.sortOrder ?? i,
+              mediaType: item.mediaType ?? 'image',
+              isPrimary: item.isPrimary ?? i === 0,
+              colorKey: item.colorKey ?? null,
+            };
+          })
+        : [],
+    richImages: undefined,
+    retailPrice: d.retailPrice ?? null,
+    wholesalePrice: d.wholesalePrice ?? null,
+    pricing: d.pricing ?? { retail: null, wholesale: null },
+    ratingAvg: d.rating ?? d.ratingAvg ?? null,
+    ratingCount: d.ratingCount ?? 0,
+    reviewCount: d.ratingCount ?? d.reviewCount ?? 0,
+    reviews: Array.isArray(d.reviews) ? d.reviews : [],
+    variants: d.variants ?? [],
+    specifications: d.specifications ?? null,
+    attributes: d.attributes ?? null,
+    brandLogoUrl: d.brandLogoUrl ?? null,
+    popularityRank: d.popularityRank ?? null,
+    popularityLabel: d.popularityLabel ?? null,
+    hasFreeShipping: Boolean(d.hasFreeShipping ?? d.freeShipping ?? false),
+    banners: Array.isArray(d.banners) ? d.banners : [],
+  } as ProductDetail;
+}
+
 interface Props {
   productId: string;
   locale: string;
+  /** Server-fetched product so old phones can paint without waiting on a second client API round-trip. */
+  initialProduct?: Record<string, unknown> | null;
 }
 
-export default function ProductDetailClient({ productId, locale }: Props) {
+export default function ProductDetailClient({ productId, locale, initialProduct }: Props) {
   const t = useTranslations('product');
   const td = useTranslations('productDetail');
   const tc = useTranslations('common');
@@ -55,16 +126,26 @@ export default function ProductDetailClient({ productId, locale }: Props) {
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifySent, setNotifySent] = useState(false);
 
+  const seededProduct = initialProduct
+    ? normalizeProductDetail(initialProduct as Record<string, any>)
+    : undefined;
+
   useEffect(() => {
     // #region agent log
     debugSessionLog({
-      hypothesisId: 'H2',
+      hypothesisId: 'H10',
       location: 'ProductDetailClient.tsx:mount',
       message: 'product detail client mounted',
-      data: { productId, locale, ios: isIosSafari() },
+      data: {
+        productId,
+        locale,
+        ios: isIosWebKit(),
+        hasInitial: Boolean(seededProduct),
+      },
+      runId: 'post-test-ssr-product',
     });
     // #endregion
-  }, [productId, locale]);
+  }, [productId, locale, seededProduct]);
 
   const { data: product, isLoading, error, isFetching, status } = useQuery({
     queryKey: ['product', productId, locale],
@@ -73,62 +154,19 @@ export default function ProductDetailClient({ productId, locale }: Props) {
         const r = await productsApi.get(productId, locale);
         // #region agent log
         debugSessionLog({
-          hypothesisId: 'H2',
+          hypothesisId: 'H10',
           location: 'ProductDetailClient.tsx:queryFn-ok',
           message: 'product API resolved',
           data: { productId, status: r.status, hasData: Boolean(r.data) },
+          runId: 'post-test-ssr-product',
         });
         // #endregion
         const raw = r.data as Record<string, any>;
-        const d = (raw.product ?? raw) as Record<string, any>;
-        return {
-          ...d,
-          title: d.title ?? d.name ?? '',
-          description: d.description ?? null,
-          categoryId: d.categoryId ?? d.category ?? '',
-          status: d.status ?? 'active',
-          moq: d.moq ?? 1,
-          stock: d.stock ?? 0,
-          tags: Array.isArray(d.tags) ? d.tags : [],
-          primaryImage: d.primaryImage ?? d.image ?? null,
-          images: Array.isArray(d.richImages)
-            ? d.richImages.map((img: any) => ({
-                id: img.id,
-                url: img.url,
-                altEn: img.altEn ?? null,
-                altBn: img.altBn ?? null,
-                sortOrder: img.sortOrder ?? 0,
-                mediaType: img.mediaType ?? 'image',
-                isPrimary: img.isPrimary ?? false,
-                colorKey: img.colorKey ?? null,
-              }))
-            : (Array.isArray(d.images)
-              ? d.images.map((item: any, i: number) => {
-                  if (typeof item === 'string') return { id: i, url: item, altEn: null, altBn: null, sortOrder: i, mediaType: 'image' as const, isPrimary: i === 0, colorKey: null };
-                  return { id: item.id ?? i, url: item.url, altEn: item.altEn ?? null, altBn: item.altBn ?? null, sortOrder: item.sortOrder ?? i, mediaType: item.mediaType ?? 'image', isPrimary: item.isPrimary ?? i === 0, colorKey: item.colorKey ?? null };
-                })
-              : []),
-          richImages: undefined,
-          retailPrice: d.retailPrice ?? null,
-          wholesalePrice: d.wholesalePrice ?? null,
-          pricing: d.pricing ?? { retail: null, wholesale: null },
-          ratingAvg: d.rating ?? null,
-          ratingCount: d.ratingCount ?? 0,
-          reviewCount: d.ratingCount ?? 0,
-          reviews: Array.isArray(d.reviews) ? d.reviews : [],
-          variants: d.variants ?? [],
-          specifications: d.specifications ?? null,
-          attributes: d.attributes ?? null,
-          brandLogoUrl: d.brandLogoUrl ?? null,
-          popularityRank: d.popularityRank ?? null,
-          popularityLabel: d.popularityLabel ?? null,
-          hasFreeShipping: Boolean(d.hasFreeShipping ?? d.freeShipping ?? false),
-          banners: Array.isArray(d.banners) ? d.banners : [],
-        } as ProductDetail;
+        return normalizeProductDetail(raw);
       } catch (err) {
         // #region agent log
         debugSessionLog({
-          hypothesisId: 'H2',
+          hypothesisId: 'H10',
           location: 'ProductDetailClient.tsx:queryFn-fail',
           message: 'product API failed',
           data: {
@@ -136,11 +174,14 @@ export default function ProductDetailClient({ productId, locale }: Props) {
             errMsg: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
             status: (err as { response?: { status?: number } })?.response?.status ?? null,
           },
+          runId: 'post-test-ssr-product',
         });
         // #endregion
         throw err;
       }
     },
+    initialData: seededProduct,
+    staleTime: 60_000,
   });
 
   const variants = product?.variants ?? [];

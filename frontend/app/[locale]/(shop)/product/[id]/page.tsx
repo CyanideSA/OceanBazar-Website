@@ -98,7 +98,11 @@ export default async function ProductPage(props: Props) {
       {product && <ProductJsonLd product={product} locale={params.locale} />}
       <BreadcrumbJsonLd items={breadcrumbs} />
 
-      <ProductDetailClient productId={params.id} locale={params.locale} />
+      <ProductDetailClient
+        productId={params.id}
+        locale={params.locale}
+        initialProduct={product}
+      />
 
       {/* AI/admin-managed SEO content blocks + FAQ (FAQPage JSON-LD) */}
       <SeoContent entityType="product" entityId={params.id} locale={params.locale} />
