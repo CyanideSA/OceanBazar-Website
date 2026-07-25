@@ -1,0 +1,19 @@
+</main>
+<footer class="site-footer">
+  <p><strong><%= t('siteName') %></strong> · <%= t('footerNote') %></p>
+  <% if (settings && (settings.supportPhone || settings.supportEmail)) { %>
+  <p>
+    <% if (settings.supportPhone) { %><a href="tel:<%= settings.supportPhone %>"><%= settings.supportPhone %></a><% } %>
+    <% if (settings.supportEmail) { %> · <a href="mailto:<%= settings.supportEmail %>"><%= settings.supportEmail %></a><% } %>
+  </p>
+  <% } %>
+  <p>
+    <a href="/prefer?view=full&amp;next=/<%= locale %>"><%= t('fullSite') %></a>
+    ·
+    <a href="/<%= locale %>/track"><%= t('trackOrder') %></a>
+  </p>
+  <p class="muted">&copy; <%= year %> OceanBazar</p>
+</footer>
+<script src="/app.js" defer></script>
+</body>
+</html>

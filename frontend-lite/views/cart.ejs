@@ -1,0 +1,72 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <h1><%= t('cart') %></h1>
+
+  <% if (needsLogin) { %>
+  <p class="empty"><%= t('needLogin') %></p>
+  <p><a class="btn btn-primary" href="/<%= locale %>/auth/login?next=/<%= locale %>/cart"><%= t('login') %></a></p>
+  <% } else if (!cart.items || !cart.items.length) { %>
+  <p class="empty"><%= t('emptyCart') %></p>
+  <p><a class="btn" href="/<%= locale %>/products"><%= t('continueShopping') %></a></p>
+  <% } else { %>
+
+  <ul class="cart-list">
+    <% cart.items.forEach(function(item) { %>
+    <%
+      var pid = item.productId || item.product?.id || item.id;
+      var pname = helpers.pickName(item.product || item, locale) || item.name || pid;
+      var pimg = helpers.productImage(item.product || item);
+      var unit = Number(item.unitPrice || item.price || item.product?.price || 0);
+      var qty = Number(item.quantity || 1);
+      var vid = item.variantId || '';
+    %>
+    <li class="cart-item">
+      <img src="<%= pimg %>" alt="" width="72" height="72" />
+      <div class="cart-meta">
+        <a href="/<%= locale %>/product/<%= encodeURIComponent(pid) %>"><%= pname %></a>
+        <div class="price"><%= helpers.money(unit) %></div>
+        <form method="post" action="/<%= locale %>/cart/update" class="qty-form" data-qty>
+          <input type="hidden" name="productId" value="<%= pid %>" />
+          <% if (vid) { %><input type="hidden" name="variantId" value="<%= vid %>" /><% } %>
+          <button type="button" class="qty-btn" data-qty-dec>−</button>
+          <input type="number" name="quantity" value="<%= qty %>" min="1" max="99" />
+          <button type="button" class="qty-btn" data-qty-inc>+</button>
+          <button type="submit" class="btn btn-sm"><%= t('update') %></button>
+        </form>
+        <form method="post" action="/<%= locale %>/cart/remove">
+          <input type="hidden" name="productId" value="<%= pid %>" />
+          <% if (vid) { %><input type="hidden" name="variantId" value="<%= vid %>" /><% } %>
+          <button type="submit" class="link-danger"><%= t('remove') %></button>
+        </form>
+      </div>
+      <div class="cart-line"><%= helpers.money(unit * qty) %></div>
+    </li>
+    <% }) %>
+  </ul>
+
+  <div class="cart-side">
+    <form method="post" action="/<%= locale %>/cart/coupon" class="inline">
+      <input type="text" name="code" placeholder="<%= t('coupon') %>" value="<%= cart.couponCode || '' %>" />
+      <button type="submit" class="btn btn-sm"><%= t('apply') %></button>
+    </form>
+    <form method="post" action="/<%= locale %>/cart/points" class="inline">
+      <input type="number" name="points" min="0" placeholder="<%= t('obPoints') %>" />
+      <button type="submit" class="btn btn-sm"><%= t('applyPoints') %></button>
+    </form>
+
+    <dl class="totals">
+      <div><dt><%= t('subtotal') %></dt><dd><%= helpers.money(cart.subtotal) %></dd></div>
+      <% if (cart.discount) { %><div><dt><%= t('discount') %></dt><dd>−<%= helpers.money(cart.discount) %></dd></div><% } %>
+      <% if (cart.pointsDiscount) { %><div><dt><%= t('obPoints') %></dt><dd>−<%= helpers.money(cart.pointsDiscount) %></dd></div><% } %>
+      <div><dt><%= t('shipping') %></dt><dd><%= helpers.money(cart.shipping) %></dd></div>
+      <div class="grand"><dt><%= t('total') %></dt><dd><%= helpers.money(cart.total || cart.subtotal) %></dd></div>
+    </dl>
+
+    <a class="btn btn-primary btn-block" href="/<%= locale %>/checkout"><%= t('checkout') %></a>
+  </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

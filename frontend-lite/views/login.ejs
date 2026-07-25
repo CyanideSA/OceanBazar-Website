@@ -1,0 +1,50 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section narrow">
+  <h1><%= t('login') %></h1>
+
+  <div class="tabs">
+    <a class="<%= mode !== 'otp' ? 'active' : '' %>" href="/<%= locale %>/auth/login?mode=password&amp;next=<%= encodeURIComponent(next) %>"><%= t('loginWithPassword') %></a>
+    <a class="<%= mode === 'otp' ? 'active' : '' %>" href="/<%= locale %>/auth/login?mode=otp&amp;next=<%= encodeURIComponent(next) %>"><%= t('loginWithOtp') %></a>
+  </div>
+
+  <% if (mode === 'otp') { %>
+  <form method="post" action="/<%= locale %>/auth/otp/send" class="stack">
+    <input type="hidden" name="next" value="<%= next %>" />
+    <label class="field">
+      <span><%= t('phoneOrEmail') %></span>
+      <input name="target" value="<%= target %>" required />
+    </label>
+    <button type="submit" class="btn"><%= t('sendOtp') %></button>
+  </form>
+  <% if (target) { %>
+  <form method="post" action="/<%= locale %>/auth/otp/verify" class="stack">
+    <input type="hidden" name="next" value="<%= next %>" />
+    <input type="hidden" name="target" value="<%= target %>" />
+    <label class="field">
+      <span><%= t('otp') %></span>
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" required />
+    </label>
+    <button type="submit" class="btn btn-primary"><%= t('verifyOtp') %></button>
+  </form>
+  <% } %>
+  <% } else { %>
+  <form method="post" action="/<%= locale %>/auth/login" class="stack">
+    <input type="hidden" name="next" value="<%= next %>" />
+    <label class="field">
+      <span><%= t('phoneOrEmail') %></span>
+      <input name="identifier" required autocomplete="username" />
+    </label>
+    <label class="field">
+      <span><%= t('password') %></span>
+      <input type="password" name="password" required autocomplete="current-password" />
+    </label>
+    <button type="submit" class="btn btn-primary"><%= t('login') %></button>
+  </form>
+  <% } %>
+
+  <p class="muted"><a href="/<%= locale %>/auth/register?next=<%= encodeURIComponent(next) %>"><%= t('register') %></a></p>
+</section>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,90 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var name = helpers.pickName(product, locale);
+  var price = helpers.productPrice(product);
+  var compare = helpers.productCompareAt(product);
+  var inStock = product.stock == null || Number(product.stock) > 0;
+%>
+
+<article class="pdp">
+  <div class="gallery" data-gallery>
+    <div class="gallery-main">
+      <img id="galleryMain" src="<%= images[0] || '/placeholder.svg' %>" alt="<%= name %>" />
+    </div>
+    <% if (images.length > 1) { %>
+    <div class="thumbs">
+      <% images.forEach(function(src, i) { %>
+      <button type="button" class="thumb<%= i === 0 ? ' active' : '' %>" data-src="<%= src %>" aria-label="Image <%= i + 1 %>">
+        <img src="<%= src %>" alt="" width="64" height="64" />
+      </button>
+      <% }) %>
+    </div>
+    <% } %>
+  </div>
+
+  <div class="pdp-info">
+    <h1><%= name %></h1>
+    <div class="price lg">
+      <strong><%= helpers.money(price) %></strong>
+      <% if (compare) { %><s><%= helpers.money(compare) %></s><% } %>
+    </div>
+
+    <% if (!inStock) { %>
+    <p class="badge-stock out"><%= t('outOfStock') %></p>
+    <% } %>
+
+    <form method="post" action="/<%= locale %>/cart/add" class="buy-form" data-ajax-cart>
+      <input type="hidden" name="productId" value="<%= product.id %>" />
+      <input type="hidden" name="next" value="/<%= locale %>/cart" />
+
+      <% if (variants && variants.length) { %>
+      <label class="field">
+        <span><%= t('variant') %></span>
+        <select name="variantId" required>
+          <option value=""><%= t('variant') %></option>
+          <% variants.forEach(function(v) { %>
+          <option value="<%= v.id %>"><%= v.name || v.label || v.sku || v.id %></option>
+          <% }) %>
+        </select>
+      </label>
+      <% } %>
+
+      <label class="field qty" data-qty>
+        <span><%= t('quantity') %></span>
+        <button type="button" class="qty-btn" data-qty-dec aria-label="-">−</button>
+        <input type="number" name="quantity" value="1" min="1" max="99" />
+        <button type="button" class="qty-btn" data-qty-inc aria-label="+">+</button>
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="btn" <%= !inStock ? 'disabled' : '' %>><%= t('addToCart') %></button>
+        <button type="submit" name="buyNow" value="1" class="btn btn-primary" <%= !inStock ? 'disabled' : '' %>><%= t('buyNow') %></button>
+      </div>
+    </form>
+
+    <% if (product.description || product.descriptionBn || product.descriptionEn) { %>
+    <section class="desc">
+      <h2><%= t('description') %></h2>
+      <div class="prose">
+        <%- (locale === 'bn' ? (product.descriptionBn || product.description) : (product.descriptionEn || product.description)) || '' %>
+      </div>
+    </section>
+    <% } %>
+
+    <% if (reviews && reviews.length) { %>
+    <section class="reviews">
+      <h2><%= t('reviews') %></h2>
+      <% reviews.forEach(function(r) { %>
+      <div class="review">
+        <strong><%= r.rating || r.stars || 0 %>/5</strong>
+        <p><%= r.body || r.comment || r.title || '' %></p>
+      </div>
+      <% }) %>
+    </section>
+    <% } %>
+  </div>
+</article>
+
+<%- include('partials/footer') %>

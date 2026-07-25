@@ -101,10 +101,32 @@ const EARLY_ERROR_CAPTURE = `(function(){
 })();`;
 // #endregion
 
+/** ES5: send low-memory / low-core devices to the Lite storefront unless they chose Full. */
+const LITE_DEVICE_HINT = `(function(){
+  try {
+    if (/[?&]ob_view=full(?:&|$)/.test(location.search)) return;
+    var m = document.cookie.match(/(?:^|; )ob_view=([^;]*)/);
+    var view = m ? decodeURIComponent(m[1]) : '';
+    if (view === 'full' || view === 'lite') return;
+    var mem = navigator.deviceMemory;
+    var cores = navigator.hardwareConcurrency;
+    var ua = navigator.userAgent || '';
+    var oldIos = /iP(hone|od|ad).*OS (1[0-5])_/.test(ua);
+    var weak = oldIos || (typeof mem === 'number' && mem <= 4) || (typeof cores === 'number' && cores > 0 && cores <= 4);
+    if (!weak) return;
+    var lite = ${JSON.stringify(
+      (process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://lite.oceanbazar.com.bd').replace(/\/$/, ''),
+    )};
+    var next = location.pathname + location.search + location.hash;
+    location.replace(lite + '/prefer?view=lite&next=' + encodeURIComponent(next || '/bn'));
+  } catch (e) {}
+})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="bn" suppressHydrationWarning className={`${inter.variable} ${notoSansBengali.variable}`}>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: LITE_DEVICE_HINT }} />
         {/* #region agent log */}
         <script dangerouslySetInnerHTML={{ __html: EARLY_ERROR_CAPTURE }} />
         {/* #endregion */}

@@ -1,0 +1,17 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section narrow">
+  <h1><%= t('account') %></h1>
+  <% if (user) { %>
+  <p><strong><%= user.name || user.email || user.phone || '' %></strong></p>
+  <% } %>
+  <ul class="menu-list">
+    <li><a href="/<%= locale %>/account/orders"><%= t('orders') %></a></li>
+    <li><a href="/<%= locale %>/account/addresses"><%= t('addresses') %></a></li>
+    <li><a href="/<%= locale %>/track"><%= t('trackOrder') %></a></li>
+    <li><a href="/<%= locale %>/auth/logout"><%= t('logout') %></a></li>
+  </ul>
+</section>
+
+<%- include('partials/footer') %>

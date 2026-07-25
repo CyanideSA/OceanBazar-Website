@@ -1,0 +1,25 @@
+<%
+  var name = helpers.pickName(product, locale);
+  var href = helpers.productHref(locale, product);
+  var img = helpers.productImage(product);
+  var price = helpers.productPrice(product);
+  var compare = helpers.productCompareAt(product);
+%>
+<article class="card">
+  <a href="<%= href %>" class="card-media">
+    <img src="<%= img %>" alt="<%= name %>" loading="lazy" width="200" height="200" />
+  </a>
+  <div class="card-body">
+    <a href="<%= href %>" class="card-title"><%= name %></a>
+    <div class="price">
+      <strong><%= helpers.money(price) %></strong>
+      <% if (compare) { %><s><%= helpers.money(compare) %></s><% } %>
+    </div>
+    <form method="post" action="/<%= locale %>/cart/add" class="inline-add" data-ajax-cart>
+      <input type="hidden" name="productId" value="<%= product.id %>" />
+      <input type="hidden" name="quantity" value="1" />
+      <input type="hidden" name="next" value="/<%= locale %>/cart" />
+      <button type="submit" class="btn btn-sm"><%= t('addToCart') %></button>
+    </form>
+  </div>
+</article>

@@ -11,6 +11,7 @@ DOMAINS=(
   www.oceanbazar.com.bd
   admin.oceanbazar.com.bd
   contentid.oceanbazar.com.bd
+  lite.oceanbazar.com.bd
 )
 
 cd "$REPO_ROOT"

@@ -1,0 +1,23 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <h1><%= t('orders') %></h1>
+  <% if (!orders.length) { %>
+  <p class="empty"><%= t('noOrders') %></p>
+  <% } else { %>
+  <ul class="menu-list">
+    <% orders.forEach(function(o) { %>
+    <li>
+      <a href="/<%= locale %>/account/orders/<%= encodeURIComponent(o.id) %>">
+        #<%= o.orderNumber || o.id %>
+        · <%= o.status || '' %>
+        · <%= helpers.money(o.total || o.grandTotal || 0) %>
+      </a>
+    </li>
+    <% }) %>
+  </ul>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

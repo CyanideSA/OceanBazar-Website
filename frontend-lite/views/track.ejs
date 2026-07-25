@@ -1,0 +1,23 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section narrow">
+  <h1><%= t('orderTracking') %></h1>
+  <form method="post" action="/<%= locale %>/track" class="stack">
+    <label class="field">
+      <span><%= t('orderNumber') %></span>
+      <input name="orderNumber" value="<%= typeof orderNumber !== 'undefined' ? orderNumber : '' %>" required />
+    </label>
+    <label class="field">
+      <span><%= t('phone') %></span>
+      <input name="phone" value="<%= typeof phone !== 'undefined' ? phone : '' %>" required />
+    </label>
+    <button type="submit" class="btn btn-primary"><%= t('track') %></button>
+  </form>
+
+  <% if (result) { %>
+  <pre class="track-box"><%= typeof result === 'string' ? result : JSON.stringify(result, null, 2) %></pre>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

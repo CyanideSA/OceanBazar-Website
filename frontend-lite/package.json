@@ -1,0 +1,22 @@
+{
+  "name": "oceanbazar-web-lite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Near-zero-JS SSR storefront for low-end devices",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "compression": "^1.7.5",
+    "cookie-parser": "^1.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0"
+  }
+}

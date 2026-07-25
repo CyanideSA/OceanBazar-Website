@@ -1,0 +1,25 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <div class="section-head">
+    <h1><%= t('flashDeals') %></h1>
+    <% if (sale) { %>
+    <span data-countdown="<%= helpers.flashRemainingMs(sale) %>" data-label="<%= t('endsIn') %>">
+      <%= t('endsIn') %> <%= helpers.formatCountdown(helpers.flashRemainingMs(sale)) %>
+    </span>
+    <% } %>
+  </div>
+
+  <% if (!products.length) { %>
+  <p class="empty"><%= t('noProducts') %></p>
+  <% } else { %>
+  <div class="grid">
+    <% products.forEach(function(product) { %>
+      <%- include('partials/product-card', { product: product }) %>
+    <% }) %>
+  </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

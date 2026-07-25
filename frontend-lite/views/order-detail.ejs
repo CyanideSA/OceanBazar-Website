@@ -1,0 +1,29 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <p><a href="/<%= locale %>/account/orders">&larr; <%= t('back') %></a></p>
+  <h1>#<%= order.orderNumber || order.id %></h1>
+  <p><%= t('status') %>: <strong><%= order.status || '' %></strong></p>
+  <p><%= t('paymentMethod') %>: <%= order.paymentMethod || '' %></p>
+  <p><%= t('total') %>: <strong><%= helpers.money(order.total || order.grandTotal || 0) %></strong></p>
+
+  <% var items = order.items || order.orderItems || []; %>
+  <% if (items.length) { %>
+  <ul class="mini-list">
+    <% items.forEach(function(it) { %>
+    <li>
+      <%= it.productName || it.name || it.productId %> × <%= it.quantity %>
+      <span><%= helpers.money(it.lineTotal || it.price || 0) %></span>
+    </li>
+    <% }) %>
+  </ul>
+  <% } %>
+
+  <% if (tracking) { %>
+  <h2><%= t('orderTracking') %></h2>
+  <pre class="track-box"><%= typeof tracking === 'string' ? tracking : JSON.stringify(tracking, null, 2) %></pre>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

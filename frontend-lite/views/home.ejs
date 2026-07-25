@@ -1,0 +1,52 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<% if (heroSlides && heroSlides.length) { %>
+<section class="hero">
+  <% var slide = heroSlides[0]; %>
+  <% var img = (slide && (slide.imageUrl || slide.image || slide.src)) || ''; %>
+  <% var href = (slide && (slide.href || slide.link || slide.url)) || ('/' + locale + '/products'); %>
+  <a href="<%= href %>">
+    <% if (img) { %><img src="<%= img %>" alt="<%= slide.title || t('siteName') %>" /><% } %>
+    <span class="hero-caption"><%= slide.title || slide.headline || t('tagline') %></span>
+  </a>
+</section>
+<% } else { %>
+<section class="hero plain">
+  <h1><%= t('siteName') %></h1>
+  <p><%= t('tagline') %></p>
+</section>
+<% } %>
+
+<% if (categories && categories.length) { %>
+<section class="section">
+  <div class="section-head">
+    <h2><%= t('categories') %></h2>
+  </div>
+  <div class="chips">
+    <% categories.forEach(function(cat) { %>
+    <a class="chip" href="/<%= locale %>/category/<%= encodeURIComponent(cat.id || cat.slug) %>">
+      <%= helpers.pickName(cat, locale) %>
+    </a>
+    <% }) %>
+  </div>
+</section>
+<% } %>
+
+<% sections.forEach(function(sec) { %>
+<% if (sec.products && sec.products.length) { %>
+<section class="section">
+  <div class="section-head">
+    <h2><%= t(sec.titleKey) %></h2>
+    <a href="/<%= locale %>/products/<%= encodeURIComponent(sec.collection) %>"><%= t('seeAll') %></a>
+  </div>
+  <div class="grid">
+    <% sec.products.forEach(function(product) { %>
+      <%- include('partials/product-card', { product: product }) %>
+    <% }) %>
+  </div>
+</section>
+<% } %>
+<% }) %>
+
+<%- include('partials/footer') %>

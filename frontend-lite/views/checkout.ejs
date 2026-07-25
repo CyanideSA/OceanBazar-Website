@@ -1,0 +1,78 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <h1><%= t('checkout') %></h1>
+
+  <div class="checkout-grid">
+    <div>
+      <h2><%= t('shippingAddress') %></h2>
+      <% if (!addresses.length) { %>
+      <p class="muted"><%= t('noAddresses') %></p>
+      <% } %>
+
+      <form method="post" action="/<%= locale %>/checkout/place" class="stack">
+        <% if (addresses.length) { %>
+        <fieldset class="stack">
+          <% addresses.forEach(function(addr, i) { %>
+          <label class="radio-card">
+            <input type="radio" name="shippingAddressId" value="<%= addr.id %>" <%= (addr.isDefault || i === 0) ? 'checked' : '' %> required />
+            <span>
+              <strong><%= addr.name || '' %></strong> · <%= addr.phone || '' %><br />
+              <%= addr.addressLine1 || addr.address || '' %>,
+              <%= addr.area || '' %>, <%= addr.city || addr.district || '' %>
+              <% if (addr.isDefault) { %> <em>(<%= t('default') %>)</em><% } %>
+            </span>
+          </label>
+          <% }) %>
+        </fieldset>
+        <% } %>
+
+        <h2><%= t('paymentMethod') %></h2>
+        <label class="radio-card"><input type="radio" name="paymentMethod" value="cod" checked /> <%= t('cod') %></label>
+        <label class="radio-card"><input type="radio" name="paymentMethod" value="sslcommerz" /> <%= t('sslcommerz') %></label>
+        <label class="radio-card"><input type="radio" name="paymentMethod" value="bkash" /> <%= t('bkash') %></label>
+        <label class="radio-card"><input type="radio" name="paymentMethod" value="nagad" /> <%= t('nagad') %></label>
+
+        <label class="field">
+          <span><%= t('notes') %></span>
+          <textarea name="notes" rows="2"></textarea>
+        </label>
+
+        <% if (addresses.length) { %>
+        <button type="submit" class="btn btn-primary btn-block"><%= t('placeOrder') %></button>
+        <% } %>
+      </form>
+
+      <h3><%= t('addAddress') %></h3>
+      <form method="post" action="/<%= locale %>/checkout/address" class="stack">
+        <label class="field"><span><%= t('name') %></span><input name="name" required /></label>
+        <label class="field"><span><%= t('phone') %></span><input name="phone" required /></label>
+        <label class="field"><span><%= t('addressLine') %></span><input name="addressLine" required /></label>
+        <label class="field"><span><%= t('area') %></span><input name="area" /></label>
+        <label class="field"><span><%= t('city') %></span><input name="city" required /></label>
+        <label class="field"><span><%= t('district') %></span><input name="district" /></label>
+        <label class="field"><span><%= t('postalCode') %></span><input name="postalCode" /></label>
+        <button type="submit" class="btn"><%= t('save') %></button>
+      </form>
+    </div>
+
+    <aside class="cart-side">
+      <h2><%= t('cart') %></h2>
+      <ul class="mini-list">
+        <% cart.items.forEach(function(item) { %>
+        <li>
+          <%= helpers.pickName(item.product || item, locale) || item.name %>
+          × <%= item.quantity %>
+          <span><%= helpers.money(Number(item.unitPrice || item.price || 0) * Number(item.quantity || 1)) %></span>
+        </li>
+        <% }) %>
+      </ul>
+      <dl class="totals">
+        <div class="grand"><dt><%= t('total') %></dt><dd><%= helpers.money(cart.total || cart.subtotal) %></dd></div>
+      </dl>
+    </aside>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

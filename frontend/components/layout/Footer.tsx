@@ -161,6 +161,14 @@ export default function Footer({ initialSettings }: { initialSettings?: Storefro
                 <li><Link href={`/${locale}/policies/privacy`} className="block py-1 transition-colors hover:text-white">{tPolicy('privacyPolicy')}</Link></li>
                 <li><Link href={`/${locale}/policies/returns`} className="block py-1 transition-colors hover:text-white">{tPolicy('returnPolicy')}</Link></li>
                 <li><Link href={`/${locale}/policies/terms`} className="block py-1 transition-colors hover:text-white">{tPolicy('termsConditions')}</Link></li>
+                <li>
+                  <a
+                    href={`${(process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://lite.oceanbazar.com.bd').replace(/\/$/, '')}/prefer?view=lite&next=${encodeURIComponent(`/${locale}`)}`}
+                    className="block py-1 transition-colors hover:text-white"
+                  >
+                    Lite site (লাইট)
+                  </a>
+                </li>
               </ul>
             </div>
           </div>
