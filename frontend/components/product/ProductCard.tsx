@@ -15,6 +15,7 @@ import { getMediaUrl } from '@/lib/mediaUrl';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
+import { isIosSafari } from '@/lib/iosSafari';
 
 interface Props {
   product: Product;
@@ -73,7 +74,8 @@ function ProductCard({ product }: Props) {
       try {
         setCart(data);
         setOpen(true);
-        success(tp('addedToCart'));
+        // Skip toast on iOS Safari — toast opacity animation + cart drawer mount blanks the page.
+        if (!isIosSafari()) success(tp('addedToCart'));
       } catch {
         toastError(tc('error'));
         return;

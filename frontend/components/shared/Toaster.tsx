@@ -1,10 +1,12 @@
 'use client';
 
+import type { ElementType } from 'react';
 import { useToastStore, type ToastVariant } from '@/hooks/useToast';
 import { CheckCircle2, XCircle, AlertCircle, Info, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isIosSafari } from '@/lib/iosSafari';
 
-const ICONS: Record<ToastVariant, React.ElementType> = {
+const ICONS: Record<ToastVariant, ElementType> = {
   success: CheckCircle2,
   error:   XCircle,
   warning: AlertCircle,
@@ -20,6 +22,7 @@ const STYLES: Record<ToastVariant, string> = {
 
 export default function Toaster() {
   const { toasts, remove } = useToastStore();
+  const skipMotion = typeof window !== 'undefined' && isIosSafari();
 
   if (toasts.length === 0) return null;
 
@@ -37,7 +40,8 @@ export default function Toaster() {
             role="alert"
             className={cn(
               'flex max-w-xs items-start gap-3 rounded-xl border px-4 py-3 shadow-lg',
-              'animate-[slideInUp_0.25s_ease-out]',
+              // opacity+transform toast mount blanks old iOS Safari with the cart drawer
+              !skipMotion && 'animate-[slideInUp_0.25s_ease-out]',
               'sm:max-w-sm',
               STYLES[t.variant],
             )}

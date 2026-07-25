@@ -16,6 +16,7 @@ import { getMediaUrl } from '@/lib/mediaUrl';
 import { previewOrderTotals } from '@/lib/checkoutTotals';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
+import { isIosSafari } from '@/lib/iosSafari';
 
 export default function CartDrawer() {
   const t = useTranslations('cart');
@@ -31,6 +32,8 @@ export default function CartDrawer() {
 
   useEffect(() => {
     if (!isOpen) return;
+    // body { overflow:hidden } blanks the compositor on old iOS Safari — skip there.
+    if (isIosSafari()) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
@@ -101,27 +104,21 @@ export default function CartDrawer() {
 
   return (
     <>
-      {/* Backdrop — solid tint only (backdrop-blur paints white on old iOS Safari) */}
+      {/* Backdrop — solid tint only; no opacity transitions (old iOS white-screen) */}
       <div
-        className="fixed inset-0 z-[60] transition-opacity duration-300"
+        className="fixed inset-0 z-[60]"
         style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
         onClick={() => setOpen(false)}
         aria-hidden
         data-ob-cart-backdrop="1"
       />
 
-      {/* Drawer — solid panel; width without max-w-[50vw] trap on mobile */}
+      {/*
+        Drawer: no slide/transform animation on mount — fixed+transform blanks iPhone 7 Safari.
+        Literal colors (not hsl(var())) so paint never depends on CSS variable parsing.
+      */}
       <div
-        className={cn(
-          'fixed inset-y-0 right-0 z-[70] flex flex-col shadow-2xl',
-          'w-[min(85vw,400px)] border-l',
-          'animate-slide-in-right',
-        )}
-        style={{
-          backgroundColor: 'hsl(var(--background, 0 0% 100%))',
-          color: 'hsl(var(--foreground, 222 84% 5%))',
-          borderColor: 'hsl(var(--border, 214 32% 91%))',
-        }}
+        className="fixed inset-y-0 right-0 z-[70] flex w-[85%] max-w-[400px] flex-col border-l border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50"
         role="dialog"
         aria-modal
         aria-labelledby="cart-drawer-title"
@@ -245,11 +242,8 @@ export default function CartDrawer() {
         {/* Footer */}
         {safeCart && safeCart.items.length > 0 && (
           <div
-            className="space-y-3 border-t border-border/60 px-4 py-4 sm:space-y-4 sm:px-5 sm:py-5"
-            style={{
-              backgroundColor: 'hsl(var(--background, 0 0% 100%))',
-              paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
-            }}
+            className="space-y-3 border-t border-border/60 bg-white px-4 py-4 dark:bg-slate-950 sm:space-y-4 sm:px-5 sm:py-5"
+            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
           >
             {/* Coupon */}
             <div className="rounded-xl border border-border/40 bg-muted/30 p-3 sm:p-3.5">

@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/useToast';
 import { productsApi, cartApi, stockNotifyApi } from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
 import { useAuthStore } from '@/stores/authStore';
+import { isIosSafari } from '@/lib/iosSafari';
 import { calculatePrice } from '@/lib/pricing';
 import PricingBlock from '@/components/product/PricingBlock';
 import ProductZoomGallery from '@/components/product/ProductZoomGallery';
@@ -347,7 +348,7 @@ export default function ProductDetailClient({ productId, locale }: Props) {
                     try {
                       setCart(data);
                       setOpen(true);
-                      success(t('addedToCart'));
+                      if (!isIosSafari()) success(t('addedToCart'));
                     } catch {
                       toastError(tc('error'));
                     }
@@ -422,7 +423,7 @@ export default function ProductDetailClient({ productId, locale }: Props) {
                   try {
                     setCart(data);
                     setOpen(true);
-                    success(t('addedToCart'));
+                    if (!isIosSafari()) success(t('addedToCart'));
                   } catch {
                     toastError(tc('error'));
                   }
