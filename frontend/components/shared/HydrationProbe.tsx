@@ -9,6 +9,11 @@ import { isIosWebKit } from '@/lib/iosSafari';
 export default function HydrationProbe() {
   useEffect(() => {
     // #region agent log
+    try {
+      (window as unknown as { __ob_hydrated?: boolean }).__ob_hydrated = true;
+    } catch {
+      /* ignore */
+    }
     debugSessionLog({
       hypothesisId: 'H11',
       location: 'HydrationProbe.tsx:mount',

@@ -48,9 +48,67 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
+// #region agent log
+// Early (pre-hydration) global error capture for debug session 078c95.
+// Runs before any chunk so it catches the real exception that blocks hydration
+// on old devices. ES5-only for old WebKit. Beacons to prod /api/client-errors.
+const EARLY_ERROR_CAPTURE = `(function(){
+  try {
+    var sent = 0;
+    function beacon(hyp, msg, extra){
+      if (sent >= 6) return; sent++;
+      try {
+        var snap = { sessionId:'078c95', runId:'early-capture', hypothesisId:hyp,
+          location:'layout.tsx:early', message:msg,
+          data: { ua:(navigator.userAgent||'').slice(0,180), href:location.href,
+            path:location.pathname, chunks: (function(){ try {
+              var s=document.querySelectorAll('script[src*="_next/static/chunks/"]'); var a=[];
+              for (var i=0;i<s.length && a.length<6;i++){ var m=(s[i].src||'').split('/chunks/')[1]; if(m)a.push(m); }
+              return a; } catch(e){ return null; } })(),
+            online: (navigator.onLine!==undefined?navigator.onLine:null),
+            conn: (navigator.connection&&navigator.connection.effectiveType)||null,
+            extra: extra||null }, timestamp: Date.now() };
+        var body = JSON.stringify({ message:'[debug-078c95] '+msg, url:location.href,
+          userAgent:navigator.userAgent, snapshot:snap });
+        if (navigator.sendBeacon) { navigator.sendBeacon('/api/client-errors', new Blob([body],{type:'application/json'})); return; }
+        var x = new XMLHttpRequest(); x.open('POST','/api/client-errors',true);
+        x.setRequestHeader('Content-Type','application/json'); x.send(body);
+      } catch(e){}
+    }
+    window.addEventListener('error', function(ev){
+      var t = ev && ev.target;
+      if (t && (t.tagName==='SCRIPT'||t.tagName==='LINK')) {
+        beacon('H14','resource load error',{ src:(t.src||t.href||'').slice(0,160), tag:t.tagName });
+      } else {
+        beacon('H13','window error',{ msg:String((ev&&ev.message)||'').slice(0,220),
+          file:String((ev&&ev.filename)||'').slice(0,140), line:(ev&&ev.lineno)||null, col:(ev&&ev.colno)||null,
+          stack:String((ev&&ev.error&&ev.error.stack)||'').slice(0,400) });
+      }
+    }, true);
+    window.addEventListener('unhandledrejection', function(ev){
+      var r = ev && ev.reason;
+      beacon('H13','unhandledrejection',{ msg:String((r&&r.message)||r||'').slice(0,220),
+        stack:String((r&&r.stack)||'').slice(0,400) });
+    });
+    window.addEventListener('pageshow', function(ev){
+      if (ev && ev.persisted) beacon('H15','bfcache restore (persisted)',{});
+    });
+    // Hydration watchdog: if the shop shell never marks itself hydrated, report it.
+    setTimeout(function(){
+      if (!window.__ob_hydrated) beacon('H16','no-hydration after 8s',{});
+    }, 8000);
+  } catch(e){}
+})();`;
+// #endregion
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="bn" suppressHydrationWarning className={`${inter.variable} ${notoSansBengali.variable}`}>
+      <head>
+        {/* #region agent log */}
+        <script dangerouslySetInnerHTML={{ __html: EARLY_ERROR_CAPTURE }} />
+        {/* #endregion */}
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased" suppressHydrationWarning>
         {children}
         <MetaPixel />
