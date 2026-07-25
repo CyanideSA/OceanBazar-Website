@@ -6,7 +6,6 @@ import { Bell, Menu, X, User, ChevronRight, LayoutGrid, TrendingUp, Package, Sta
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 import { useUIStore } from '@/stores/uiStore';
-import { firebaseSignOut } from '@/lib/firebase';
 import LanguageSelect from '@/components/shared/LanguageSelect';
 import ThemeToggle from '@/components/theme/ThemeToggle';
 import SearchAutocomplete from '@/components/search/SearchAutocomplete';
@@ -362,7 +361,17 @@ export default function Header({ initialFlashSale }: { initialFlashSale?: FlashS
                 </Link>
                 <button
                   type="button"
-                  onClick={async () => { await firebaseSignOut().catch(() => {}); logout(); closeAll(); router.push(`/${locale}`); }}
+                  onClick={async () => {
+                    try {
+                      const { firebaseSignOut } = await import('@/lib/firebase');
+                      await firebaseSignOut().catch(() => {});
+                    } catch {
+                      /* firebase optional on old clients */
+                    }
+                    logout();
+                    closeAll();
+                    router.push(`/${locale}`);
+                  }}
                   className="flex min-h-[48px] w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 active:scale-[0.98]"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10">

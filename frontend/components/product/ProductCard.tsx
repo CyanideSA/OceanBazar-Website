@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
 import { isIosWebKit } from '@/lib/iosSafari';
+import { isLegacyStorefrontDevice } from '@/lib/legacyDevice';
 import { debugSessionLog } from '@/lib/debugSessionLog';
 
 interface Props {
@@ -60,7 +61,7 @@ function ProductCard({ product }: Props) {
   const productHref = `/${locale}/product/${product.id}`;
 
   const goToProduct = (e: MouseEvent) => {
-    const ios = isIosWebKit();
+    const hardNav = isIosWebKit() || isLegacyStorefrontDevice();
     // #region agent log
     debugSessionLog({
       hypothesisId: 'H7',
@@ -68,14 +69,14 @@ function ProductCard({ product }: Props) {
       message: 'product navigation',
       data: {
         productId: product.id,
-        ios,
-        hardNav: ios,
+        ios: isIosWebKit(),
+        hardNav,
       },
-      runId: 'post-fix',
+      runId: 'post-test-hydration',
     });
     // #endregion
-    // iPhone 7: soft App Router transitions leave a skeleton when chunk 1567 times out.
-    if (!ios) return;
+    // Legacy phones: soft App Router transitions often stall under a loading overlay.
+    if (!hardNav) return;
     e.preventDefault();
     window.location.assign(productHref);
   };
