@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, memo } from 'react';
+import { useState, memo, type MouseEvent } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { ShoppingCart, Star } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
@@ -15,7 +15,7 @@ import { getMediaUrl } from '@/lib/mediaUrl';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
-import { isIosSafari } from '@/lib/iosSafari';
+import { isIosWebKit } from '@/lib/iosSafari';
 import { debugSessionLog } from '@/lib/debugSessionLog';
 
 interface Props {
@@ -57,6 +57,28 @@ function ProductCard({ product }: Props) {
     : false;
 
   const isTopTrending = Array.isArray(product.tags) && product.tags.includes('ob_top_trending');
+  const productHref = `/${locale}/product/${product.id}`;
+
+  const goToProduct = (e: MouseEvent) => {
+    const ios = isIosWebKit();
+    // #region agent log
+    debugSessionLog({
+      hypothesisId: 'H7',
+      location: 'ProductCard.tsx:goToProduct',
+      message: 'product navigation',
+      data: {
+        productId: product.id,
+        ios,
+        hardNav: ios,
+      },
+      runId: 'post-fix',
+    });
+    // #endregion
+    // iPhone 7: soft App Router transitions leave a skeleton when chunk 1567 times out.
+    if (!ios) return;
+    e.preventDefault();
+    window.location.assign(productHref);
+  };
 
   const addMutation = useMutation({
     mutationFn: async () => {
@@ -80,13 +102,13 @@ function ProductCard({ product }: Props) {
         hypothesisId: 'H5',
         location: 'ProductCard.tsx:add-success',
         message: 'add to cart success',
-        data: { productId: product.id, ios: isIosSafari(), itemCount: data?.itemCount ?? null },
+        data: { productId: product.id, ios: isIosWebKit(), itemCount: data?.itemCount ?? null },
       });
       // #endregion
       try {
         setCart(data);
-        // iOS Safari: skip drawer mount — only update badge. Drawer open was blanking the page.
-        if (isIosSafari()) {
+        // iOS WebKit (Safari + Chrome): skip drawer mount — only update badge.
+        if (isIosWebKit()) {
           success(tp('addedToCart'));
         } else {
           setOpen(true);
@@ -127,21 +149,14 @@ function ProductCard({ product }: Props) {
     >
       {/* Image */}
       <Link
-        href={`/${locale}/product/${product.id}`}
-        prefetch
+        href={productHref}
+        prefetch={false}
         className="relative aspect-square overflow-hidden bg-muted"
         data-no-nav-loading="true"
-        onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
-        onClick={() => {
-          // #region agent log
-          debugSessionLog({
-            hypothesisId: 'H1',
-            location: 'ProductCard.tsx:image-link-click',
-            message: 'product image link clicked',
-            data: { productId: product.id, ios: isIosSafari() },
-          });
-          // #endregion
+        onMouseEnter={() => {
+          if (!isIosWebKit()) router.prefetch(productHref);
         }}
+        onClick={goToProduct}
       >
         {product.primaryImage && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -216,7 +231,7 @@ function ProductCard({ product }: Props) {
                 hypothesisId: 'H5',
                 location: 'ProductCard.tsx:quick-add-click',
                 message: 'quick-add clicked on card image',
-                data: { productId: product.id, ios: isIosSafari() },
+                data: { productId: product.id, ios: isIosWebKit() },
               });
               // #endregion
               addMutation.mutate();
@@ -244,9 +259,12 @@ function ProductCard({ product }: Props) {
 
         {/* Title */}
         <Link
-          href={`/${locale}/product/${product.id}`}
-          prefetch
-          onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
+          href={productHref}
+          prefetch={false}
+          onMouseEnter={() => {
+            if (!isIosWebKit()) router.prefetch(productHref);
+          }}
+          onClick={goToProduct}
         >
           <h3 className="mb-2 line-clamp-2 text-sm font-medium leading-snug text-foreground transition-colors hover:text-primary">
             {product.title}

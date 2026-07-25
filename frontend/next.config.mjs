@@ -63,6 +63,25 @@ const nextConfig = {
               source: '/_next/static/:path*',
               headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
             },
+            // HTML/RSC documents must not be long-cached — stale shells request dead chunk hashes on iOS.
+            {
+              source: '/:locale(en|bn)',
+              headers: [
+                {
+                  key: 'Cache-Control',
+                  value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+                },
+              ],
+            },
+            {
+              source: '/:locale(en|bn)/:path*',
+              headers: [
+                {
+                  key: 'Cache-Control',
+                  value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+                },
+              ],
+            },
             {
               source: '/:path*(\\.ico|\\.png|\\.jpg|\\.jpeg|\\.svg|\\.webp|\\.avif|\\.woff2?|\\.ttf)',
               headers: [{ key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' }],

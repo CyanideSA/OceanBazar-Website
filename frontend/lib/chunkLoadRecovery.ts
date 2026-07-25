@@ -1,3 +1,5 @@
+import { debugSessionLog } from '@/lib/debugSessionLog';
+
 /** Detect Next.js / webpack failures common after a deploy while a tab sits in the background. */
 export function isChunkLoadError(error: unknown): boolean {
   const msg = String(
@@ -20,7 +22,11 @@ export function isChunkLoadError(error: unknown): boolean {
 
 const RELOAD_KEY = 'ob_chunk_reload_at';
 
-/** One automatic hard reload per minute to recover stale bundles without loops. */
+/**
+ * One automatic hard navigation per minute.
+ * Soft `location.reload()` often reuses a broken document/runtime on iOS 15;
+ * replace + cache-bust forces a fresh HTML shell and chunk map.
+ */
 export function reloadOnceForChunkError(reason: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -30,6 +36,33 @@ export function reloadOnceForChunkError(reason: string): boolean {
   } catch {
     /* private mode — still try reload */
   }
-  window.location.reload();
+
+  // #region agent log
+  debugSessionLog({
+    hypothesisId: 'H4',
+    location: 'chunkLoadRecovery.ts:reloadOnce',
+    message: 'hard cache-bust recovery for chunk error',
+    data: { reason: String(reason || '').slice(0, 220), runId: 'post-fix' },
+    runId: 'post-fix',
+  });
+  // #endregion
+
+  try {
+    void caches?.keys?.().then((keys) => {
+      for (const k of keys) {
+        if (k.startsWith('ob-cache')) void caches.delete(k);
+      }
+    });
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('_obcb', String(Date.now()));
+    window.location.replace(url.toString());
+  } catch {
+    window.location.reload();
+  }
   return true;
 }

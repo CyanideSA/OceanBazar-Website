@@ -16,7 +16,7 @@ import { getMediaUrl } from '@/lib/mediaUrl';
 import { previewOrderTotals } from '@/lib/checkoutTotals';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
-import { isIosSafari } from '@/lib/iosSafari';
+import { isIosWebKit } from '@/lib/iosSafari';
 
 export default function CartDrawer() {
   const t = useTranslations('cart');
@@ -32,8 +32,8 @@ export default function CartDrawer() {
 
   useEffect(() => {
     if (!isOpen) return;
-    // body { overflow:hidden } blanks the compositor on old iOS Safari — skip there.
-    if (isIosSafari()) return;
+    // body { overflow:hidden } blanks the compositor on old iOS WebKit — skip there.
+    if (isIosWebKit()) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
