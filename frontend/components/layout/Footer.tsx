@@ -7,7 +7,7 @@ import { newsletterApi, storefrontApi } from '@/lib/api';
 import { useLocale, useTranslations } from 'next-intl';
 import LanguageSelect from '@/components/shared/LanguageSelect';
 import PaymentLogos from '@/components/layout/PaymentLogos';
-import Logo, { LOGO_SRC_TRANSPARENT } from '@/components/shared/Logo';
+import Logo from '@/components/shared/Logo';
 import OceanVideoBackground from '@/components/shared/OceanVideoBackground';
 import LiveChatLink from '@/components/chat/LiveChatLink';
 import { ThreadsIcon } from '@/components/shared/ThreadsIcon';
@@ -83,7 +83,6 @@ export default function Footer({ initialSettings }: { initialSettings?: Storefro
                 <Logo
                   width={300}
                   height={85}
-                  src={LOGO_SRC_TRANSPARENT}
                   interaction="footer"
                 />
               </div>
@@ -160,7 +159,9 @@ export default function Footer({ initialSettings }: { initialSettings?: Storefro
                 <li><Link href={`/${locale}/business-inquiries`} className="block py-1 transition-colors hover:text-white">{t('businessInquiries')}</Link></li>
                 <li><Link href={`/${locale}/policies/privacy`} className="block py-1 transition-colors hover:text-white">{tPolicy('privacyPolicy')}</Link></li>
                 <li><Link href={`/${locale}/policies/returns`} className="block py-1 transition-colors hover:text-white">{tPolicy('returnPolicy')}</Link></li>
+                <li><Link href={`/${locale}/policies/refunds`} className="block py-1 transition-colors hover:text-white">{tPolicy('refundPolicy')}</Link></li>
                 <li><Link href={`/${locale}/policies/terms`} className="block py-1 transition-colors hover:text-white">{tPolicy('termsConditions')}</Link></li>
+                <li><Link href={`/${locale}/policies/shipping`} className="block py-1 transition-colors hover:text-white">{tPolicy('shippingPolicy')}</Link></li>
                 <li>
                   <a
                     href={`${(process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://oceanbazar.com.bd/lite').replace(/\/$/, '')}/prefer?view=lite&next=${encodeURIComponent(`/${locale}`)}`}
@@ -218,9 +219,23 @@ export default function Footer({ initialSettings }: { initialSettings?: Storefro
             {newsletterState === 'error' && <p className="mt-2 text-xs text-rose-300">Could not subscribe right now.</p>}
           </div>
 
-          <div className="-mx-4 mb-8 sm:-mx-6 lg:-mx-8">
+          <div className="-mx-4 mb-8 w-[calc(100%+2rem)] sm:-mx-6 sm:w-[calc(100%+3rem)] lg:-mx-[0.5in] lg:w-[calc(100%+1in)]">
             <PaymentLogos />
           </div>
+
+          {(siteSettings?.registeredAddress || siteSettings?.tradeLicenseNo || siteSettings?.tinNumber) && (
+            <div className="mb-6 space-y-1 text-center text-xs text-blue-100/70 sm:text-left">
+              {siteSettings?.legalName ? <p className="font-semibold text-blue-50/90">{siteSettings.legalName}</p> : null}
+              {siteSettings?.registeredAddress ? (
+                <p className="whitespace-pre-line">{siteSettings.registeredAddress}</p>
+              ) : null}
+              <p>
+                {siteSettings?.tradeLicenseNo ? <>Trade License: {siteSettings.tradeLicenseNo}</> : null}
+                {siteSettings?.tradeLicenseNo && siteSettings?.tinNumber ? ' · ' : null}
+                {siteSettings?.tinNumber ? <>TIN: {siteSettings.tinNumber}</> : null}
+              </p>
+            </div>
+          )}
 
           <div className="border-t border-white/10" />
 

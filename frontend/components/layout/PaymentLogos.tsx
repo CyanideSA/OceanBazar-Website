@@ -20,12 +20,12 @@ export default function PaymentLogos({ showLabel = true }: PaymentLogosProps) {
           {t('payWith')}
         </p>
       )}
-      <div className="w-full overflow-x-auto px-3 py-2.5 sm:px-4 sm:py-3">
+      <div className="w-full overflow-x-auto py-2.5 sm:py-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/sslcommerz-pay-with.png?v=4"
+          src="/sslcommerz-pay-with.png?v=5"
           alt="Pay with SSLCommerz — cards, bKash, Nagad, Upay, bank payments and more"
-          className="mx-auto block h-auto w-full max-w-[1100px] object-contain bg-transparent"
+          className="block h-auto w-full max-w-none object-contain bg-transparent"
           loading="lazy"
           decoding="async"
         />

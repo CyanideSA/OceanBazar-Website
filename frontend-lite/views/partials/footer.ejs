@@ -88,11 +88,9 @@
     </div>
   </div>
 
-  <div class="footer-payments" style="margin:16px 0 8px;background:transparent;padding:10px 0;overflow-x:auto;-webkit-overflow-scrolling:touch;">
-    <p style="text-align:center;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;margin:0 0 6px;"><%= t('payWith') || 'We accept' %></p>
-    <div style="background:transparent;padding:10px 12px;" data-ob-pay-with="1">
-      <img src="<%= basePath %>/sslcommerz-pay-with.png?v=4" alt="Pay with SSLCommerz — cards, bKash, Nagad, Upay, bank payments and more" style="display:block;margin:0 auto;width:100%;max-width:1100px;height:auto;background:transparent;" loading="lazy" />
-    </div>
+  <div class="footer-payments" data-ob-pay-with="1">
+    <p class="footer-payments-label"><%= t('payWith') || 'We accept' %></p>
+    <img src="<%= basePath %>/sslcommerz-pay-with.png?v=5" alt="Pay with SSLCommerz — cards, bKash, Nagad, Upay, bank payments and more" class="footer-payments-img" loading="lazy" />
   </div>
 
   <% if (settings && (settings.registeredAddress || settings.tradeLicenseNo || settings.tinNumber)) { %>
