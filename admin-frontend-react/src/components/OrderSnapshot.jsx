@@ -53,6 +53,11 @@ export default function OrderSnapshot({
           <div className="flex flex-wrap gap-2 mt-2">
             <span className="crm-badge">{o.status || "—"}</span>
             <span className="crm-badge">{o.paymentStatus || o.payment_status || "—"}</span>
+            {(o.deliveryPaymentStatus || o.delivery_payment_status) && String(o.deliveryPaymentStatus || o.delivery_payment_status) !== 'none' ? (
+              <span className="crm-badge">
+                Delivery: {String(o.deliveryPaymentStatus || o.delivery_payment_status).replace(/_/g, ' ')}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="text-right">
@@ -90,6 +95,13 @@ export default function OrderSnapshot({
           <div className="pt-2 border-t border-crm-border">
             <p className="text-[10px] font-bold uppercase text-crm-text-dim mb-1">Delivery address</p>
             <p className="text-xs text-crm-text-bright">{addr(shipping)}</p>
+            {(shipping?.pathaoCityName || shipping?.pathao_city_name) && (
+              <p className="text-[10px] text-crm-text-dim mt-1">
+                Pathao: {shipping.pathaoCityName || shipping.pathao_city_name}
+                {(shipping.pathaoZoneName || shipping.pathao_zone_name) ? ` / ${shipping.pathaoZoneName || shipping.pathao_zone_name}` : ''}
+                {(shipping.pathaoAreaName || shipping.pathao_area_name) ? ` / ${shipping.pathaoAreaName || shipping.pathao_area_name}` : ''}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -127,6 +139,11 @@ export default function OrderSnapshot({
                 ) : (
                   <p className="text-sm font-medium text-crm-text-bright truncate">{title}</p>
                 )}
+                {(item.variantLabel || item.variant_label) && (
+                  <p className="text-[10px] text-crm-primary font-medium truncate">
+                    {item.variantLabel || item.variant_label}
+                  </p>
+                )}
                 <p className="text-[10px] text-crm-text-dim">
                   Qty: {item.quantity} × {money(price)}
                 </p>
@@ -145,6 +162,14 @@ export default function OrderSnapshot({
         {Number(o.discount) > 0 && <div className="flex justify-between text-crm-text-dim"><span>Discount</span><span>-{money(o.discount)}</span></div>}
         {Number(o.obDiscount || o.ob_discount) > 0 && <div className="flex justify-between text-crm-text-dim"><span>OB Points</span><span>-{money(o.obDiscount || o.ob_discount)}</span></div>}
         <div className="flex justify-between text-crm-text-dim"><span>Shipping</span><span>{money(o.shippingFee ?? o.shipping_fee ?? o.shippingCost)}</span></div>
+        {(o.deliveryPaymentStatus || o.delivery_payment_status) && String(o.deliveryPaymentStatus || o.delivery_payment_status) !== 'none' ? (
+          <div className="flex justify-between text-crm-text-dim">
+            <span>Delivery fee paid</span>
+            <span>
+              {money(o.deliveryFeePaid ?? o.delivery_fee_paid)} · {String(o.deliveryPaymentStatus || o.delivery_payment_status).replace(/_/g, ' ')}
+            </span>
+          </div>
+        ) : null}
         {Number(o.gst) > 0 && <div className="flex justify-between text-crm-text-dim"><span>GST</span><span>{money(o.gst)}</span></div>}
         {Number(o.serviceFee || o.service_fee) > 0 && <div className="flex justify-between text-crm-text-dim"><span>Service fee</span><span>{money(o.serviceFee || o.service_fee)}</span></div>}
         <div className="flex justify-between font-bold text-crm-text-bright border-t border-crm-border pt-2 mt-1">

@@ -6,7 +6,8 @@ import { useTranslations } from 'next-intl';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { notFound } from 'next/navigation';
 import { useShopRouter } from '@/lib/shopNavigation';
-import { AlertTriangle, Truck, Bell } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, Truck, Bell, Shield } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import { productsApi, cartApi, stockNotifyApi } from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
@@ -23,7 +24,7 @@ import ProductBannerCarousel from '@/components/product/ProductBannerCarousel';
 import ProductRelatedSections from '@/components/product/ProductRelatedSections';
 import ProductActionsBar from '@/components/product/ProductActionsBar';
 import type { ProductDetail } from '@/types';
-import { filterImagesByColor, pickVariant, requiresVariantSelection } from '@/lib/variants';
+import { filterImagesByColor, formatVariantLabel, pickVariant, requiresVariantSelection, slugColorKey } from '@/lib/variants';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { useTrackRecentlyViewed } from '@/hooks/useRecentlyViewed';
 import RecentlyViewedProducts from '@/components/product/RecentlyViewedProducts';
@@ -40,6 +41,7 @@ function normalizeProductDetail(raw: Record<string, any>): ProductDetail {
     moq: d.moq ?? 1,
     stock: d.stock ?? 0,
     tags: Array.isArray(d.tags) ? d.tags : [],
+    trustBadges: Array.isArray(d.trustBadges) ? d.trustBadges : [],
     primaryImage: d.primaryImage ?? d.image ?? null,
     images: Array.isArray(d.richImages)
       ? d.richImages.map((img: any) => ({
@@ -194,12 +196,24 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
 
   const visibleImages = useMemo(() => {
     if (!allImages.length) return [];
-    return filterImagesByColor(allImages, colorSlug);
-  }, [allImages, colorSlug]);
+    if (colorSlug) {
+      const byColor = filterImagesByColor(allImages, colorSlug);
+      if (byColor.some((i) => i.colorKey)) return byColor;
+    }
+    if (styleSel) {
+      const byStyle = filterImagesByColor(allImages, slugColorKey(styleSel));
+      if (byStyle.some((i) => i.colorKey)) return byStyle;
+    }
+    if (sizeSel) {
+      const bySize = filterImagesByColor(allImages, slugColorKey(sizeSel));
+      if (bySize.some((i) => i.colorKey)) return bySize;
+    }
+    return allImages;
+  }, [allImages, colorSlug, styleSel, sizeSel]);
 
   useEffect(() => {
     setActiveImage(0);
-  }, [colorSlug, visibleImages.length]);
+  }, [colorSlug, styleSel, sizeSel, visibleImages.length]);
 
   const effectiveStock = useMemo(() => {
     if (!product) return 0;
@@ -212,6 +226,54 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
   const variantPriceOverride = matchedVariant?.priceOverride ?? null;
   const needsVariantPick = requiresVariantSelection(variants) && !matchedVariant;
   const variantIdForCart = matchedVariant?.id ?? (variants.length === 1 ? variants[0].id : null);
+  /** Stock for ATC limits — never force 0 while options are unselected. */
+  const showOutOfStock = !needsVariantPick && effectiveStock === 0;
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e24651' },
+      body: JSON.stringify({
+        sessionId: 'e24651',
+        runId: 'pdp-options',
+        hypothesisId: 'C',
+        location: 'ProductDetailClient.tsx:stock-options',
+        message: 'PDP stock/option state',
+        data: {
+          productId,
+          variantCount: variants.length,
+          colorSlug,
+          styleSel,
+          sizeSel,
+          needsVariantPick,
+          effectiveStock,
+          showOutOfStock,
+          visibleImageCount: visibleImages.length,
+          keyedImageCount: visibleImages.filter((i) => i.colorKey).length,
+          specEntryCount: Array.isArray((product as any)?.specificationsEntries)
+            ? (product as any).specificationsEntries.length
+            : Object.keys(product?.specifications || {}).length,
+          attrEntryCount: Array.isArray((product as any)?.attributesEntries)
+            ? (product as any).attributesEntries.length
+            : Object.keys(product?.attributes || {}).length,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [
+    productId,
+    variants.length,
+    colorSlug,
+    styleSel,
+    sizeSel,
+    needsVariantPick,
+    effectiveStock,
+    showOutOfStock,
+    visibleImages,
+    product,
+  ]);
+  // #endregion
 
   const addMutation = useMutation({
     mutationFn: async (args: { qty: number; variantId?: string | null }) => {
@@ -233,6 +295,9 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
           unitPrice: typeof unit === 'number' ? unit : 0,
           quantity: args.qty,
           variantId: args.variantId ?? null,
+          variantLabel: matchedVariant
+            ? formatVariantLabel(matchedVariant.attributes, matchedVariant.name)
+            : null,
           stock: effectiveStock,
           moq: product?.moq,
           retailMaxQty: (product?.pricing?.retail as { maxQty?: number } | undefined)?.maxQty ?? null,
@@ -341,6 +406,23 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
                 {t('sku')}: <span className="font-medium">{matchedVariant?.sku ?? product.sku}</span>
               </p>
             )}
+            {Array.isArray(product.trustBadges) && product.trustBadges.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2" data-ob-product-trust={String(product.trustBadges.length)}>
+                {product.trustBadges.map((badge) => {
+                  const label = locale === 'bn' ? badge.nameBn || badge.nameEn : badge.nameEn;
+                  return (
+                    <Link
+                      key={badge.id || badge.slug}
+                      href={`/${locale}/products?trustBadge=${encodeURIComponent(badge.slug)}`}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
           {/* ── Rating + Orders on one row ── */}
@@ -403,14 +485,14 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
             </p>
           )}
 
-          {/* ── Stock warnings ── */}
-          {effectiveStock > 0 && effectiveStock < 10 && (
+          {/* ── Stock warnings (never show OOS while options still unselected) ── */}
+          {!needsVariantPick && effectiveStock > 0 && effectiveStock < 10 && (
             <div className="flex items-center gap-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2.5">
               <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
               <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">{td('onlyLeft', { n: effectiveStock })}</p>
             </div>
           )}
-          {effectiveStock === 0 && (
+          {showOutOfStock && (
             <div className="space-y-2">
               <div className="flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2.5">
                 <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
@@ -445,11 +527,16 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
           <PricingBlock
             product={product}
             variantPriceOverride={variantPriceOverride}
-            effectiveStock={needsVariantPick ? 0 : effectiveStock}
+            effectiveStock={effectiveStock}
+            selectionRequired={needsVariantPick}
             variantId={variantIdForCart}
             onAddToCart={(qty, vid) => {
               if (needsVariantPick) {
                 toastError(td('selectOption'));
+                return;
+              }
+              if (qty > effectiveStock) {
+                toastError(tc('outOfStock'));
                 return;
               }
               addMutation.mutate(
@@ -473,6 +560,10 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
             onBuyNow={async (qty, vid) => {
               if (needsVariantPick) {
                 toastError(td('selectOption'));
+                return;
+              }
+              if (qty > effectiveStock) {
+                toastError(tc('outOfStock'));
                 return;
               }
               const data = await addMutation.mutateAsync({ qty, variantId: vid });
@@ -524,7 +615,7 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
         </div>
         <button
           type="button"
-          disabled={effectiveStock === 0 || needsVariantPick}
+          disabled={showOutOfStock}
           onClick={() => {
             if (needsVariantPick) {
               toastError(td('selectOption'));
@@ -550,11 +641,11 @@ export default function ProductDetailClient({ productId, locale, initialProduct 
           }}
           className="flex h-11 flex-1 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
         >
-          {effectiveStock === 0 ? tc('outOfStock') : needsVariantPick ? td('selectOption') : t('addToCart')}
+          {showOutOfStock ? tc('outOfStock') : t('addToCart')}
         </button>
         <button
           type="button"
-          disabled={effectiveStock === 0 || needsVariantPick}
+          disabled={showOutOfStock}
           onClick={async () => {
             if (needsVariantPick) {
               toastError(td('selectOption'));

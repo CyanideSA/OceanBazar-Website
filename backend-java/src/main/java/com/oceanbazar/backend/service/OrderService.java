@@ -18,12 +18,15 @@ import com.oceanbazar.backend.repository.CartRepository;
 import com.oceanbazar.backend.repository.OrderFeedbackRepository;
 import com.oceanbazar.backend.repository.OrderRepository;
 import com.oceanbazar.backend.repository.ProductRepository;
+import com.oceanbazar.backend.repository.ProductVariantRepository;
 import com.oceanbazar.backend.repository.UserRepository;
 import com.oceanbazar.backend.utils.CheckoutTotalsCalculator;
 import com.oceanbazar.backend.utils.OrderNumberGenerator;
 import com.oceanbazar.backend.utils.PaymentParsing;
 import com.oceanbazar.backend.utils.ShortId;
+import com.oceanbazar.backend.utils.VariantLabelUtil;
 import com.oceanbazar.backend.utils.WholesalePricingUtil;
+import com.oceanbazar.backend.entity.ProductVariantEntity;
 import com.oceanbazar.backend.events.DomainEventPublisher;
 import com.oceanbazar.backend.events.OrderPlacedEvent;
 import org.springframework.http.HttpStatus;
@@ -42,6 +45,7 @@ import java.util.Map;
 public class OrderService {
     private final CartRepository cartRepository;
     private final ProductRepository productRepository;
+    private final ProductVariantRepository productVariantRepository;
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
     private final CouponService couponService;
@@ -54,6 +58,7 @@ public class OrderService {
     public OrderService(
             CartRepository cartRepository,
             ProductRepository productRepository,
+            ProductVariantRepository productVariantRepository,
             OrderRepository orderRepository,
             UserRepository userRepository,
             CouponService couponService,
@@ -65,6 +70,7 @@ public class OrderService {
     ) {
         this.cartRepository = cartRepository;
         this.productRepository = productRepository;
+        this.productVariantRepository = productVariantRepository;
         this.orderRepository = orderRepository;
         this.userRepository = userRepository;
         this.couponService = couponService;
@@ -141,7 +147,11 @@ public class OrderService {
             oi.setOrderId(newOrderId);
             oi.setProductId(product.getId());
             oi.setVariantId(item.getVariantId());
-            oi.setProductTitle(product.getTitleEn());
+            ProductVariantEntity variant = null;
+            if (item.getVariantId() != null && !item.getVariantId().isBlank()) {
+                variant = productVariantRepository.findById(item.getVariantId()).orElse(null);
+            }
+            oi.setProductTitle(VariantLabelUtil.titledProduct(product.getTitleEn(), variant));
             oi.setUnitPrice(unitBd);
             oi.setQuantity(qty);
             oi.setLineTotal(lineBd);

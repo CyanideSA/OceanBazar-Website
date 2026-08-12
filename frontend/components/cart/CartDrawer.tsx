@@ -9,6 +9,7 @@ import { useCartStore } from '@/stores/cartStore';
 import { useAuthStore } from '@/stores/authStore';
 import { cartApi } from '@/lib/api';
 import { formatCartMoney } from '@/lib/cart';
+import { formatApiErrorMessage } from '@/lib/formatApiError';
 import { RETAIL_MAX_UNITS } from '@/lib/pricing';
 import type { CartItem } from '@/types';
 import { useNormalizedCart } from '@/hooks/useNormalizedCart';
@@ -24,14 +25,41 @@ export default function CartDrawer() {
   const locale = useLocale();
   const { isOpen, setOpen, setCart, appliedCoupon, setAppliedCoupon, appliedObPoints, updateLocalQty, removeLocalItem } = useCartStore();
   const [couponInput, setCouponInput] = useState('');
+  const [mounted, setMounted] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const { success, error: toastError } = useToast();
 
   const safeCart = useNormalizedCart();
   const { user, isAuthenticated } = useAuthStore();
   const isWholesaleUser = user?.userType === 'wholesale';
 
+  // Keep mounted through close so the panel can slide back toward the cart button (right edge).
   useEffect(() => {
-    if (!isOpen) return;
+    if (isOpen) {
+      setMounted(true);
+      setPanelOpen(false);
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setPanelOpen(true));
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'cart-anim',hypothesisId:'H1',location:'CartDrawer.tsx:open',message:'cart drawer open sequence',data:{isOpen:true,ios:isIosWebKit()},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+    setPanelOpen(false);
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'cart-anim',hypothesisId:'H1',location:'CartDrawer.tsx:close',message:'cart drawer close sequence',data:{isOpen:false},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    const id = window.setTimeout(() => setMounted(false), 320);
+    return () => window.clearTimeout(id);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!mounted || !panelOpen) return;
     // body { overflow:hidden } blanks the compositor on old iOS WebKit — skip there.
     if (isIosWebKit()) return;
     const prev = document.body.style.overflow;
@@ -39,7 +67,7 @@ export default function CartDrawer() {
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [isOpen]);
+  }, [mounted, panelOpen]);
 
   // Same per-product cap as the product page: retail tier-3 threshold from the
   // admin CRM (falling back to the global retail cap), bounded by stock.
@@ -52,13 +80,26 @@ export default function CartDrawer() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ productId, quantity, variantId }: { productId: string; quantity: number; variantId?: string | null }) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'pre-fix',hypothesisId:'H2',location:'CartDrawer.tsx:updateMutationFn',message:'cart qty update start',data:{productId,quantity,variantId:variantId??null,auth:isAuthenticated},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!isAuthenticated) return updateLocalQty(productId, quantity, variantId);
       return cartApi.update(productId, quantity, variantId);
     },
-    onSuccess: setCart,
+    onSuccess: (data) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'post-fix',hypothesisId:'H2',location:'CartDrawer.tsx:updateOnSuccess',message:'cart qty update success',data:{itemCount:data?.itemCount??null,items:(data?.items||[]).slice(0,3).map((i)=>({productId:i.productId,variantId:i.variantId??null,qty:i.quantity,variantLabel:i.variantLabel??null}))},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      setCart(data);
+    },
     onError: (e: unknown) => {
-      const ax = e as { response?: { data?: { error?: string; message?: string } } };
-      toastError(ax.response?.data?.error || ax.response?.data?.message || tc('error'));
+      const ax = e as { response?: { status?: number; data?: { error?: unknown; message?: unknown; detail?: unknown } }; message?: string };
+      const errVal = ax.response?.data?.error ?? ax.response?.data?.message ?? ax.response?.data?.detail ?? tc('error');
+      const toastMsg = formatApiErrorMessage(errVal, tc('error'));
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'post-fix',hypothesisId:'H1',location:'CartDrawer.tsx:updateOnError',message:'cart qty update error → toast',data:{status:ax.response?.status??null,errType:typeof errVal,errKeys:errVal&&typeof errVal==='object'?Object.keys(errVal as object).slice(0,8):[],toastMsg:toastMsg.slice(0,160)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      toastError(toastMsg);
     },
   });
 
@@ -68,7 +109,10 @@ export default function CartDrawer() {
       return cartApi.remove(productId, variantId);
     },
     onSuccess: setCart,
-    onError: () => toastError(tc('error')),
+    onError: (e: unknown) => {
+      const ax = e as { response?: { data?: { error?: unknown; message?: unknown; detail?: unknown } } };
+      toastError(formatApiErrorMessage(ax.response?.data?.error ?? ax.response?.data?.message ?? ax.response?.data?.detail ?? tc('error'), tc('error')));
+    },
   });
 
   const changeQuantity = (item: CartItem, nextQty: number) => {
@@ -100,29 +144,33 @@ export default function CartDrawer() {
     });
   }, [safeCart, appliedCoupon, appliedObPoints]);
 
-  if (!isOpen) return null;
+  if (!mounted) return null;
 
   return (
     <>
-      {/* Backdrop — solid tint only; no opacity transitions (old iOS white-screen) */}
+      {/* Backdrop — color transition only (no opacity:0) */}
       <div
-        className="fixed inset-0 z-[60]"
-        style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+        className={cn('ob-cart-backdrop fixed inset-0 z-[60]', panelOpen && 'is-open')}
         onClick={() => setOpen(false)}
         aria-hidden
         data-ob-cart-backdrop="1"
+        data-ob-cart-open={panelOpen ? '1' : '0'}
       />
 
       {/*
-        Drawer: no slide/transform animation on mount — fixed+transform blanks iPhone 7 Safari.
-        Literal colors (not hsl(var())) so paint never depends on CSS variable parsing.
+        Drawer slides in/out from the right edge (cart button side).
+        Transform-only motion; literal colors so paint never depends on CSS vars.
       */}
       <div
-        className="fixed inset-y-0 right-0 z-[70] flex w-[85%] max-w-[400px] flex-col border-l border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50"
+        className={cn(
+          'ob-cart-panel fixed inset-y-0 right-0 z-[70] flex w-[85%] max-w-[400px] flex-col border-l border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50',
+          panelOpen && 'is-open',
+        )}
         role="dialog"
         aria-modal
         aria-labelledby="cart-drawer-title"
         data-ob-cart-drawer="1"
+        data-ob-cart-open={panelOpen ? '1' : '0'}
       >
 
         {/* Header */}
@@ -186,6 +234,9 @@ export default function CartDrawer() {
                   {/* Details */}
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground sm:text-base">{item.title}</p>
+                    {item.variantLabel ? (
+                      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{item.variantLabel}</p>
+                    ) : null}
                     <p className="mt-1 text-sm font-bold text-primary sm:mt-1.5">
                       {tc('taka')}{formatCartMoney(item.unitPrice)}
                     </p>
@@ -287,56 +338,13 @@ export default function CartDrawer() {
               )}
             </div>
 
-            {/* Totals */}
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('subtotal')}</span>
-                <span className="font-medium text-foreground">{tc('taka')}{formatCartMoney(safeCart.subtotal)}</span>
-              </div>
-              {preview && preview.discount > 0 && (
-                <div className="flex justify-between text-success">
-                  <span>{t('discount')}</span>
-                  <span className="font-medium">-{tc('taka')}{formatCartMoney(preview.discount)}</span>
-                </div>
-              )}
-              {appliedObPoints && (
-                <div className="flex justify-between text-primary">
-                  <span>{t('pointsApplied')}</span>
-                  <span>-{tc('taka')}{formatCartMoney(appliedObPoints.bdtDiscount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('gst')}</span>
-                <span className="font-medium text-foreground">{tc('taka')}{formatCartMoney(preview?.gst ?? safeCart.gst)}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('shipping')}</span>
-                <span className="font-medium text-foreground">
-                  {(preview?.shippingFee ?? safeCart.shippingFee) === 0 ? (
-                    <span className="inline-flex items-center gap-1 text-success">
-                      <span>👑</span>
-                      <span>{t('freeShipping')}</span>
-                    </span>
-                  ) : (
-                    `${tc('taka')}${formatCartMoney(preview?.shippingFee ?? safeCart.shippingFee)}`
-                  )}
-                </span>
-              </div>
-              {(preview?.shippingFee ?? safeCart.shippingFee) === 0 && (
-                <div className="rounded-lg bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/30 dark:border-amber-800/30 dark:text-amber-300">
-                  🎖️ Gold Member benefit — free shipping on all orders over ৳500
-                </div>
-              )}
-            </div>
-
+            {/* Cart shows product value only — shipping/VAT calculated at checkout */}
             <div className="flex items-center justify-between border-t border-border/40 pt-3">
               <span className="text-base font-bold text-foreground">{t('total')}</span>
               <span className="text-xl font-extrabold text-primary">
-                {tc('taka')}{formatCartMoney(preview?.total ?? safeCart.total)}
+                {tc('taka')}{formatCartMoney(safeCart.subtotal)}
               </span>
             </div>
-
-            <p className="text-2xs text-muted-foreground">{t('cartEstimateNote')}</p>
 
             <Link
               href={`/${locale}/checkout`}
@@ -351,7 +359,7 @@ export default function CartDrawer() {
                 <ArrowRight className="h-4 w-4" />
               </span>
               <span className="mx-2 h-4 w-px bg-white/30" />
-              <span>{tc('taka')}{formatCartMoney(preview?.total ?? safeCart.total)}</span>
+              <span>{tc('taka')}{formatCartMoney(safeCart.subtotal)}</span>
             </Link>
           </div>
         )}

@@ -6,6 +6,7 @@ import com.oceanbazar.backend.entity.CartItemEntity;
 import com.oceanbazar.backend.entity.OrderEntity;
 import com.oceanbazar.backend.entity.OrderItemEntity;
 import com.oceanbazar.backend.entity.ProductPricingEntity;
+import com.oceanbazar.backend.entity.ProductVariantEntity;
 import com.oceanbazar.backend.entity.enums.CustomerType;
 import com.oceanbazar.backend.entity.ProductEntity;
 import com.oceanbazar.backend.entity.UserEntity;
@@ -13,6 +14,7 @@ import com.oceanbazar.backend.mapper.CartMapper;
 import com.oceanbazar.backend.repository.CartRepository;
 import com.oceanbazar.backend.repository.OrderRepository;
 import com.oceanbazar.backend.repository.ProductRepository;
+import com.oceanbazar.backend.repository.ProductVariantRepository;
 import com.oceanbazar.backend.repository.UserRepository;
 import com.oceanbazar.backend.utils.WholesalePricingUtil;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 
 @Service
@@ -32,6 +35,7 @@ import java.util.function.Function;
 public class CartService {
     private final CartRepository cartRepository;
     private final ProductRepository productRepository;
+    private final ProductVariantRepository productVariantRepository;
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
 
@@ -59,10 +63,7 @@ public class CartService {
                     cappedRetail = true;
                 }
                 if (qty <= 0) continue;
-                double unitPrice = isWholesale
-                        ? WholesalePricingUtil.computeWholesaleUnitPrice(product, qty)
-                        : WholesalePricingUtil.computeRetailUnitPrice(product, qty);
-                item.setUnitPrice(BigDecimal.valueOf(unitPrice));
+                item.setUnitPrice(resolveUnitPrice(product, item.getVariantId(), qty, isWholesale));
             }
         }
         if (cappedRetail) {
@@ -73,8 +74,15 @@ public class CartService {
     }
 
     public CartDtos.CartResponseDto addToCart(String userId, String productId, Integer quantity) {
+        return addToCart(userId, productId, quantity, null);
+    }
+
+    public CartDtos.CartResponseDto addToCart(String userId, String productId, Integer quantity, String variantId) {
         ProductEntity product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found"));
+
+        String normalizedVariantId = normalizeVariantId(variantId);
+        ProductVariantEntity variant = resolveVariant(productId, normalizedVariantId);
 
         UserEntity userEarly = userRepository.findById(userId).orElse(null);
         boolean wholesaleEarly = WholesalePricingUtil.isApprovedWholesaleUser(userEarly);
@@ -93,16 +101,18 @@ public class CartService {
         CustomerType lineCustomerType = wholesaleEarly ? CustomerType.wholesale : CustomerType.retail;
 
         CartItemEntity existing = cart.getItems().stream()
-                .filter(i -> productId.equals(i.getProductId()))
+                .filter(i -> sameLine(i, productId, normalizedVariantId))
                 .findFirst()
                 .orElse(null);
 
         if (existing != null) {
             existing.setQuantity((existing.getQuantity() == null ? 0 : existing.getQuantity()) + qtyToAdd);
             existing.setCustomerType(lineCustomerType);
+            existing.setVariantId(normalizedVariantId);
         } else {
             CartItemEntity item = new CartItemEntity();
             item.setProductId(productId);
+            item.setVariantId(normalizedVariantId);
             item.setQuantity(qtyToAdd);
             item.setCustomerType(lineCustomerType);
             ProductPricingEntity retail = WholesalePricingUtil.findPricing(product, CustomerType.retail);
@@ -113,18 +123,14 @@ public class CartService {
 
         UserEntity user = userRepository.findById(userId).orElse(null);
         boolean isWholesale = WholesalePricingUtil.isApprovedWholesaleUser(user);
-        int finalQty = 0;
         CartItemEntity updated = cart.getItems().stream()
-                .filter(i -> i != null && productId.equals(i.getProductId()))
+                .filter(i -> sameLine(i, productId, normalizedVariantId))
                 .findFirst()
                 .orElse(null);
-        if (updated != null && updated.getQuantity() != null) finalQty = updated.getQuantity();
-        enforceQuantityLimits(product, finalQty, wholesaleEarly);
+        int finalQty = updated != null && updated.getQuantity() != null ? updated.getQuantity() : 0;
+        enforceQuantityLimits(product, variant, finalQty, wholesaleEarly);
         if (updated != null && finalQty > 0) {
-            double unitPrice = isWholesale
-                    ? WholesalePricingUtil.computeWholesaleUnitPrice(product, finalQty)
-                    : WholesalePricingUtil.computeRetailUnitPrice(product, finalQty);
-            updated.setUnitPrice(BigDecimal.valueOf(unitPrice));
+            updated.setUnitPrice(resolveUnitPrice(product, normalizedVariantId, finalQty, isWholesale));
         }
 
         cartRepository.save(cart);
@@ -132,9 +138,14 @@ public class CartService {
     }
 
     public CartDtos.CartResponseDto updateCart(String userId, String productId, Integer quantity) {
+        return updateCart(userId, productId, quantity, null);
+    }
+
+    public CartDtos.CartResponseDto updateCart(String userId, String productId, Integer quantity, String variantId) {
         int qty = quantity == null ? 0 : quantity;
+        String normalizedVariantId = normalizeVariantId(variantId);
         if (qty <= 0) {
-            return removeFromCart(userId, productId);
+            return removeFromCart(userId, productId, normalizedVariantId);
         }
 
         CartEntity cart = cartRepository.findByUserId(userId)
@@ -144,7 +155,7 @@ public class CartService {
         }
 
         CartItemEntity existing = cart.getItems().stream()
-                .filter(i -> i != null && productId.equals(i.getProductId()))
+                .filter(i -> sameLine(i, productId, normalizedVariantId))
                 .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not in cart"));
 
@@ -154,12 +165,10 @@ public class CartService {
         if (product != null) {
             UserEntity user = userRepository.findById(userId).orElse(null);
             boolean isWholesale = WholesalePricingUtil.isApprovedWholesaleUser(user);
-            enforceQuantityLimits(product, qty, isWholesale);
+            ProductVariantEntity variant = resolveVariant(productId, normalizedVariantId);
+            enforceQuantityLimits(product, variant, qty, isWholesale);
             if (qty > 0) {
-                double unitPrice = isWholesale
-                        ? WholesalePricingUtil.computeWholesaleUnitPrice(product, qty)
-                        : WholesalePricingUtil.computeRetailUnitPrice(product, qty);
-                existing.setUnitPrice(BigDecimal.valueOf(unitPrice));
+                existing.setUnitPrice(resolveUnitPrice(product, normalizedVariantId, qty, isWholesale));
             }
         }
 
@@ -189,29 +198,73 @@ public class CartService {
         for (OrderItemEntity line : items) {
             if (line == null || line.getProductId() == null) continue;
             int qty = line.getQuantity() == null ? 1 : line.getQuantity();
-            addToCart(userId, line.getProductId(), qty > 0 ? qty : 1);
+            addToCart(userId, line.getProductId(), qty > 0 ? qty : 1, line.getVariantId());
         }
         return getCart(userId);
     }
 
     public CartDtos.CartResponseDto removeFromCart(String userId, String productId) {
+        return removeFromCart(userId, productId, null);
+    }
+
+    public CartDtos.CartResponseDto removeFromCart(String userId, String productId, String variantId) {
         CartEntity cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
+        String normalizedVariantId = normalizeVariantId(variantId);
         if (cart.getItems() == null) {
             cart.setItems(new ArrayList<>());
-        } else {
+        } else if (normalizedVariantId == null) {
             cart.getItems().removeIf(i -> i != null && productId.equals(i.getProductId()));
+        } else {
+            cart.getItems().removeIf(i -> sameLine(i, productId, normalizedVariantId));
         }
         cartRepository.save(cart);
         return toCartResponse(cart);
+    }
+
+    private static String normalizeVariantId(String variantId) {
+        if (variantId == null) return null;
+        String trimmed = variantId.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static boolean sameLine(CartItemEntity item, String productId, String variantId) {
+        if (item == null || !productId.equals(item.getProductId())) return false;
+        return Objects.equals(normalizeVariantId(item.getVariantId()), normalizeVariantId(variantId));
+    }
+
+    private ProductVariantEntity resolveVariant(String productId, String variantId) {
+        if (variantId == null) return null;
+        ProductVariantEntity variant = productVariantRepository.findById(variantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Variant not found"));
+        if (!productId.equals(variant.getProductId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Variant does not belong to this product");
+        }
+        if (Boolean.FALSE.equals(variant.getIsActive())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This option is unavailable");
+        }
+        return variant;
+    }
+
+    private BigDecimal resolveUnitPrice(ProductEntity product, String variantId, int qty, boolean isWholesale) {
+        double unitPrice = isWholesale
+                ? WholesalePricingUtil.computeWholesaleUnitPrice(product, qty)
+                : WholesalePricingUtil.computeRetailUnitPrice(product, qty);
+        if (variantId != null) {
+            ProductVariantEntity variant = productVariantRepository.findById(variantId).orElse(null);
+            if (variant != null && variant.getPriceOverride() != null) {
+                unitPrice = variant.getPriceOverride().doubleValue();
+            }
+        }
+        return BigDecimal.valueOf(unitPrice);
     }
 
     /**
      * Mirrors storefront product-page limits: per-product retail cap
      * (retail tier-3 threshold from the admin CRM) plus available stock.
      */
-    private void enforceQuantityLimits(ProductEntity product, int qty, boolean isWholesale) {
+    private void enforceQuantityLimits(ProductEntity product, ProductVariantEntity variant, int qty, boolean isWholesale) {
         if (product == null || qty <= 0) return;
         if (!isWholesale) {
             int retailCap = WholesalePricingUtil.retailMaxOrderQty(product);
@@ -221,10 +274,10 @@ public class CartService {
                                 + " units of this product. Apply for wholesale to order more.");
             }
         }
-        Integer stock = product.getStock();
+        Integer stock = variant != null && variant.getStock() != null ? variant.getStock() : product.getStock();
         if (stock != null && stock > 0 && qty > stock) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Only " + stock + " units in stock for this product.");
+                    "Only " + stock + " units in stock for this option.");
         }
     }
 
@@ -233,6 +286,7 @@ public class CartService {
         if (items == null) items = List.of();
 
         Function<String, ProductEntity> productLookup = id -> productRepository.findById(id).orElse(null);
-        return CartMapper.toCartResponse(cart, items, productLookup);
+        Function<String, ProductVariantEntity> variantLookup = id -> productVariantRepository.findById(id).orElse(null);
+        return CartMapper.toCartResponse(cart, items, productLookup, variantLookup);
     }
 }

@@ -41,10 +41,22 @@ function normalizeCartItem(row: unknown, index: number): CartItem | null {
   const stock = product.stock != null ? toNum(product.stock) : null;
   const retailMaxQty = product.retailMaxQty != null ? toNum(product.retailMaxQty) : null;
 
+  const variantId = (item.variantId as string | null) ?? null;
+  const variantLabelRaw = item.variantLabel ?? item.variantName ?? product.variantLabel ?? null;
+  const variantLabel =
+    typeof variantLabelRaw === 'string' && variantLabelRaw.trim()
+      ? variantLabelRaw.trim()
+      : null;
+  // #region agent log
+  if (typeof fetch !== 'undefined' && (variantId || variantLabel || item.attributes || item.variantAttributes)) {
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'post-fix',hypothesisId:'H5',location:'cart.ts:normalizeCartItem',message:'cart item variant fields',data:{productId,variantId,hasVariantLabel:!!variantLabel,rawKeys:Object.keys(item).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
+  }
+  // #endregion
   return {
     id: toNum(item.id) || index + 1,
     productId,
-    variantId: (item.variantId as string | null) ?? null,
+    variantId,
+    variantLabel,
     title: String(item.title ?? product.name ?? product.titleEn ?? product.title ?? 'Product'),
     image: (item.image as string | null) ?? (product.image as string | null) ?? null,
     quantity,
@@ -124,6 +136,7 @@ export type GuestCartAddInput = {
   unitPrice: number;
   quantity: number;
   variantId?: string | null;
+  variantLabel?: string | null;
   stock?: number | null;
   moq?: number;
   retailMaxQty?: number | null;
@@ -151,12 +164,14 @@ export function guestAddToCart(cart: CartSummary | null, input: GuestCartAddInpu
       image: input.image ?? items[idx].image,
       stock: input.stock ?? items[idx].stock,
       retailMaxQty: input.retailMaxQty ?? items[idx].retailMaxQty,
+      variantLabel: input.variantLabel ?? items[idx].variantLabel,
     };
   } else {
     items.push({
       id: Date.now() + items.length,
       productId: input.productId,
       variantId: input.variantId ?? null,
+      variantLabel: input.variantLabel ?? null,
       title: input.title,
       image: input.image ?? null,
       quantity: qty,

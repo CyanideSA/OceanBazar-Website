@@ -44,12 +44,18 @@ router.post('/add', async (req: Request, res: Response) => {
 
 // PUT /api/cart/update
 router.put('/update', async (req: Request, res: Response) => {
-  const body = req.body as { itemId?: number; productId?: string; quantity?: number };
+  const body = req.body as {
+    itemId?: number;
+    productId?: string;
+    quantity?: number;
+    variantId?: string | null;
+  };
   try {
     if (body.productId != null) {
       const data = await proxyCartToCore(req, 'PUT', '/update', {
         productId: body.productId,
         quantity: body.quantity ?? 0,
+        variantId: body.variantId ?? undefined,
       });
       res.json(data);
       return;
@@ -63,7 +69,13 @@ router.put('/update', async (req: Request, res: Response) => {
 // DELETE /api/cart/remove/:productId
 router.delete('/remove/:productId', async (req: Request, res: Response) => {
   try {
-    const data = await proxyCartToCore(req, 'DELETE', `/remove/${routeParam(req.params.productId)}`);
+    const productId = routeParam(req.params.productId);
+    const variantId =
+      typeof req.query.variantId === 'string' && req.query.variantId.trim()
+        ? req.query.variantId.trim()
+        : undefined;
+    const qs = variantId ? `?variantId=${encodeURIComponent(variantId)}` : '';
+    const data = await proxyCartToCore(req, 'DELETE', `/remove/${productId}${qs}`);
     res.json(data);
   } catch (e) {
     handleCoreProxyError(e, res);

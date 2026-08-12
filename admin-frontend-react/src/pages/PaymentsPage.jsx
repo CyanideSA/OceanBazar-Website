@@ -1,7 +1,7 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FiSearch, FiFilter, FiDollarSign, FiCreditCard,
-  FiDownload, FiArrowRight, FiCheckCircle
+  FiDownload, FiArrowRight, FiCheckCircle, FiFileText
 } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { getAdminUser } from "../lib/auth";
@@ -44,6 +44,9 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
   const [busy, setBusy] = useState(false);
   const [showRefundForm, setShowRefundForm] = useState(false);
   const [refundForm, setRefundForm] = useState({ amount: "", method: "original_payment", note: "" });
+  const [invoice, setInvoice] = useState(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState("");
 
   const fetchPayments = useCallback(async () => {
     setLoading(true);
@@ -66,12 +69,38 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
     fetchPayments();
   }, [fetchPayments, liveTick]);
 
+  const loadInvoice = async (orderId) => {
+    if (!orderId) {
+      setInvoice(null);
+      setInvoiceError("");
+      return;
+    }
+    setInvoiceLoading(true);
+    setInvoiceError("");
+    try {
+      const res = await adminApi.orderInvoice(orderId);
+      setInvoice(res?.invoice || null);
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'pre-fix',hypothesisId:'H5',location:'PaymentsPage.jsx:loadInvoice',message:'CRM payments invoice loaded',data:{orderId,orderNumber:res?.invoice?.orderNumber||null,itemCount:res?.invoice?.items?.length||0,total:res?.invoice?.total??null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    } catch (err) {
+      setInvoice(null);
+      setInvoiceError(err?.response?.data?.error || "Failed to load invoice");
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
   const openDetail = async (id) => {
     setDetailId(id);
     setDetailLoading(true);
+    setInvoice(null);
+    setInvoiceError("");
     try {
       const res = await adminApi.paymentDetail(id);
       setDetail(res);
+      const orderId = res?.transaction?.orderId || res?.transaction?.order?.id;
+      await loadInvoice(orderId);
     } catch (err) {
       toast.error("Failed to load payment details");
     } finally {
@@ -122,10 +151,25 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
     toast.success(`Exported ${filteredPayments.length} transactions`);
   };
 
-  const getStatusBadge = (status, orderPaymentStatus) => {
+  const getTxPurpose = (row) => {
+    const meta = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    return String(meta.purpose || row?.purpose || "order_total");
+  };
+
+  const getStatusBadge = (status, orderPaymentStatus, row) => {
     const s = (status || "pending").toLowerCase();
+    const purpose = getTxPurpose(row);
+    const deliveryStatus = String(row?.order?.deliveryPaymentStatus || row?.order?.delivery_payment_status || "").toLowerCase();
+    if (s === "success" && purpose === "delivery_fee") {
+      if (deliveryStatus === "under_verification" || !deliveryStatus || deliveryStatus === "pending") {
+        return <span className="crm-badge crm-badge-warning">Delivery charge under verification</span>;
+      }
+      if (deliveryStatus === "paid") {
+        return <span className="crm-badge crm-badge-success">Delivery charge paid</span>;
+      }
+    }
     if (s === "success" && String(orderPaymentStatus || "").toLowerCase() === "under_verification") {
-      return <span className="crm-badge crm-badge-warning">Under verification</span>;
+      return <span className="crm-badge crm-badge-warning">Paid · Under verification</span>;
     }
     if (s === "success") return <span className="crm-badge crm-badge-success">Paid</span>;
     if (s === "failed") return <span className="crm-badge crm-badge-danger">Failed</span>;
@@ -145,6 +189,22 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
       fetchPayments();
     } catch (err) {
       toast.error(err?.response?.data?.error || "Failed to mark as paid");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRequestRepay = async () => {
+    if (!tx?.id) return;
+    if (!window.confirm("Ask the customer to pay again from their order page? This marks the current capture as not verified.")) return;
+    setBusy(true);
+    try {
+      await adminApi.requestPaymentAgain(tx.id, { note: "Payment not confirmed — please pay again" });
+      toast.success("Customer can pay again from their order page");
+      openDetail(tx.id);
+      fetchPayments();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to request payment again");
     } finally {
       setBusy(false);
     }
@@ -253,11 +313,20 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
                         {(p.id || p.transactionId || '').slice(0, 16)}...
                       </span>
                     </td>
-                    <td>{getStatusBadge(p.status, p.order?.paymentStatus)}</td>
+                    <td>{getStatusBadge(p.status, p.order?.paymentStatus, p)}</td>
                     <td>
-                      <div className="flex items-center gap-2">
-                        <FiCreditCard className="text-crm-text-muted" />
-                        <span className="text-sm">{p.method || "Manual"}</span>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <FiCreditCard className="text-crm-text-muted" />
+                          <span className="text-sm">{p.method || "Manual"}</span>
+                        </div>
+                        {getTxPurpose(p) === "delivery_fee" ? (
+                          <span className="text-[10px] text-crm-warning">Delivery fee · order unpaid (pay later)</span>
+                        ) : (
+                          <span className="text-[10px] text-crm-text-dim">
+                            Order: {p.order?.paymentStatus || "—"}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>
@@ -334,7 +403,7 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
                   <div className="grid grid-cols-2 gap-4">
                     <div className="crm-card bg-crm-bg border-none">
                       <p className="text-[10px] text-crm-text-dim uppercase font-bold tracking-wider mb-2">Status</p>
-                      {getStatusBadge(tx.status, tx.order?.paymentStatus)}
+                      {getStatusBadge(tx.status, tx.order?.paymentStatus, tx)}
                     </div>
                     <div className="crm-card bg-crm-bg border-none">
                       <p className="text-[10px] text-crm-text-dim uppercase font-bold tracking-wider mb-2">Amount</p>
@@ -389,6 +458,92 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
                     </div>
                   )}
 
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-crm-border pb-2">
+                      <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest flex items-center gap-2">
+                        <FiFileText /> Invoice (CRM)
+                      </h4>
+                      {tx.orderId ? (
+                        <button
+                          type="button"
+                          className="text-[11px] text-crm-primary hover:underline"
+                          onClick={() => loadInvoice(tx.orderId)}
+                        >
+                          Refresh
+                        </button>
+                      ) : null}
+                    </div>
+                    {invoiceLoading ? (
+                      <p className="text-sm text-crm-text-dim">Loading invoice…</p>
+                    ) : invoiceError ? (
+                      <p className="text-sm text-crm-danger">{invoiceError}</p>
+                    ) : invoice ? (
+                      <div className="crm-card bg-crm-bg space-y-3 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-crm-text-dim">Invoice #</span>
+                          <span className="font-bold text-crm-text-bright">{invoice.orderNumber}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-crm-text-dim">Customer</span>
+                          <span className="text-crm-text-bright">{invoice.customer?.name || invoice.customer?.email || "—"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-crm-text-dim">Payment</span>
+                          <span className="text-crm-text-bright capitalize">
+                            {String(invoice.paymentMethod || "—").replace(/_/g, " ")} · {invoice.paymentStatus || "—"}
+                            {invoice.deliveryPaymentStatus || invoice.delivery_payment_status
+                              ? ` · Delivery: ${invoice.deliveryPaymentStatus || invoice.delivery_payment_status}`
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="border-t border-crm-border pt-2 space-y-1.5 max-h-40 overflow-y-auto">
+                          {(invoice.items || []).map((item) => (
+                            <div key={item.id} className="flex justify-between gap-3 text-xs">
+                              <span className="text-crm-text-bright truncate">
+                                {item.productTitle || item.title || item.productId} × {item.quantity}
+                                {(item.variantLabel || item.variant_label) ? (
+                                  <span className="block text-[10px] text-crm-text-dim">{item.variantLabel || item.variant_label}</span>
+                                ) : null}
+                              </span>
+                              <span className="tabular-nums text-crm-text-dim shrink-0">
+                                ৳{Number(item.lineTotal ?? item.total ?? 0).toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="border-t border-crm-border pt-2 space-y-1">
+                          <div className="flex justify-between text-xs text-crm-text-dim">
+                            <span>Subtotal</span>
+                            <span>৳{Number(invoice.subtotal || 0).toLocaleString()}</span>
+                          </div>
+                          {Number(invoice.discount) > 0 && (
+                            <div className="flex justify-between text-xs text-crm-success">
+                              <span>Discount</span>
+                              <span>-৳{Number(invoice.discount).toLocaleString()}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-xs text-crm-text-dim">
+                            <span>Shipping</span>
+                            <span>৳{Number(invoice.shippingFee || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-crm-text-dim">
+                            <span>VAT</span>
+                            <span>৳{Number(invoice.gst || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between font-bold text-crm-text-bright pt-1">
+                            <span>Total</span>
+                            <span>৳{Number(invoice.total || 0).toLocaleString()}</span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-crm-text-muted">
+                          Contact for customer invoices: contact@oceanbazar.com.bd · System From: no-reply@oceanbazar.com.bd
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-crm-text-dim">No invoice data for this payment.</p>
+                    )}
+                  </div>
+
                   {canEditPayments && (
                     <div className="pt-8 border-t border-crm-border space-y-4">
                       <h4 className="text-xs font-black text-crm-text-bright uppercase tracking-widest">Adjust Payment Status</h4>
@@ -401,11 +556,14 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
                           <div className="field">
                             <label className="field-label">Method</label>
                             <select className="crm-input" value={refundForm.method} onChange={(e) => setRefundForm(f => ({ ...f, method: e.target.value }))}>
-                              <option value="original_payment">Original payment method</option>
-                              <option value="bank_transfer">Bank transfer</option>
-                              <option value="mobile_wallet">Mobile wallet</option>
+                              <option value="original_payment">SSLCommerz / original gateway</option>
+                              <option value="bank_transfer">Bank transfer (manual)</option>
+                              <option value="mobile_wallet">Mobile wallet (manual)</option>
                               <option value="store_credit">Store credit</option>
                             </select>
+                            {String(tx?.method || "").toLowerCase() === "sslcommerz" ? (
+                              <p className="text-[11px] text-crm-text-dim mt-1">SSLCommerz transactions always refund through the SSLCommerz gateway API.</p>
+                            ) : null}
                           </div>
                           <div className="field">
                             <label className="field-label">Note</label>
@@ -420,9 +578,23 @@ export default function PaymentsPage({ liveTick = 0, initialPaymentId = null, on
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-2">
-                          {tx.status === "success" && String(tx.order?.paymentStatus || "").toLowerCase() === "under_verification" && (
-                            <button className="crm-btn crm-btn-primary flex-1 py-2" disabled={busy} onClick={handleMarkPaid}>
-                              <FiCheckCircle /> Verify Payment
+                          {tx.status === "success" && (
+                            getTxPurpose(tx) === "delivery_fee"
+                              ? String(tx.order?.deliveryPaymentStatus || tx.order?.delivery_payment_status || "").toLowerCase() === "under_verification"
+                              : String(tx.order?.paymentStatus || "").toLowerCase() === "under_verification"
+                          ) && (
+                            <>
+                              <button className="crm-btn crm-btn-primary flex-1 py-2" disabled={busy} onClick={handleMarkPaid}>
+                                <FiCheckCircle /> {getTxPurpose(tx) === "delivery_fee" ? "Verify delivery charge" : "Verify Payment"}
+                              </button>
+                              <button className="crm-btn flex-1 py-2" disabled={busy} onClick={handleRequestRepay}>
+                                Ask customer to pay again
+                              </button>
+                            </>
+                          )}
+                          {(tx.status === "failed" || tx.status === "pending") && String(tx.order?.paymentStatus || "").toLowerCase() !== "paid" && (
+                            <button className="crm-btn flex-1 py-2" disabled={busy} onClick={handleRequestRepay}>
+                              Ask customer to pay again
                             </button>
                           )}
                           {tx.status !== "success" && (

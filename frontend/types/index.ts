@@ -82,6 +82,14 @@ export interface Product {
   moq: number;
   stock: number;
   tags: string[];
+  trustBadges?: Array<{
+    id: number;
+    slug: string;
+    nameEn: string;
+    nameBn: string;
+    icon?: string;
+    description?: string;
+  }>;
   primaryImage: string | null;
   images: ProductImage[];
   retailPrice: number | null;
@@ -105,11 +113,17 @@ export interface ProductVariant {
 }
 
 export interface ProductReviewItem {
+  id?: string;
+  imageUrls?: string[];
   authorName: string;
+  authorAvatar?: string | null;
   rating: number;
   title: string | null;
   body: string | null;
   createdAt: string;
+  status?: string;
+  pending?: boolean;
+  verifiedPurchase?: boolean;
 }
 
 export interface ProductBanner {
@@ -151,6 +165,8 @@ export interface CartItem {
   id: number;
   productId: string;
   variantId: string | null;
+  /** e.g. "Color: silver · Style: matte" */
+  variantLabel: string | null;
   title: string;
   image: string | null;
   quantity: number;
@@ -213,6 +229,7 @@ export interface OrderLineItem {
   id: number;
   productId: string;
   variantId: string | null;
+  variantLabel?: string | null;
   productTitle: string;
   unitPrice: number;
   quantity: number;
@@ -272,6 +289,12 @@ export interface SavedAddress {
   city: string;
   district: string;
   postalCode: string | null;
+  pathaoCityId?: number | null;
+  pathaoZoneId?: number | null;
+  pathaoAreaId?: number | null;
+  pathaoCityName?: string | null;
+  pathaoZoneName?: string | null;
+  pathaoAreaName?: string | null;
   isDefault: boolean;
 }
 

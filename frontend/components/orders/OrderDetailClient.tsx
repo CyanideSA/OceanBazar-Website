@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { connectSocket } from '@/lib/socket';
 import { canRetryOnlinePayment, startOrderPayment } from '@/lib/orderPayment';
 import { trackAbOutcome } from '@/lib/abTest';
+import OrderReviewSurveyModal from '@/components/orders/OrderReviewSurveyModal';
 
 const CARRIER_LABELS: Record<string, string> = {
   pathao: 'Pathao Courier',
@@ -42,6 +43,7 @@ function parseOrder(raw: unknown): OrderDetail {
       id: Number(r.id),
       productId: String(r.productId),
       variantId: r.variantId != null ? String(r.variantId) : null,
+      variantLabel: r.variantLabel != null ? String(r.variantLabel) : null,
       productTitle: String(r.productTitle ?? ''),
       unitPrice: num(r.unitPrice),
       quantity: Number(r.quantity ?? 1),
@@ -141,8 +143,10 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
   const [copied, setCopied] = useState<string | null>(null);
 
   const paymentFlag = searchParams.get('payment');
+  const surveyFlag = searchParams.get('survey');
   const { user } = useAuthStore();
   const [liveTrackingNote, setLiveTrackingNote] = useState<string | null>(null);
+  const [surveyOpen, setSurveyOpen] = useState(false);
 
   const { data: order, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['order', orderId],
@@ -180,9 +184,12 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
   useEffect(() => {
     if (!order) return;
     const retryVisible =
-      order.paymentStatus === 'unpaid' &&
+      ['unpaid', 'under_verification', 'failed'].includes(String(order.paymentStatus || '').toLowerCase()) &&
       !['cancelled', 'returned'].includes(order.status) &&
-      canRetryOnlinePayment(order.paymentMethod);
+      (canRetryOnlinePayment(order.paymentMethod) || String(order.paymentMethod || '').toLowerCase() === 'cod');
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'order-retry-ui',hypothesisId:'H-repay',location:'OrderDetailClient.tsx:retryVisible',message:'order pay-again visibility',data:{orderId:order.id,paymentStatus:order.paymentStatus,paymentMethod:order.paymentMethod,retryVisible},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   }, [order]);
 
   useEffect(() => {
@@ -194,6 +201,13 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
     });
   }, [order, paymentFlag]);
 
+  useEffect(() => {
+    if (!order) return;
+    if (order.status === 'delivered' && (surveyFlag === '1' || surveyFlag === 'true')) {
+      setSurveyOpen(true);
+    }
+  }, [order, surveyFlag]);
+
   const cancelMut = useMutation({
     mutationFn: () => ordersApi.cancel(orderId),
     onSuccess: () => {
@@ -204,12 +218,29 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
 
   const retryPaymentMut = useMutation({
     mutationFn: async () => {
-      if (!order || !canRetryOnlinePayment(order.paymentMethod)) {
+      if (!order) throw new Error(t('paymentRetryUnavailable'));
+      const method = String(order.paymentMethod || '').toLowerCase();
+      const isCod = method === 'cod';
+      if (!isCod && !canRetryOnlinePayment(order.paymentMethod)) {
         throw new Error(t('paymentRetryUnavailable'));
       }
-      return startOrderPayment(order.id, order.paymentMethod);
+      const deliveryStatus = String((order as any).deliveryPaymentStatus || '').toLowerCase();
+      const purpose =
+        isCod || deliveryStatus === 'unpaid' || deliveryStatus === 'under_verification'
+          ? (isCod ? 'delivery_fee' : undefined)
+          : 'order_total';
+      return startOrderPayment(order.id, isCod ? 'sslcommerz' : order.paymentMethod, {
+        purpose: purpose === 'delivery_fee' ? 'delivery_fee' : 'order_total',
+        onPaid: () => {
+          queryClient.invalidateQueries({ queryKey: ['order', orderId] });
+        },
+      });
     },
     onSuccess: (payment) => {
+      // SSL Easy Checkout already opened a modal inside startOrderPayment.
+      if (order?.paymentMethod === 'sslcommerz' || order?.paymentMethod === 'rocket' || order?.paymentMethod === 'upay' || order?.paymentMethod === 'cod') {
+        return;
+      }
       if (payment.redirectUrl) {
         window.location.href = payment.redirectUrl;
         return;
@@ -306,9 +337,9 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
 
   const canCancel = order.status === 'pending' || order.status === 'confirmed';
   const canRetryPayment =
-    order.paymentStatus === 'unpaid' &&
+    ['unpaid', 'under_verification', 'failed'].includes(String(order.paymentStatus || '').toLowerCase()) &&
     !['cancelled', 'returned'].includes(order.status) &&
-    canRetryOnlinePayment(order.paymentMethod);
+    (canRetryOnlinePayment(order.paymentMethod) || String(order.paymentMethod || '').toLowerCase() === 'cod');
   const dateLocale = locale === 'bn' ? 'bn-BD' : 'en-US';
 
   const latestShipment = order?.shipments?.[order.shipments.length - 1] ?? null;
@@ -356,6 +387,22 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
           <p className="mt-1 opacity-80">{t('paymentRetryFromOrderHint')}</p>
         </div>
       ) : null}
+      {order.status === 'delivered' ? (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm">
+          <p className="font-semibold text-emerald-950 dark:text-emerald-100">Share your experience</p>
+          <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">
+            Complete a short survey and review products from this order to earn 5 OB Points.
+          </p>
+          <button
+            type="button"
+            onClick={() => setSurveyOpen(true)}
+            className="mt-3 inline-flex rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+          >
+            Open survey &amp; reviews
+          </button>
+        </div>
+      ) : null}
+      <OrderReviewSurveyModal orderId={orderId} open={surveyOpen} onClose={() => setSurveyOpen(false)} />
       <div>
         <Link
           href={`/${locale}/account/orders`}
@@ -438,6 +485,9 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
                     >
                       {line.productTitle}
                     </Link>
+                    {line.variantLabel ? (
+                      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{line.variantLabel}</p>
+                    ) : null}
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {t('quantity')}: {line.quantity}
                     </p>

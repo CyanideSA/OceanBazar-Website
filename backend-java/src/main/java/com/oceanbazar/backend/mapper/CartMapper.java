@@ -5,7 +5,9 @@ import com.oceanbazar.backend.entity.CartEntity;
 import com.oceanbazar.backend.entity.CartItemEntity;
 import com.oceanbazar.backend.entity.ProductEntity;
 import com.oceanbazar.backend.entity.ProductAssetEntity;
+import com.oceanbazar.backend.entity.ProductVariantEntity;
 import com.oceanbazar.backend.utils.CheckoutTotalsCalculator;
+import com.oceanbazar.backend.utils.VariantLabelUtil;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -45,6 +47,14 @@ public final class CartMapper {
             CartEntity cart,
             List<CartItemEntity> items,
             java.util.function.Function<String, ProductEntity> productLookup) {
+        return toCartResponse(cart, items, productLookup, id -> null);
+    }
+
+    public static CartDtos.CartResponseDto toCartResponse(
+            CartEntity cart,
+            List<CartItemEntity> items,
+            java.util.function.Function<String, ProductEntity> productLookup,
+            java.util.function.Function<String, ProductVariantEntity> variantLookup) {
         List<CartDtos.CartItemDto> itemsResponse = new ArrayList<>();
         double subtotal = 0.0;
         List<CartItemEntity> safeItems = items == null ? List.of() : items;
@@ -57,6 +67,15 @@ public final class CartMapper {
             int qty = item.getQuantity() == null ? 0 : item.getQuantity();
             double price = bd(item.getUnitPrice());
             subtotal += qty * price;
+
+            ProductVariantEntity variant = null;
+            if (item.getVariantId() != null && !item.getVariantId().isBlank() && variantLookup != null) {
+                variant = variantLookup.apply(item.getVariantId());
+            }
+            String variantLabel = VariantLabelUtil.formatLabel(variant);
+            Map<String, String> variantAttrs = variant != null
+                    ? VariantLabelUtil.parseAttributes(variant.getAttributes())
+                    : Map.of();
 
             Map<String, Object> productMap = new HashMap<>();
             productMap.put("id", product.getId());
@@ -76,12 +95,20 @@ public final class CartMapper {
             productMap.put("description", product.getDescriptionEn() == null ? "" : product.getDescriptionEn());
             productMap.put("stock", product.getStock() == null ? 0 : product.getStock());
             productMap.put("retailMaxQty", com.oceanbazar.backend.utils.WholesalePricingUtil.retailMaxOrderQty(product));
+            if (variantLabel != null) productMap.put("variantLabel", variantLabel);
 
             CartDtos.CartItemDto itemDto = new CartDtos.CartItemDto();
             itemDto.setId(item.getProductId());
+            itemDto.setProductId(item.getProductId());
+            itemDto.setVariantId(item.getVariantId());
+            itemDto.setVariantLabel(variantLabel);
+            itemDto.setVariantAttributes(variantAttrs.isEmpty() ? null : variantAttrs);
             itemDto.setProduct(productMap);
             itemDto.setQuantity(qty);
             itemDto.setPrice(price);
+            itemDto.setUnitPrice(price);
+            itemDto.setTitle(product.getTitleEn());
+            itemDto.setImage(firstImageUrl(product));
 
             itemsResponse.add(itemDto);
         }

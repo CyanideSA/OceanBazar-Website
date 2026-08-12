@@ -34,6 +34,11 @@ export default function Toaster() {
     >
       {toasts.map((t) => {
         const Icon = ICONS[t.variant];
+        // #region agent log
+        if (typeof t.message !== 'string') {
+          fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'pre-fix',hypothesisId:'H1',location:'Toaster.tsx:render',message:'non-string toast message about to render',data:{type:typeof t.message,keys:t.message&&typeof t.message==='object'?Object.keys(t.message as object).slice(0,8):[]},timestamp:Date.now()})}).catch(()=>{});
+        }
+        // #endregion
         return (
           <div
             key={t.id}
@@ -46,7 +51,9 @@ export default function Toaster() {
             )}
           >
             <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-            <p className="flex-1 text-sm font-medium leading-snug">{t.message}</p>
+            <p className="flex-1 text-sm font-medium leading-snug">
+              {typeof t.message === 'string' ? t.message : String((t.message as { message?: string })?.message ?? t.message ?? '')}
+            </p>
             <button
               type="button"
               onClick={() => remove(t.id)}

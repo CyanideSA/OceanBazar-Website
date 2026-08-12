@@ -14,9 +14,11 @@ import { routeParam } from '../utils/params';
 import { emitAdminEvent } from '../lib/adminEvents';
 import { publishDomainEvent } from '../events/publisher';
 import { COD_FEE } from '../utils/codRules';
+import { attachVariantLabels } from '../utils/variantLabel';
 import { appLog } from '../lib/appLog';
 import { v4 as uuidv4 } from 'uuid';
 import { notifyCustomer } from '../services/customerNotify';
+import { estimateCartWeightKg, quotePathaoDelivery } from '../services/deliveryQuoteService';
 
 /** Orders may be cancelled for free within this window; after that (if paid) a return request is required. */
 const FREE_CANCEL_WINDOW_HOURS = 12;
@@ -76,6 +78,15 @@ router.post('/place', async (req: Request, res: Response) => {
     return;
   }
 
+  const pathaoCityId = Number((address as any).pathaoCityId) || 0;
+  const pathaoZoneId = Number((address as any).pathaoZoneId) || 0;
+  if (!pathaoCityId || !pathaoZoneId) {
+    res.status(400).json({
+      error: 'Please update your delivery address with Pathao city and zone so we can calculate the courier delivery charge',
+    });
+    return;
+  }
+
   let resolvedCouponId: number | null = null;
   if (couponCode || couponId) {
     const coupon = couponCode
@@ -125,7 +136,36 @@ router.post('/place', async (req: Request, res: Response) => {
   };
 
   const codFeeAmount = paymentMethod === 'cod' ? COD_FEE : 0;
-  const finalTotal = result.totals.total + codFeeAmount;
+
+  // Replace flat core shipping with live Pathao quote (unless core already waived shipping).
+  let shippingFee = result.totals.shippingFee;
+  let deliveryQuoteProvider: string | null = null;
+  if (shippingFee > 0) {
+    try {
+      const quote = await quotePathaoDelivery({
+        pathaoCityId,
+        pathaoZoneId,
+        itemWeightKg: estimateCartWeightKg(coreValidation.lines.reduce((n, l) => n + (l.quantity || 1), 0)),
+      });
+      shippingFee = quote.price;
+      deliveryQuoteProvider = quote.provider;
+    } catch (quoteErr) {
+      appLog('warn', 'pathao_quote_on_place_failed', {
+        detail: quoteErr instanceof Error ? quoteErr.message : String(quoteErr),
+      });
+      // Keep core shipping as fallback when Pathao is temporarily unavailable
+    }
+  }
+
+  const baseWithoutShipping = result.totals.total - result.totals.shippingFee;
+  const finalTotal = Math.max(0, baseWithoutShipping + shippingFee + codFeeAmount);
+  const requiresDeliveryFeePayment = paymentMethod === 'cod' && shippingFee > 0;
+  const onlineMethods = ['bkash', 'nagad', 'rocket', 'upay', 'sslcommerz'];
+  const needsOnlinePayment = onlineMethods.includes(paymentMethod);
+
+  // #region agent log
+  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'place-order',hypothesisId:'H3',location:'orders.ts:place:prePersist',message:'place order shipping quote applied',data:{paymentMethod,coreShipping:result.totals.shippingFee,shippingFee,codFeeAmount,finalTotal,requiresDeliveryFeePayment,pathaoCityId,pathaoZoneId,deliveryQuoteProvider,userId:req.user!.userId},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 
   // ── Persist OB redemption ───────────────────────────────────────────────
   let obDiscount = 0;
@@ -180,7 +220,7 @@ router.post('/place', async (req: Request, res: Response) => {
           subtotal: result.totals.subtotal,
           discount: result.totals.discount,
           gst: result.totals.gst,
-          shippingFee: result.totals.shippingFee,
+          shippingFee,
           serviceFee: result.totals.serviceFee,
           obPointsUsed: obPointsToRedeem,
           obDiscount: result.totals.obDiscount,
@@ -195,7 +235,9 @@ router.post('/place', async (req: Request, res: Response) => {
           timeline: {
             create: {
               status: 'pending',
-              note: 'Order placed',
+              note: requiresDeliveryFeePayment
+                ? `Order placed — pay delivery fee ৳${shippingFee} to confirm (goods payable on delivery)`
+                : 'Order placed',
               actorType: 'customer',
               actorId: req.user!.userId,
             },
@@ -203,6 +245,14 @@ router.post('/place', async (req: Request, res: Response) => {
         },
         include: { items: true, timeline: true },
       });
+
+      if (requiresDeliveryFeePayment) {
+        await tx.$executeRaw`
+          UPDATE orders
+          SET delivery_payment_status = 'pending', delivery_fee_paid = 0
+          WHERE id = ${createdOrder.id}
+        `;
+      }
 
       for (const item of createdOrder.items) {
         const url = imageByProductId.get(item.productId);
@@ -212,10 +262,27 @@ router.post('/place', async (req: Request, res: Response) => {
         `;
       }
 
-      await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+      // Keep cart when online / delivery-fee payment is still required so a failed
+      // EasyCheckout can return the customer to checkout with items intact.
+      const deferCartClear = needsOnlinePayment || requiresDeliveryFeePayment;
+      if (!deferCartClear) {
+        await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+      }
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'cart-keep',hypothesisId:'H-A',location:'orders.ts:place:cartClear',message:'cart clear decision',data:{orderId:createdOrder.id,deferCartClear,paymentMethod,requiresDeliveryFeePayment},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       return createdOrder;
     });
   } catch (persistErr) {
+    // #region agent log
+    const pe = persistErr as { message?: string; code?: string; name?: string };
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'place-order',hypothesisId:'H3',location:'orders.ts:place:persistCatch',message:'order persist failed',data:{paymentMethod,codFeeAmount,errMsg:String(pe?.message||persistErr).slice(0,500)},timestamp:Date.now()})}).catch(()=>{});
+    appLog('error', 'order_persist_failed', {
+      paymentMethod,
+      codFeeAmount,
+      detail: persistErr instanceof Error ? persistErr.message : String(persistErr),
+    });
+    // #endregion
     throw persistErr;
   }
 
@@ -236,25 +303,45 @@ router.post('/place', async (req: Request, res: Response) => {
     });
   }
 
-  // ── Send confirmation email + SMS + WhatsApp ──────────────────────────────
-  try {
-    const { sendOrderConfirmation } = await import('../services/emailService');
-    const { sendOrderConfirmationSms, sendOrderConfirmationWhatsApp } = await import('../services/smsService');
-    if (user.email) sendOrderConfirmation(user.email, { orderNumber: order.orderNumber, total: Number(order.total), items: order.items.map(i => ({ productTitle: i.productTitle, quantity: i.quantity, unitPrice: Number(i.unitPrice) })) }).catch(() => {});
-    if (user.phone) {
-      sendOrderConfirmationSms(user.phone, order.orderNumber).catch(() => {});
-      sendOrderConfirmationWhatsApp(user.phone, order.orderNumber, Number(order.total), order.items.map(i => ({ productTitle: i.productTitle, quantity: i.quantity }))).catch(() => {});
-    }
-  } catch { /* non-fatal */ }
-
   // ── OB points: earn + tier upgrade ──────────────────────────────────────
-  const onlineMethods = ['bkash', 'nagad', 'rocket', 'upay', 'sslcommerz'];
-  const needsOnlinePayment = onlineMethods.includes(paymentMethod);
+
+  // Confirmation email/SMS: COD with free delivery only. Pay-later with delivery fee
+  // and all online methods wait until SSL payment succeeds (payments.ts).
+  if (paymentMethod === 'cod' && !requiresDeliveryFeePayment) {
+    try {
+      const { sendOrderConfirmation } = await import('../services/emailService');
+      const { sendOrderConfirmationSms, sendOrderConfirmationWhatsApp } = await import('../services/smsService');
+      if (user.email) {
+        sendOrderConfirmation(user.email, {
+          orderNumber: order.orderNumber,
+          total: Number(order.total),
+          items: order.items.map((i) => ({
+            productTitle: i.productTitle,
+            quantity: i.quantity,
+            unitPrice: Number(i.unitPrice),
+          })),
+        }).catch(() => {});
+      }
+      if (user.phone) {
+        sendOrderConfirmationSms(user.phone, order.orderNumber).catch(() => {});
+        sendOrderConfirmationWhatsApp(
+          user.phone,
+          order.orderNumber,
+          Number(order.total),
+          order.items.map((i) => ({ productTitle: i.productTitle, quantity: i.quantity })),
+        ).catch(() => {});
+      }
+    } catch { /* non-fatal */ }
+  } else {
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'order-email',hypothesisId:'H4',location:'orders.ts:place:skipConfirm',message:'skipped confirmation until payment',data:{orderId:order.id,paymentMethod,requiresDeliveryFeePayment,needsOnlinePayment},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+  }
 
   let pointsEarned = 0;
   let tierUpgrade: string | null = null;
-  if (paymentMethod === 'cod') {
-    const ep = await earnPoints(req.user!.userId, orderId, result.totals.total);
+  if (paymentMethod === 'cod' && !requiresDeliveryFeePayment) {
+    const ep = await earnPoints(req.user!.userId, orderId, Number(order.total));
     pointsEarned = ep.pointsEarned;
     tierUpgrade = ep.tierUpgrade.upgrades ? ep.tierUpgrade.to : null;
   } else {
@@ -275,9 +362,18 @@ router.post('/place', async (req: Request, res: Response) => {
     paymentMethod,
   }, { aggregateId: order.id, userId: req.user!.userId });
 
+  const requiresPayment = needsOnlinePayment || requiresDeliveryFeePayment;
+  const paymentPurpose = requiresDeliveryFeePayment ? 'delivery_fee' : 'order_total';
+
+  // #region agent log
+  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'place-order',hypothesisId:'H4',location:'orders.ts:place:success',message:'order placed',data:{orderId:order.id,paymentMethod,shippingFee,codFeeAmount,total:Number(order.total),requiresPayment,paymentPurpose},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+
   res.status(201).json({
     order,
-    requiresPayment: needsOnlinePayment,
+    requiresPayment,
+    paymentPurpose,
+    deliveryFee: shippingFee,
     pointsEarned,
     tierUpgrade,
     codAllowed: result.codAllowed,
@@ -346,6 +442,31 @@ router.get('/:id/tracking', async (req: Request, res: Response) => {
   });
 });
 
+// GET /api/orders/:id/survey — post-delivery survey + review prompt state
+router.get('/:id/survey', async (req: Request, res: Response) => {
+  const id = routeParam(req.params.id);
+  try {
+    const { getOrderSurveyState } = await import('../services/orderSurveyService');
+    const state = await getOrderSurveyState(id, req.user!.userId);
+    if (!state) { res.status(404).json({ error: 'Order not found' }); return; }
+    res.json(state);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to load survey' });
+  }
+});
+
+// POST /api/orders/:id/survey — submit order experience survey
+router.post('/:id/survey', async (req: Request, res: Response) => {
+  const id = routeParam(req.params.id);
+  try {
+    const { submitOrderSurvey } = await import('../services/orderSurveyService');
+    const state = await submitOrderSurvey(id, req.user!.userId, req.body);
+    res.status(201).json(state);
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to submit survey' });
+  }
+});
+
 // GET /api/orders/:id
 router.get('/:id', async (req: Request, res: Response) => {
   const id = routeParam(req.params.id);
@@ -357,6 +478,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       timeline: { orderBy: { createdAt: 'asc' } },
       shipments: true,
       shippingAddress: true,
+      user: { select: { id: true, name: true, email: true, phone: true } },
     },
   });
   if (!order) {
@@ -368,7 +490,19 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     return;
   }
-  res.json({ order });
+  // Normalize status fields for invoice / account UI (avoid stale casing mismatches)
+  const itemsWithVariants = await attachVariantLabels(prisma, order.items);
+  res.json({
+    order: {
+      ...order,
+      items: itemsWithVariants,
+      status: String(order.status || '').toLowerCase(),
+      paymentStatus: String(order.paymentStatus || '').toLowerCase(),
+      customer: order.user
+        ? { name: order.user.name, email: order.user.email, phone: order.user.phone }
+        : null,
+    },
+  });
 });
 
 // POST /api/orders/:id/cancel

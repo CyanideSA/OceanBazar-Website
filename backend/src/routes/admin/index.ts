@@ -11,6 +11,7 @@ import { adminOrderListingLimiter, adminMutationLimiter } from '../../middleware
 import { generateEntityId, generateTrackingNumber, generateSlug } from '../../utils/hexId';
 import { invalidateCache } from '../../cache/cacheMiddleware';
 import { uploadImage, uploadMedia, deleteImage } from '../../services/cloudinaryService';
+import { attachVariantLabels } from '../../utils/variantLabel';
 import fileImportRouter from './file-import';
 import obPointsAdminRouter from './ob-points';
 import ticketsAdminRouter from './tickets';
@@ -27,6 +28,7 @@ import applicationsRouter from './applications';
 import teamRouter from './team';
 import auditLogsRouter from './audit-logs';
 import globalSettingsRouter from './global-settings';
+import trustBadgesAdminRouter from './trust-badges';
 import analyticsRouter from './analytics';
 import codOtpRouter from './cod-otp';
 import governanceRouter from './governance';
@@ -235,25 +237,80 @@ const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 
 // ─── Admin auth (must be registered before studioRouter, which uses requireAdmin) ─
 
-type AdminSecurityFlags = { twoFaEnabled: boolean; mustChangePassword: boolean };
+type AdminSecurityFlags = { twoFaEnabled: boolean; mustChangePassword: boolean; mustResetTwoFa: boolean };
 
 async function getAdminSecurityFlags(adminId: number): Promise<AdminSecurityFlags> {
   try {
     const row = await prisma.adminUser.findUnique({
       where: { id: adminId },
-      select: { twoFaEnabled: true, mustChangePassword: true },
+      select: { twoFaEnabled: true, mustChangePassword: true, mustResetTwoFa: true },
     });
     return {
       twoFaEnabled: Boolean(row?.twoFaEnabled),
       mustChangePassword: Boolean(row?.mustChangePassword),
+      mustResetTwoFa: Boolean(row?.mustResetTwoFa),
     };
   } catch {
-    return { twoFaEnabled: false, mustChangePassword: false };
+    return { twoFaEnabled: false, mustChangePassword: false, mustResetTwoFa: false };
   }
+}
+
+function needsAuthenticatorSetup(flags: AdminSecurityFlags): boolean {
+  return flags.mustResetTwoFa || !flags.twoFaEnabled;
 }
 
 function adminPublicProfile(admin: { id: number; name: string; email: string; role: string; profileImage?: string | null }) {
   return { id: admin.id, name: admin.name, email: admin.email, role: admin.role, profileImage: admin.profileImage ?? null };
+}
+
+/** Shared post-auth gate used by password login and SSO exchange. */
+async function respondWithAdminAuthGate(
+  admin: { id: number; role: string; name: string; email: string; profileImage?: string | null },
+  req: Request,
+  res: Response,
+  options?: { skipTotpChallenge?: boolean },
+): Promise<boolean> {
+  const flags = await getAdminSecurityFlags(admin.id);
+  const profile = adminPublicProfile(admin);
+
+  if (isAdmin2faDevMode()) {
+    await finalizeAdminLogin(admin.id, admin.role, req, res);
+    return true;
+  }
+
+  if (flags.mustChangePassword) {
+    res.json({
+      requiresPasswordChange: true,
+      onboardingToken: signOnboardingToken(admin.id, admin.role, 'password'),
+      admin: profile,
+    });
+    return true;
+  }
+
+  if (needsAuthenticatorSetup(flags)) {
+    res.json({
+      requires2faSetup: true,
+      onboardingToken: signOnboardingToken(admin.id, admin.role, '2fa_setup'),
+      admin: profile,
+      mustResetTwoFa: flags.mustResetTwoFa,
+    });
+    return true;
+  }
+
+  // Microsoft / Google SSO: authenticator not required once enrolled.
+  if (options?.skipTotpChallenge) {
+    await finalizeAdminLogin(admin.id, admin.role, req, res);
+    return true;
+  }
+
+  // Emergency password login: always challenge authenticator.
+  const tempToken = jwt.sign(
+    { adminId: admin.id, role: admin.role, purpose: 'admin_2fa' },
+    process.env.JWT_ACCESS_SECRET!,
+    { expiresIn: '5m' } as jwt.SignOptions,
+  );
+  res.json({ requires2fa: true, tempToken, admin: profile });
+  return true;
 }
 
 function signOnboardingToken(adminId: number, role: string, step: 'password' | '2fa_setup') {
@@ -443,7 +500,36 @@ router.post('/auth/sso/exchange', async (req: Request, res: Response) => {
     res.status(401).json({ error: 'invalid_or_expired_handoff' });
     return;
   }
-  await finalizeAdminLogin(payload.adminId, payload.role, req, res);
+  const admin = await prisma.adminUser.findUnique({ where: { id: payload.adminId } });
+  if (!admin || !admin.active) {
+    res.status(401).json({ error: 'inactive' });
+    return;
+  }
+  // #region agent log
+  try {
+    const fs = await import('fs');
+    const flags = await getAdminSecurityFlags(admin.id);
+    fs.appendFileSync(
+      'debug-7c9155.log',
+      `${JSON.stringify({
+        sessionId: '7c9155',
+        runId: 'admin-2fa-reset',
+        hypothesisId: 'H3',
+        location: 'admin/index.ts:sso/exchange',
+        message: 'SSO exchange auth gate',
+        data: {
+          adminId: admin.id,
+          twoFaEnabled: flags.twoFaEnabled,
+          mustResetTwoFa: flags.mustResetTwoFa,
+          mustChangePassword: flags.mustChangePassword,
+          skipTotp: true,
+        },
+        timestamp: Date.now(),
+      })}\n`,
+    );
+  } catch { /* ignore */ }
+  // #endregion
+  await respondWithAdminAuthGate(admin, req, res, { skipTotpChallenge: true });
 });
 
 router.post('/auth/login', async (req: Request, res: Response) => {
@@ -462,38 +548,31 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     return;
   }
 
-  const flags = await getAdminSecurityFlags(admin.id);
-  const profile = adminPublicProfile(admin);
+  // #region agent log
+  try {
+    const fs = await import('fs');
+    const flags = await getAdminSecurityFlags(admin.id);
+    fs.appendFileSync(
+      'debug-7c9155.log',
+      `${JSON.stringify({
+        sessionId: '7c9155',
+        runId: 'admin-2fa-reset',
+        hypothesisId: 'H3',
+        location: 'admin/index.ts:login',
+        message: 'Emergency login auth gate',
+        data: {
+          adminId: admin.id,
+          twoFaEnabled: flags.twoFaEnabled,
+          mustResetTwoFa: flags.mustResetTwoFa,
+          skipTotp: false,
+        },
+        timestamp: Date.now(),
+      })}\n`,
+    );
+  } catch { /* ignore */ }
+  // #endregion
 
-  if (isAdmin2faDevMode()) {
-    await finalizeAdminLogin(admin.id, admin.role, req, res);
-    return;
-  }
-
-  if (flags.mustChangePassword) {
-    res.json({
-      requiresPasswordChange: true,
-      onboardingToken: signOnboardingToken(admin.id, admin.role, 'password'),
-      admin: profile,
-    });
-    return;
-  }
-
-  if (!flags.twoFaEnabled) {
-    res.json({
-      requires2faSetup: true,
-      onboardingToken: signOnboardingToken(admin.id, admin.role, '2fa_setup'),
-      admin: profile,
-    });
-    return;
-  }
-
-  const tempToken = jwt.sign(
-    { adminId: admin.id, role: admin.role, purpose: 'admin_2fa' },
-    process.env.JWT_ACCESS_SECRET!,
-    { expiresIn: '5m' } as jwt.SignOptions
-  );
-  res.json({ requires2fa: true, tempToken, admin: profile });
+  await respondWithAdminAuthGate(admin, req, res, { skipTotpChallenge: false });
 });
 
 function parseOtpInput(raw: unknown): string {
@@ -612,11 +691,12 @@ router.post('/auth/onboarding/change-password', async (req: Request, res: Respon
   const flags = await getAdminSecurityFlags(admin.id);
   const profile = adminPublicProfile(admin);
 
-  if (!flags.twoFaEnabled) {
+  if (!flags.twoFaEnabled || flags.mustResetTwoFa) {
     res.json({
       requires2faSetup: true,
       onboardingToken: signOnboardingToken(admin.id, admin.role, '2fa_setup'),
       admin: profile,
+      mustResetTwoFa: flags.mustResetTwoFa,
     });
     return;
   }
@@ -788,6 +868,7 @@ router.post('/auth/onboarding/2fa/enable', async (req: Request, res: Response) =
       twoFaSecret: normalizeTotpSecret(enrollSecret),
       twoFaEnabled: true,
       mustChangePassword: false,
+      mustResetTwoFa: false,
     },
   });
   pending2faSetupByAdmin.delete(onboardPayload.adminId);
@@ -922,21 +1003,50 @@ router.get('/auth/me', requireAdmin, async (req: Request, res: Response) => {
 
 router.get('/auth/2fa/status', requireAdmin, async (req: Request, res: Response) => {
   try {
-    const rows = await prisma.$queryRaw<Array<{ two_fa_enabled: boolean }>>`
-      SELECT COALESCE(two_fa_enabled, FALSE) AS two_fa_enabled FROM admin_users WHERE id = ${req.admin!.adminId} LIMIT 1
+    const rows = await prisma.$queryRaw<Array<{ two_fa_enabled: boolean; must_reset_two_fa: boolean }>>`
+      SELECT COALESCE(two_fa_enabled, FALSE) AS two_fa_enabled,
+             COALESCE(must_reset_two_fa, FALSE) AS must_reset_two_fa
+      FROM admin_users WHERE id = ${req.admin!.adminId} LIMIT 1
     `;
-    res.json({ enabled: Boolean(rows[0]?.two_fa_enabled) });
+    res.json({
+      enabled: Boolean(rows[0]?.two_fa_enabled),
+      mustResetTwoFa: Boolean(rows[0]?.must_reset_two_fa),
+    });
   } catch {
-    res.json({ enabled: false });
+    res.json({ enabled: false, mustResetTwoFa: false });
   }
 });
 
 router.post('/auth/2fa/setup', requireAdmin, async (req: Request, res: Response) => {
+  const { currentOtp: rawCurrentOtp } = req.body as { currentOtp?: unknown };
   const admin = await prisma.adminUser.findUnique({ where: { id: req.admin!.adminId } });
   if (!admin) {
     res.status(404).json({ error: 'Admin not found' });
     return;
   }
+
+  // Already enrolled: require current authenticator before issuing a replacement secret.
+  // Forced re-enroll (mustResetTwoFa / disabled) is handled via login onboarding, not here.
+  if (admin.twoFaEnabled && admin.twoFaSecret && !admin.mustResetTwoFa) {
+    const currentOtp = parseOtpInput(rawCurrentOtp);
+    if (currentOtp.length !== 6) {
+      res.status(400).json({
+        error: 'Enter your current authenticator code to reset your authenticator app',
+      });
+      return;
+    }
+    const currentCheck = await verifyAndConsumeAdminTotp(admin.id, admin.twoFaSecret, currentOtp);
+    if (!currentCheck.ok) {
+      res.status(401).json({
+        error:
+          currentCheck.reason === 'replay'
+            ? 'This code was already used. Enter the latest code from your authenticator app.'
+            : 'Invalid current authenticator code',
+      });
+      return;
+    }
+  }
+
   const secret = generateBase32Secret();
   const setupToken = jwt.sign(
     { adminId: admin.id, purpose: 'admin_2fa_setup', secret },
@@ -978,7 +1088,10 @@ router.post('/auth/2fa/enable', requireAdmin, async (req: Request, res: Response
   const normalized = normalizeTotpSecret(payload.secret);
   await prisma.$executeRaw`
     UPDATE admin_users
-    SET two_fa_secret = ${normalized}, two_fa_enabled = TRUE, two_fa_last_counter = NULL
+    SET two_fa_secret = ${normalized},
+        two_fa_enabled = TRUE,
+        two_fa_last_counter = NULL,
+        must_reset_two_fa = FALSE
     WHERE id = ${req.admin!.adminId}
   `;
   res.json({ success: true, enabled: true });
@@ -1030,6 +1143,7 @@ router.use('/applications', requireAdmin, applicationsRouter);
 router.use('/team', requireAdmin, teamRouter);
 router.use('/audit-logs', requireAdmin, auditLogsRouter);
 router.use('/global-settings', requireAdmin, globalSettingsRouter);
+router.use('/trust-badges', requireAdmin, trustBadgesAdminRouter);
 router.use('/analytics', requireAdmin, analyticsRouter);
 router.use('/cod-otp', codOtpRouter); // auth handled inside per-route (requireAdmin)
 router.use('/governance', requireAdmin, governanceRouter);
@@ -1310,84 +1424,131 @@ router.get('/products', requireAdmin, async (req: Request, res: Response) => {
     ];
   }
 
-  const [products, total, activeCount, lowStockCount] = await Promise.all([
-    prismaAny.product.findMany({
-      where,
-      include: { productCategories: { include: { category: true } }, productAssets: { orderBy: { sortOrder: 'asc' } }, pricing: true },
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.product.count({ where }),
-    prisma.product.count({ where: { status: 'active' } }),
-    prisma.product.count({ where: { stock: { lt: 10 } } }),
-  ]);
-  res.json({ products, total, page, limit, activeCount, lowStockCount });
+  try {
+    const [products, total, activeCount, lowStockCount] = await Promise.all([
+      prismaAny.product.findMany({
+        where,
+        include: { productCategories: { include: { category: true } }, productAssets: { orderBy: { sortOrder: 'asc' } }, pricing: true },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.product.count({ where }),
+      prisma.product.count({ where: { status: 'active' } }),
+      prisma.product.count({ where: { stock: { lt: 10 } } }),
+    ]);
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'crm-products',hypothesisId:'H-schema',location:'admin/index.ts:GET /products',message:'products list ok',data:{page,limit,total,count:Array.isArray(products)?products.length:0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    res.json({ products, total, page, limit, activeCount, lowStockCount });
+  } catch (err: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'crm-products',hypothesisId:'H-schema',location:'admin/index.ts:GET /products:err',message:'products list failed',data:{code:err?.code||null,msg:String(err?.message||'').slice(0,300),meta:err?.meta||null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    console.error('[admin GET /products]', err?.code, err?.message);
+    res.status(500).json({ error: err?.message || 'Failed to fetch products', code: err?.code });
+  }
 });
 
 router.post('/products', requireAdmin, requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   const data = req.body as Record<string, unknown>;
   const newId = generateEntityId();
-  const product = await prisma.product.create({
-    data: {
-      id: newId,
-      titleEn: data.titleEn as string,
-      titleBn: (data.titleBn as string) || (data.titleEn as string),
-      descriptionEn: data.descriptionEn as string | undefined,
-      descriptionBn: data.descriptionBn as string | undefined,
-      brand: data.brand as string | undefined,
-      brandLogoUrl: data.brandLogoUrl as string | undefined,
-      sku: data.sku as string | undefined,
-      pricingMode: (data.pricingMode as string) || 'tiered',
-      moq: (data.moq as number) || 1,
-      stock: (data.stock as number) || 0,
-      status: (data.status as 'active' | 'draft' | 'archived') || 'draft',
-      isFeatured: Boolean(data.isFeatured),
-      isBestSeller: Boolean(data.isBestSeller),
-      isBestRated: Boolean(data.isBestRated),
-      pricing: {
-        create: [
-          {
-            customerType: 'retail',
-            price: Number(data.retailPrice),
-            compareAt: data.compareAt != null ? Number(data.compareAt) : null,
-            tier1MinQty: null,
-            tier1Discount: null,
-            tier2MinQty: null,
-            tier2Discount: null,
-            tier3MinQty: null,
-            tier3Discount: null,
-          },
-          ...(data.wholesalePrice != null
-            ? [
-                {
-                  customerType: 'wholesale' as const,
-                  price: Number(data.wholesalePrice),
-                  compareAt: data.wholesaleCompareAt != null ? Number(data.wholesaleCompareAt) : null,
-                  tier1MinQty: null,
-                  tier1Discount: null,
-                  tier2MinQty: null,
-                  tier2Discount: null,
-                  tier3MinQty: null,
-                  tier3Discount: null,
-                },
-              ]
-            : []),
-        ],
+  const categoryId = typeof data.categoryId === 'string' && data.categoryId.trim() ? data.categoryId.trim() : null;
+  // #region agent log
+  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'product-create',hypothesisId:'H-cat',location:'admin/index.ts:POST /products',message:'product create attempt',data:{newId,hasCategoryId:Boolean(categoryId),categoryId,titleEn:String(data.titleEn||'').slice(0,80),stock:data.stock??null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  try {
+    if (categoryId) {
+      const cat = await prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } });
+      if (!cat) {
+        res.status(400).json({ error: 'Invalid categoryId — select a valid folder/category before publishing.' });
+        return;
+      }
+    }
+    const product = await prisma.product.create({
+      data: {
+        id: newId,
+        titleEn: data.titleEn as string,
+        titleBn: (data.titleBn as string) || (data.titleEn as string),
+        descriptionEn: data.descriptionEn as string | undefined,
+        descriptionBn: data.descriptionBn as string | undefined,
+        brand: data.brand as string | undefined,
+        brandId: (data.brandId as string) || undefined,
+        brandLogoUrl: data.brandLogoUrl as string | undefined,
+        sku: data.sku as string | undefined,
+        pricingMode: (data.pricingMode as string) || 'tiered',
+        moq: (data.moq as number) || 1,
+        stock: (data.stock as number) || 0,
+        status: (data.status as 'active' | 'draft' | 'archived') || 'draft',
+        isFeatured: Boolean(data.isFeatured),
+        isBestSeller: Boolean(data.isBestSeller),
+        isBestRated: Boolean(data.isBestRated),
+        ...(categoryId
+          ? {
+              productCategories: {
+                create: [{ categoryId, isPrimary: true, sortOrder: 0 }],
+              },
+            }
+          : {}),
+        pricing: {
+          create: [
+            {
+              customerType: 'retail',
+              price: Number(data.retailPrice),
+              compareAt: data.compareAt != null ? Number(data.compareAt) : null,
+              tier1MinQty: null,
+              tier1Discount: null,
+              tier2MinQty: null,
+              tier2Discount: null,
+              tier3MinQty: null,
+              tier3Discount: null,
+            },
+            ...(data.wholesalePrice != null
+              ? [
+                  {
+                    customerType: 'wholesale' as const,
+                    price: Number(data.wholesalePrice),
+                    compareAt: data.wholesaleCompareAt != null ? Number(data.wholesaleCompareAt) : null,
+                    tier1MinQty: null,
+                    tier1Discount: null,
+                    tier2MinQty: null,
+                    tier2Discount: null,
+                    tier3MinQty: null,
+                    tier3Discount: null,
+                  },
+                ]
+              : []),
+          ],
+        },
       },
-    },
-    include: { pricing: true },
-  });
-  // Assign category map if categoryId provided
-  if (data.categoryId) {
-    try {
-      await prismaAny.productCategoryMap.deleteMany({ where: { productId: newId } });
-      await prismaAny.productCategoryMap.create({
-        data: { productId: newId, categoryId: data.categoryId as string, isPrimary: true, sortOrder: 0 },
+      include: { pricing: true, productCategories: true },
+    });
+    // Keep legacy products.category_id in sync when the column still exists (NOT NULL historically caused 502).
+    if (categoryId) {
+      try {
+        await prisma.$executeRaw`UPDATE products SET category_id = ${categoryId} WHERE id = ${newId}`;
+      } catch { /* column may be absent or already synced */ }
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'product-create',hypothesisId:'H-cat',location:'admin/index.ts:POST /products:ok',message:'product create success',data:{productId:product.id,pcmCount:Array.isArray((product as any).productCategories)?(product as any).productCategories.length:0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    res.status(201).json({ product });
+  } catch (err: any) {
+    const code = err?.code || '';
+    const msg = String(err?.message || 'Product create failed');
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'product-create',hypothesisId:'H-cat',location:'admin/index.ts:POST /products:err',message:'product create failed',data:{code,msg:msg.slice(0,300),categoryId,meta:err?.meta||null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    console.error('[admin POST /products]', code, msg);
+    if (code === 'P2011' || /category_id/i.test(msg)) {
+      res.status(400).json({
+        error: 'Category is required (or database category_id is still NOT NULL). Select a category and try again.',
+        code,
       });
-    } catch { /* non-fatal */ }
+      return;
+    }
+    res.status(500).json({ error: msg.slice(0, 200), code: code || undefined });
   }
-  res.status(201).json({ product });
 });
 
 router.delete('/products/:id', requireAdmin, requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
@@ -1844,10 +2005,13 @@ router.get('/orders/:id', requireAdmin, adminOrderListingLimiter, async (req: Re
       if (!imageByProductId.has(asset.productId)) imageByProductId.set(asset.productId, asset.url);
     }
   }
-  const items = order.items.map((i) => ({
-    ...i,
-    productImage: i.productImage || imageByProductId.get(i.productId) || null,
-  }));
+  const items = await attachVariantLabels(
+    prisma,
+    order.items.map((i) => ({
+      ...i,
+      productImage: i.productImage || imageByProductId.get(i.productId) || null,
+    })),
+  );
 
   const courierShipments = await prisma.courier_shipments.findMany({
     where: { order_id: orderId },
@@ -1875,11 +2039,25 @@ async function handleOrderStatusUpdate(req: Request, res: Response) {
 
   // Send email/SMS on meaningful status changes
   try {
-    const { sendShippingUpdate } = await import('../../services/emailService');
+    const { sendShippingUpdate, sendReviewRequestEmail } = await import('../../services/emailService');
     const { sendShippingUpdateSms } = await import('../../services/smsService');
-    const fullOrder = await prisma.order.findUnique({ where: { id: order.id }, include: { user: { select: { email: true, phone: true } } } });
+    const fullOrder = await prisma.order.findUnique({
+      where: { id: order.id },
+      include: {
+        user: { select: { email: true, phone: true } },
+        items: { select: { productTitle: true }, take: 6 },
+      },
+    });
     if (fullOrder?.user.email) sendShippingUpdate(fullOrder.user.email, order.orderNumber, status).catch(() => {});
     if (fullOrder?.user.phone) sendShippingUpdateSms(fullOrder.user.phone, order.orderNumber, status).catch(() => {});
+    if (status === 'delivered' && fullOrder?.user.email) {
+      sendReviewRequestEmail(
+        fullOrder.user.email,
+        order.orderNumber,
+        order.id,
+        (fullOrder.items || []).map((i) => i.productTitle).filter(Boolean),
+      ).catch(() => {});
+    }
   } catch { /* non-fatal */ }
 
   if (status === 'processing') {
@@ -2090,32 +2268,93 @@ router.get('/customers', requireAdmin, async (req: Request, res: Response) => {
 // ─── Reviews moderation ──────────────────────────────────────────────────────
 
 router.get('/reviews', requireAdmin, async (req: Request, res: Response) => {
-  const page = parseInt(String(req.query.page || '1'));
-  const { status } = req.query as Record<string, string>;
-  const limit = 20;
-  const where = status ? { status: status as 'pending' | 'approved' | 'rejected' } : {};
-  const [reviews, total] = await Promise.all([
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+  const { status, q } = req.query as Record<string, string>;
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50));
+  const where: Record<string, unknown> = status ? { status: status as 'pending' | 'approved' | 'rejected' } : {};
+  if (q?.trim()) {
+    where.OR = [
+      { title: { contains: q.trim(), mode: 'insensitive' } },
+      { body: { contains: q.trim(), mode: 'insensitive' } },
+      { product: { titleEn: { contains: q.trim(), mode: 'insensitive' } } },
+      { user: { name: { contains: q.trim(), mode: 'insensitive' } } },
+    ];
+  }
+  const [reviews, total, pendingCount] = await Promise.all([
     prisma.productReview.findMany({
       where,
-      include: { user: { select: { name: true } }, product: { select: { titleEn: true } } },
-      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        product: {
+          select: {
+            id: true,
+            titleEn: true,
+            titleBn: true,
+            ratingAvg: true,
+            reviewCount: true,
+            productAssets: {
+              where: { assetType: 'image' },
+              orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+              take: 1,
+              select: { url: true },
+            },
+          },
+        },
+      },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       skip: (page - 1) * limit,
       take: limit,
     }),
     prisma.productReview.count({ where }),
+    prisma.productReview.count({ where: { status: 'pending' } }),
   ]);
-  res.json({ reviews, total, page, limit });
+  res.json({
+    reviews: reviews.map((r) => ({
+      ...r,
+      imageUrls: (r as any).imageUrls ?? [],
+      verifiedPurchase: (r as any).verifiedPurchase ?? false,
+      productImage: r.product.productAssets[0]?.url ?? null,
+    })),
+    total,
+    pendingCount,
+    page,
+    limit,
+  });
 });
 
 // GET /api/admin/reviews/pending — alias for ?status=pending
 router.get('/reviews/pending', requireAdmin, async (_req: Request, res: Response) => {
   const reviews = await prisma.productReview.findMany({
     where: { status: 'pending' },
-    include: { user: { select: { name: true } }, product: { select: { titleEn: true } } },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      product: {
+        select: {
+          id: true,
+          titleEn: true,
+          titleBn: true,
+          ratingAvg: true,
+          reviewCount: true,
+          productAssets: {
+            where: { assetType: 'image' },
+            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+            take: 1,
+            select: { url: true },
+          },
+        },
+      },
+    },
     orderBy: { createdAt: 'desc' },
-    take: 50,
+    take: 100,
   });
-  res.json({ reviews });
+  res.json({
+    reviews: reviews.map((r) => ({
+      ...r,
+      imageUrls: (r as any).imageUrls ?? [],
+      verifiedPurchase: (r as any).verifiedPurchase ?? false,
+      productImage: r.product.productAssets[0]?.url ?? null,
+    })),
+  });
 });
 
 // GET /api/admin/reviews/product/:productId
@@ -2146,61 +2385,193 @@ router.patch('/reviews/:id/moderate', requireAdmin, async (req: Request, res: Re
   await prisma.auditLog.create({
     data: { adminId: req.admin!.adminId, action: 'MODERATE_REVIEW', targetType: 'product_review', targetId: id, details: { from: prev.status, to: status, note } },
   });
+  try { emitAdminEvent('admin:reviews:moderated', { id, productId: prev.productId, status }); } catch { /* non-fatal */ }
+  try { emitBroadcast('storefront:reviews:updated', { productId: prev.productId }); } catch { /* non-fatal */ }
   res.json({ review });
 });
 
 // ─── Commerce engagement moderation (Q&A, newsletter, restock) ───────────────
 
+async function ensureAdminQaColumns() {
+  try {
+    const { readyQaTable } = await import('../qa');
+    await readyQaTable();
+  } catch { /* non-fatal */ }
+}
+
 router.get('/qa/pending', requireAdmin, async (_req: Request, res: Response) => {
   try {
-    const rows = await prisma.$queryRaw<Array<{
-      id: string;
-      product_id: string;
-      user_id: string | null;
-      question: string;
-      answer: string | null;
-      asked_at: Date;
-      asker_name: string | null;
-      asker_email: string | null;
-      product_title: string | null;
-    }>>`
+    await ensureAdminQaColumns();
+    const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
       SELECT q.id, q.product_id, q.user_id, q.question, q.answer, q.asked_at, q.asker_name, q.asker_email,
-             p.title_en AS product_title
+             q.image_urls, q.answer_image_urls, q.answered_by_name, q.status, q.is_approved,
+             p.title_en AS product_title, p.title_bn AS product_title_bn, p.sku AS product_sku,
+             (
+               SELECT pa.url FROM product_assets pa
+               WHERE pa.product_id = q.product_id AND pa.asset_type = 'image'
+               ORDER BY pa.is_primary DESC, pa.sort_order ASC
+               LIMIT 1
+             ) AS product_image,
+             u.name AS customer_name, u.email AS customer_email, u.phone AS customer_phone,
+             u.profile_image AS customer_avatar
       FROM product_qa q
       LEFT JOIN products p ON p.id = q.product_id
-      WHERE q.is_approved = FALSE
+      LEFT JOIN users u ON u.id = q.user_id
+      WHERE COALESCE(q.status, 'pending') = 'pending' AND q.is_approved = FALSE
       ORDER BY q.asked_at DESC
       LIMIT 200
     `;
-    res.json({ items: rows });
+    const items = rows.map((r) => ({
+      id: r.id,
+      product_id: r.product_id,
+      productId: r.product_id,
+      user_id: r.user_id,
+      userId: r.user_id,
+      question: r.question,
+      answer: r.answer,
+      asked_at: r.asked_at,
+      asker_name: r.asker_name || r.customer_name || null,
+      asker_email: r.asker_email || r.customer_email || null,
+      imageUrls: (r.image_urls as string[]) ?? [],
+      answerImageUrls: (r.answer_image_urls as string[]) ?? [],
+      status: r.status || 'pending',
+      product_title: r.product_title,
+      productTitle: r.product_title,
+      productTitleBn: r.product_title_bn,
+      productSku: r.product_sku,
+      productImage: r.product_image,
+      customer: {
+        id: r.user_id,
+        name: r.customer_name || r.asker_name || 'Guest',
+        email: r.customer_email || r.asker_email || null,
+        phone: r.customer_phone || null,
+        avatar: r.customer_avatar || null,
+      },
+    }));
+    res.json({ items, pendingCount: items.length });
   } catch (err: unknown) {
     console.error('[engagement] qa/pending:', (err as Error).message);
-    res.json({ items: [] });
+    res.json({ items: [], pendingCount: 0 });
+  }
+});
+
+router.get('/qa', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    await ensureAdminQaColumns();
+    const status = String(req.query.status || 'pending');
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT q.id, q.product_id, q.user_id, q.question, q.answer, q.asked_at, q.answered_at,
+              q.asker_name, q.asker_email, q.image_urls, q.answer_image_urls, q.answered_by_name,
+              q.status, q.is_approved,
+              p.title_en AS product_title, p.title_bn AS product_title_bn, p.sku AS product_sku,
+              (
+                SELECT pa.url FROM product_assets pa
+                WHERE pa.product_id = q.product_id AND pa.asset_type = 'image'
+                ORDER BY pa.is_primary DESC, pa.sort_order ASC
+                LIMIT 1
+              ) AS product_image,
+              u.name AS customer_name, u.email AS customer_email, u.phone AS customer_phone,
+              u.profile_image AS customer_avatar
+       FROM product_qa q
+       LEFT JOIN products p ON p.id = q.product_id
+       LEFT JOIN users u ON u.id = q.user_id
+       WHERE ($1 = 'all' OR COALESCE(q.status, CASE WHEN q.is_approved THEN 'approved' ELSE 'pending' END) = $1)
+       ORDER BY q.asked_at DESC
+       LIMIT 300`,
+      status,
+    );
+    const pendingCountRow = await prisma.$queryRaw<Array<{ c: bigint }>>`
+      SELECT COUNT(*)::bigint AS c FROM product_qa
+      WHERE COALESCE(status, 'pending') = 'pending' AND is_approved = FALSE
+    `;
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        productId: r.product_id,
+        userId: r.user_id,
+        question: r.question,
+        answer: r.answer,
+        askedAt: r.asked_at,
+        answeredAt: r.answered_at,
+        askerName: r.asker_name || r.customer_name || null,
+        askerEmail: r.asker_email || r.customer_email || null,
+        imageUrls: (r.image_urls as string[]) ?? [],
+        answerImageUrls: (r.answer_image_urls as string[]) ?? [],
+        answeredByName: r.answered_by_name || null,
+        status: r.status || (r.is_approved ? 'approved' : 'pending'),
+        productTitle: r.product_title,
+        productTitleBn: r.product_title_bn,
+        productSku: r.product_sku,
+        productImage: r.product_image,
+        customer: {
+          id: r.user_id,
+          name: r.customer_name || r.asker_name || 'Guest',
+          email: r.customer_email || r.asker_email || null,
+          phone: r.customer_phone || null,
+          avatar: r.customer_avatar || null,
+        },
+      })),
+      pendingCount: Number(pendingCountRow[0]?.c ?? 0),
+    });
+  } catch (err: unknown) {
+    console.error('[engagement] qa list:', (err as Error).message);
+    res.json({ items: [], pendingCount: 0 });
   }
 });
 
 router.patch('/qa/:id', requireAdmin, async (req: Request, res: Response) => {
   const id = routeParam(req.params.id);
-  const { approved, answer } = req.body as { approved?: boolean; answer?: string };
+  const { approved, answer, answerImageUrls } = req.body as {
+    approved?: boolean;
+    answer?: string;
+    answerImageUrls?: string[];
+  };
   if (approved === undefined) {
     res.status(400).json({ error: 'approved is required' });
     return;
   }
-  await prisma.$executeRaw`
-    UPDATE product_qa
-    SET is_approved = ${approved}, answer = ${answer ?? null},
-        answered_at = CASE WHEN ${answer ? true : false} THEN NOW() ELSE answered_at END
-    WHERE id = ${id}
-  `;
+  await ensureAdminQaColumns();
+  const safeAnswerImages = (Array.isArray(answerImageUrls) ? answerImageUrls : [])
+    .filter((u) => typeof u === 'string' && /^https?:\/\//.test(u))
+    .slice(0, 5);
+  const status = approved ? 'approved' : 'rejected';
+  const answeredBy = approved ? 'OceanBazar Customer Support' : null;
+  const answerText = answer != null ? String(answer).trim() || null : null;
+  await prisma.$executeRawUnsafe(
+    `UPDATE product_qa
+     SET is_approved = $1,
+         status = $2,
+         answer = COALESCE($3, answer),
+         answer_image_urls = CASE WHEN cardinality($4::text[]) > 0 THEN $4::text[] ELSE answer_image_urls END,
+         answered_by_name = CASE WHEN $1 THEN COALESCE(answered_by_name, $5) ELSE answered_by_name END,
+         answered_at = CASE WHEN $1 AND ($3 IS NOT NULL OR cardinality($4::text[]) > 0) THEN NOW() ELSE answered_at END
+     WHERE id = $6`,
+    approved,
+    status,
+    answerText,
+    safeAnswerImages,
+    answeredBy,
+    id,
+  );
   await prisma.auditLog.create({
     data: {
       adminId: req.admin!.adminId,
       action: 'MODERATE_QA',
       targetType: 'product_qa',
       targetId: id,
-      details: { approved, hasAnswer: Boolean(answer && answer.trim()) },
+      details: { approved, hasAnswer: Boolean(answerText), answerImages: safeAnswerImages.length },
     },
   });
+  try {
+    const row = await prisma.$queryRaw<Array<{ product_id: string }>>`
+      SELECT product_id FROM product_qa WHERE id = ${id} LIMIT 1
+    `;
+    const productId = row[0]?.product_id;
+    if (productId) {
+      emitAdminEvent('admin:qa:moderated', { id, productId, approved, status });
+      emitBroadcast('storefront:qa:updated', { productId });
+    }
+  } catch { /* non-fatal */ }
   res.json({ success: true });
 });
 
@@ -2446,17 +2817,28 @@ router.post('/upload', requireAdmin, memUpload.single('file'), async (req: Reque
   if (!req.file) { res.status(400).json({ error: 'No file' }); return; }
   const mime = req.file.mimetype || '';
   const rt: 'image' | 'video' | 'auto' = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') ? 'image' : 'auto';
-  const result = await uploadMedia(req.file.buffer, 'admin', { resourceType: rt });
-  res.json(result);
+  const folder = String(req.body?.folder || 'admin').replace(/^\/+|\/+$/g, '') || 'admin';
+  try {
+    const result = await uploadMedia(req.file.buffer, folder, { resourceType: rt });
+    res.json(result);
+  } catch (err: any) {
+    console.error('[admin/upload]', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Upload failed' });
+  }
 });
 
 router.post('/media/upload', requireAdmin, memUpload.single('file'), async (req: Request, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file' }); return; }
-  const folder = (req.body.folder as string) || 'media';
+  const folder = String((req.body.folder as string) || 'media').replace(/^\/+|\/+$/g, '') || 'media';
   const mime = req.file.mimetype || '';
   const rt: 'image' | 'video' | 'auto' = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') ? 'image' : 'auto';
-  const result = await uploadMedia(req.file.buffer, folder, { resourceType: rt });
-  res.json(result);
+  try {
+    const result = await uploadMedia(req.file.buffer, folder, { resourceType: rt });
+    res.json(result);
+  } catch (err: any) {
+    console.error('[admin/media/upload]', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Upload failed' });
+  }
 });
 
 router.post('/media/upload-multiple', requireAdmin, memUpload.array('files', 20), async (req: Request, res: Response) => {
