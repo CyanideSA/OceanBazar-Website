@@ -108,9 +108,6 @@ export default function CheckoutPage() {
         : undefined;
     if (payment && payment !== 'success') {
       setError(t('paymentReturnedFailed'));
-      // #region agent log
-      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'checkout-fail',hypothesisId:'H-B',location:'checkout/page.tsx:recovery',message:'returned to checkout after payment failure',data:{payment,orderId,method,purpose},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     }
     const retryMethod = method === 'cod' ? 'sslcommerz' : method;
     if (orderId && (canRetryOnlinePayment(retryMethod) || retryMethod === 'sslcommerz')) {
@@ -127,10 +124,6 @@ export default function CheckoutPage() {
       const pay = await startOrderPayment(payRetry.orderId, payRetry.method, {
         purpose: payRetry.purpose,
       });
-      if (payRetry.method === 'sslcommerz' || payRetry.method === 'rocket' || payRetry.method === 'upay') {
-        setRetryingPayment(false);
-        return;
-      }
       if (!pay.redirectUrl) throw new Error(t('paymentInitFailed'));
       window.location.href = pay.redirectUrl;
     } catch (retryError) {
@@ -175,9 +168,8 @@ export default function CheckoutPage() {
       return;
     }
     setSelectedAddressId((prev) => {
-      if (prev && addresses.some((a) => a.id === prev && a.pathaoCityId && a.pathaoZoneId)) return prev;
-      const synced = addresses.filter((a) => a.pathaoCityId && a.pathaoZoneId);
-      return synced.find((a) => a.isDefault)?.id ?? synced[0]?.id ?? null;
+      if (prev && addresses.some((a) => a.id === prev)) return prev;
+      return addresses.find((a) => a.isDefault)?.id ?? addresses[0].id;
     });
   }, [addresses]);
 
@@ -190,7 +182,7 @@ export default function CheckoutPage() {
     const addr = addresses.find((a) => a.id === selectedAddressId);
     if (!addr?.pathaoCityId || !addr?.pathaoZoneId) {
       setCourierShippingFee(null);
-      setCourierQuoteError('Update address with Pathao city/zone to get delivery charge');
+      setCourierQuoteError('');
       return;
     }
     let cancelled = false;
@@ -205,9 +197,6 @@ export default function CheckoutPage() {
         if (cancelled) return;
         const price = Number(r.data?.quote?.price);
         setCourierShippingFee(Number.isFinite(price) ? price : null);
-        // #region agent log
-        fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'checkout-quote',hypothesisId:'H2',location:'checkout/page.tsx:quote',message:'checkout courier quote applied',data:{selectedAddressId,price},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       })
       .catch((e: any) => {
         if (cancelled) return;
@@ -291,7 +280,7 @@ export default function CheckoutPage() {
         }
       };
 
-      // Pay later: EasyCheckout for delivery fee only. Pay now: full order total.
+      // Pay later: SSLCommerz for delivery fee only. Pay now: full order total.
       // Do NOT clear cart until payment succeeds — failure must return to checkout with items.
       if (requiresPayment && paymentMethod && paymentMethod !== 'installment') {
         try {
@@ -299,18 +288,10 @@ export default function CheckoutPage() {
             ? 'delivery_fee'
             : 'order_total';
           const payMethod = paymentMethod === 'cod' ? 'sslcommerz' : paymentMethod;
-          const pay = await startOrderPayment(order.id, payMethod, {
-            purpose,
-            onPaid: () => {
-              clearCart();
-            },
-          });
-          if (payMethod === 'sslcommerz' || payMethod === 'rocket' || payMethod === 'upay') {
-            setPayRetry({ orderId: order.id, method: payMethod, purpose });
-            return;
-          }
+          const pay = await startOrderPayment(order.id, payMethod, { purpose });
           if (pay.redirectUrl) {
-            // Hosted redirect: cart cleared on payment success callback server-side.
+            setPayRetry({ orderId: order.id, method: payMethod, purpose });
+            window.location.href = pay.redirectUrl;
             return;
           }
           setPayRetry({ orderId: order.id, method: payMethod, purpose });

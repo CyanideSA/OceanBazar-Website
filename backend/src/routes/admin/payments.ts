@@ -50,22 +50,38 @@ router.get('/', async (req: Request, res: Response) => {
   if (status === 'under_verification') {
     // Gateway captured the funds but an admin has not verified them yet.
     where.status = 'success';
-    where.order = { paymentStatus: 'under_verification' };
+    where.OR = [
+      { order: { paymentStatus: 'under_verification' } },
+      { order: { deliveryPaymentStatus: 'under_verification' } },
+    ];
   } else if (status) {
     where.status = status;
   }
   if (method) where.method = method;
-  if (search) where.OR = [
-    { orderId: { contains: search } },
-    { providerTxId: { contains: search } },
-    { id: { contains: search } },
+  if (search) where.AND = [
+    ...(where.AND || []),
+    {
+      OR: [
+        { orderId: { contains: search } },
+        { providerTxId: { contains: search } },
+        { id: { contains: search } },
+      ],
+    },
   ];
 
   const [transactions, total] = await Promise.all([
     prisma.paymentTransaction.findMany({
       where,
       include: {
-        order: { select: { orderNumber: true, status: true, paymentStatus: true } },
+        order: {
+          select: {
+            orderNumber: true,
+            status: true,
+            paymentStatus: true,
+            deliveryPaymentStatus: true,
+            deliveryFeePaid: true,
+          },
+        },
         user: { select: { name: true, email: true, phone: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -83,7 +99,12 @@ router.get('/:id', async (req: Request, res: Response) => {
   const tx = await prisma.paymentTransaction.findUnique({
     where: { id: routeParam(req.params.id) },
     include: {
-      order: { include: { items: true, user: { select: { name: true, email: true, phone: true } } } },
+      order: {
+        include: {
+          items: true,
+          user: { select: { name: true, email: true, phone: true } },
+        },
+      },
       user: { select: { name: true, email: true } },
     },
   });
@@ -96,32 +117,124 @@ router.post('/:id/mark-paid', async (req: Request, res: Response) => {
   const tx = await prisma.paymentTransaction.findUnique({ where: { id: routeParam(req.params.id) } });
   if (!tx) { res.status(404).json({ error: 'Transaction not found' }); return; }
 
+  const meta = (tx.metadata && typeof tx.metadata === 'object') ? tx.metadata as Record<string, unknown> : {};
+  const isDeliveryFee = meta.purpose === 'delivery_fee';
+
   const updatedTx = await prisma.paymentTransaction.update({
     where: { id: tx.id },
     data: { status: 'success' },
   });
+
+  let order;
+  if (isDeliveryFee) {
+    order = await prisma.order.update({
+      where: { id: tx.orderId },
+      data: {
+        deliveryPaymentStatus: 'paid',
+        deliveryFeePaid: tx.amount,
+        // Goods remain COD unpaid; move into processing once courier fee is verified.
+        status: 'processing',
+      },
+    });
+    await prisma.orderTimeline.create({
+      data: {
+        orderId: order.id,
+        status: 'processing',
+        note: 'Delivery charge verified by admin — order ready to process (goods COD)',
+        actorType: 'admin',
+        actorId: String(req.admin!.adminId),
+      },
+    });
+  } else {
+    order = await prisma.order.update({
+      where: { id: tx.orderId },
+      data: { paymentStatus: 'paid', status: 'processing' },
+    });
+    await prisma.orderTimeline.create({
+      data: {
+        orderId: order.id,
+        status: 'processing',
+        note: 'Payment confirmed by admin — order moved to processing',
+        actorType: 'admin',
+        actorId: String(req.admin!.adminId),
+      },
+    });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      adminId: req.admin!.adminId,
+      action: isDeliveryFee ? 'MARK_DELIVERY_FEE_PAID' : 'MARK_PAYMENT_PAID',
+      targetType: 'payment_transaction',
+      targetId: tx.id,
+      details: { orderId: order.id, purpose: isDeliveryFee ? 'delivery_fee' : 'order_total' },
+    },
+  });
+
+  try {
+    await notifyCustomer({
+      userId: order.userId,
+      event: 'payment_received',
+      vars: { orderNumber: order.orderNumber },
+    });
+  } catch { /* non-fatal */ }
+
+  res.json({
+    transaction: updatedTx,
+    order,
+    message: isDeliveryFee ? 'Delivery charge marked as verified' : 'Payment marked as received',
+  });
+});
+
+// POST /api/admin/payments/:id/request-again — ask customer to pay again
+router.post('/:id/request-again', async (req: Request, res: Response) => {
+  const tx = await prisma.paymentTransaction.findUnique({ where: { id: routeParam(req.params.id) } });
+  if (!tx) { res.status(404).json({ error: 'Transaction not found' }); return; }
+
+  const note = typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : undefined;
+  const meta = (tx.metadata && typeof tx.metadata === 'object') ? tx.metadata as Record<string, unknown> : {};
+  const isDeliveryFee = meta.purpose === 'delivery_fee';
+
+  const updatedTx = await prisma.paymentTransaction.update({
+    where: { id: tx.id },
+    data: {
+      status: 'failed',
+      metadata: {
+        ...meta,
+        repayRequestedAt: new Date().toISOString(),
+        repayNote: note || null,
+      },
+    },
+  });
+
   const order = await prisma.order.update({
     where: { id: tx.orderId },
-    data: { paymentStatus: 'paid', status: 'processing' },
+    data: isDeliveryFee
+      ? { deliveryPaymentStatus: 'pending', deliveryFeePaid: 0 }
+      : { paymentStatus: 'unpaid' },
   });
+
   await prisma.orderTimeline.create({
     data: {
       orderId: order.id,
-      status: 'processing',
-      note: 'Payment confirmed by admin — order moved to processing',
+      status: order.status,
+      note: note || (isDeliveryFee
+        ? 'Admin requested delivery fee payment again'
+        : 'Admin requested payment again'),
       actorType: 'admin',
       actorId: String(req.admin!.adminId),
     },
   });
-  await prisma.auditLog.create({
-    data: { adminId: req.admin!.adminId, action: 'MARK_PAYMENT_PAID', targetType: 'payment_transaction', targetId: tx.id, details: { orderId: order.id } },
-  });
 
   try {
-    await notifyCustomer({ userId: order.userId, event: 'payment_received', vars: { orderNumber: order.orderNumber } });
+    await notifyCustomer({
+      userId: order.userId,
+      event: 'payment_verification',
+      vars: { orderNumber: order.orderNumber },
+    });
   } catch { /* non-fatal */ }
 
-  res.json({ transaction: updatedTx, order, message: 'Payment marked as received' });
+  res.json({ transaction: updatedTx, order, message: 'Customer can pay again from their order page' });
 });
 
 // POST /api/admin/payments/:id/refund

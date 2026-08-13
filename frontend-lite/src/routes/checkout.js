@@ -70,17 +70,18 @@ function mountCheckout(router) {
       );
     }
 
-    let order;
+    let placeData;
     try {
       const { data } = await authedFetch(req, res, '/api/orders/place', {
         method: 'POST',
         body: { shippingAddressId, paymentMethod, notes },
       });
-      order = data?.order || data;
+      placeData = data || {};
     } catch (err) {
       return res.redirect(`${bp(`/${locale}/checkout`)}?error=${encodeURIComponent(err.message)}`);
     }
 
+    const order = placeData.order || placeData;
     const orderId = order?.id || order?.orderId;
     if (!orderId) {
       return res.redirect(
@@ -88,12 +89,24 @@ function mountCheckout(router) {
       );
     }
 
-    if (paymentMethod === 'cod') {
+    const requiresPayment = Boolean(placeData.requiresPayment);
+    const paymentPurpose =
+      placeData.paymentPurpose === 'delivery_fee' || paymentMethod === 'cod'
+        ? 'delivery_fee'
+        : 'order_total';
+
+    // COD with free delivery — no gateway step.
+    if (paymentMethod === 'cod' && !requiresPayment) {
       return res.redirect(
         `${bp(`/${locale}/account/orders/${orderId}`)}?flash=${encodeURIComponent(res.locals.t('orderPlaced'))}`,
       );
     }
 
+    if (!requiresPayment) {
+      return res.redirect(bp(`/${locale}/account/orders/${orderId}`));
+    }
+
+    const payMethod = paymentMethod === 'cod' ? 'sslcommerz' : paymentMethod;
     const pathByMethod = {
       sslcommerz: '/api/payments/sslcommerz/initiate',
       bkash: '/api/payments/bkash/initiate',
@@ -101,7 +114,7 @@ function mountCheckout(router) {
       rocket: '/api/payments/rocket/initiate',
       upay: '/api/payments/upay/initiate',
     };
-    const payPath = pathByMethod[paymentMethod];
+    const payPath = pathByMethod[payMethod];
     if (!payPath) {
       return res.redirect(bp(`/${locale}/account/orders/${orderId}`));
     }
@@ -109,7 +122,7 @@ function mountCheckout(router) {
     try {
       const { data } = await authedFetch(req, res, payPath, {
         method: 'POST',
-        body: { orderId },
+        body: { orderId, purpose: paymentPurpose },
       });
       const url =
         data?.url ||
@@ -120,11 +133,13 @@ function mountCheckout(router) {
       if (url) return res.redirect(url);
     } catch (err) {
       return res.redirect(
-        `${bp(`/${locale}/account/orders/${orderId}`)}?error=${encodeURIComponent(err.message)}`,
+        `${bp(`/${locale}/checkout`)}?payment=failed&orderId=${encodeURIComponent(orderId)}&method=${encodeURIComponent(payMethod)}&purpose=${encodeURIComponent(paymentPurpose)}&error=${encodeURIComponent(err.message)}`,
       );
     }
 
-    res.redirect(bp(`/${locale}/account/orders/${orderId}`));
+    res.redirect(
+      `${bp(`/${locale}/checkout`)}?payment=error&orderId=${encodeURIComponent(orderId)}&method=${encodeURIComponent(payMethod)}&purpose=${encodeURIComponent(paymentPurpose)}`,
+    );
   });
 }
 

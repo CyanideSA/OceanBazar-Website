@@ -182,17 +182,6 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
   }, [searchParams, order]);
 
   useEffect(() => {
-    if (!order) return;
-    const retryVisible =
-      ['unpaid', 'under_verification', 'failed'].includes(String(order.paymentStatus || '').toLowerCase()) &&
-      !['cancelled', 'returned'].includes(order.status) &&
-      (canRetryOnlinePayment(order.paymentMethod) || String(order.paymentMethod || '').toLowerCase() === 'cod');
-    // #region agent log
-    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'order-retry-ui',hypothesisId:'H-repay',location:'OrderDetailClient.tsx:retryVisible',message:'order pay-again visibility',data:{orderId:order.id,paymentStatus:order.paymentStatus,paymentMethod:order.paymentMethod,retryVisible},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }, [order]);
-
-  useEffect(() => {
     if (!order || paymentFlag !== 'success') return;
     void trackAbOutcome('payment_success', {
       value: order.total,
@@ -226,21 +215,14 @@ function OrderDetailClientInner({ orderId }: { orderId: string }) {
       }
       const deliveryStatus = String((order as any).deliveryPaymentStatus || '').toLowerCase();
       const purpose =
-        isCod || deliveryStatus === 'unpaid' || deliveryStatus === 'under_verification'
-          ? (isCod ? 'delivery_fee' : undefined)
+        isCod || deliveryStatus === 'pending' || deliveryStatus === 'under_verification'
+          ? (isCod ? 'delivery_fee' : 'order_total')
           : 'order_total';
       return startOrderPayment(order.id, isCod ? 'sslcommerz' : order.paymentMethod, {
         purpose: purpose === 'delivery_fee' ? 'delivery_fee' : 'order_total',
-        onPaid: () => {
-          queryClient.invalidateQueries({ queryKey: ['order', orderId] });
-        },
       });
     },
     onSuccess: (payment) => {
-      // SSL Easy Checkout already opened a modal inside startOrderPayment.
-      if (order?.paymentMethod === 'sslcommerz' || order?.paymentMethod === 'rocket' || order?.paymentMethod === 'upay' || order?.paymentMethod === 'cod') {
-        return;
-      }
       if (payment.redirectUrl) {
         window.location.href = payment.redirectUrl;
         return;

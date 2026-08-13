@@ -18,15 +18,43 @@ const router = Router();
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const API_BASE = process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || 'http://localhost:4000';
 
+type PaymentPurpose = 'order_total' | 'delivery_fee';
+
+function parsePurpose(raw: unknown): PaymentPurpose {
+  return raw === 'delivery_fee' ? 'delivery_fee' : 'order_total';
+}
+
+function purposeFromMetadata(metadata: unknown): PaymentPurpose {
+  if (metadata && typeof metadata === 'object' && (metadata as { purpose?: string }).purpose === 'delivery_fee') {
+    return 'delivery_fee';
+  }
+  return 'order_total';
+}
+
+function resolveChargeAmount(
+  order: { total: unknown; shippingFee: unknown; paymentMethod: string },
+  purpose: PaymentPurpose,
+): number {
+  if (purpose === 'delivery_fee') {
+    const fee = Number(order.shippingFee);
+    if (!Number.isFinite(fee) || fee <= 0) {
+      throw Object.assign(new Error('No delivery fee due for this order'), { status: 400 });
+    }
+    return fee;
+  }
+  return Number(order.total);
+}
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 function checkoutRecoveryUrl(
   payment: 'failed' | 'cancelled' | 'error' | 'invalid',
-  transaction?: { orderId: string; method: string } | null,
+  transaction?: { orderId: string; method: string; purpose?: PaymentPurpose } | null,
 ): string {
   const params = new URLSearchParams({ payment });
   if (transaction?.orderId) params.set('orderId', transaction.orderId);
   if (transaction?.method) params.set('method', transaction.method);
+  if (transaction?.purpose) params.set('purpose', transaction.purpose);
   return `${CLIENT_URL}/en/checkout?${params.toString()}`;
 }
 
@@ -43,7 +71,11 @@ async function recordPaymentFailure(
       data: { status: 'failed' },
     });
   }
-  return checkoutRecoveryUrl(payment, { orderId: tx.orderId, method: tx.method });
+  return checkoutRecoveryUrl(payment, {
+    orderId: tx.orderId,
+    method: tx.method,
+    purpose: purposeFromMetadata(tx.metadata),
+  });
 }
 
 function sslValidationMatchesTransaction(
@@ -59,36 +91,78 @@ function sslValidationMatchesTransaction(
     && Math.abs(receivedAmount - expectedAmount) < 0.01;
 }
 
+async function clearUserCart(userId: string) {
+  const cart = await prisma.cart.findUnique({ where: { userId } });
+  if (cart) {
+    await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
+  }
+}
+
 async function onPaymentSuccess(transactionId: string, providerTxId: string, method: string) {
   const outcome = await prisma.$transaction(async (txn) => {
     const row = await txn.paymentTransaction.findUnique({ where: { id: transactionId } });
     if (!row) return { kind: 'missing' as const };
     if (row.status === 'success') {
-      return { kind: 'duplicate' as const, orderId: row.orderId, userId: row.userId, amount: row.amount };
+      return {
+        kind: 'duplicate' as const,
+        orderId: row.orderId,
+        userId: row.userId,
+        amount: row.amount,
+        purpose: purposeFromMetadata(row.metadata),
+      };
     }
     if (row.status === 'refunded') {
       return { kind: 'blocked' as const, reason: 'refunded' as const };
     }
-    const orderRow = await txn.order.findUnique({ where: { id: row.orderId }, select: { status: true } });
+    const purpose = purposeFromMetadata(row.metadata);
+    const orderRow = await txn.order.findUnique({
+      where: { id: row.orderId },
+      select: { status: true, total: true, paymentMethod: true },
+    });
     const tx = await txn.paymentTransaction.update({
       where: { id: transactionId },
       data: { status: 'success', providerTxId },
     });
-    // Gateway capture confirmed — but funds are pending manual admin verification before
-    // the order is treated as fully paid. Order fulfillment status is left untouched.
-    await txn.order.update({
-      where: { id: tx.orderId },
-      data: { paymentStatus: 'under_verification' },
-    });
-    await txn.orderTimeline.create({
-      data: {
-        orderId: tx.orderId,
-        status: orderRow?.status || 'pending',
-        note: `Payment received via ${method} — under verification`,
-        actorType: 'system',
-      },
-    });
-    return { kind: 'applied' as const, tx };
+
+    if (purpose === 'delivery_fee') {
+      // Prepaid courier charge only — goods remain COD unpaid until delivery.
+      await txn.order.update({
+        where: { id: tx.orderId },
+        data: {
+          deliveryPaymentStatus: 'under_verification',
+          deliveryFeePaid: tx.amount,
+        },
+      });
+      await txn.orderTimeline.create({
+        data: {
+          orderId: tx.orderId,
+          status: orderRow?.status || 'pending',
+          note: `Delivery fee ৳${Number(tx.amount).toLocaleString()} received via ${method} — under verification`,
+          actorType: 'system',
+        },
+      });
+    } else {
+      await txn.order.update({
+        where: { id: tx.orderId },
+        data: { paymentStatus: 'under_verification' },
+      });
+      await txn.orderTimeline.create({
+        data: {
+          orderId: tx.orderId,
+          status: orderRow?.status || 'pending',
+          note: `Payment received via ${method} — under verification`,
+          actorType: 'system',
+        },
+      });
+    }
+
+    return {
+      kind: 'applied' as const,
+      tx,
+      purpose,
+      orderTotal: Number(orderRow?.total || tx.amount),
+      paymentMethod: orderRow?.paymentMethod || method,
+    };
   });
 
   if (outcome.kind === 'missing') return;
@@ -107,12 +181,33 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
   }
 
   const tx = outcome.tx;
-  await earnPoints(tx.userId, tx.orderId, Number(tx.amount));
-  try { emitAdminEvent('admin:payment', { txId: tx.id, orderId: tx.orderId, amount: Number(tx.amount), status: 'success', method }); } catch { /* non-fatal */ }
+  try {
+    await clearUserCart(tx.userId);
+  } catch (cartErr) {
+    appLog('warn', 'payment_success_cart_clear_failed', {
+      orderId: tx.orderId,
+      detail: cartErr instanceof Error ? cartErr.message : String(cartErr),
+    });
+  }
+
+  const earnAmount = outcome.purpose === 'delivery_fee' ? outcome.orderTotal : Number(tx.amount);
+  await earnPoints(tx.userId, tx.orderId, earnAmount);
+  try {
+    emitAdminEvent('admin:payment', {
+      txId: tx.id,
+      orderId: tx.orderId,
+      amount: Number(tx.amount),
+      status: 'success',
+      method,
+      purpose: outcome.purpose,
+    });
+  } catch { /* non-fatal */ }
+
   const paidOrder = await prisma.order.findUnique({
     where: { id: tx.orderId },
     include: { items: true, user: true },
   });
+
   try {
     await notifyCustomer({
       userId: tx.userId,
@@ -120,9 +215,35 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
       vars: { orderNumber: paidOrder?.orderNumber || '' },
     });
   } catch { /* non-fatal */ }
-  if (paidOrder?.user.email) {
+
+  if (outcome.purpose === 'delivery_fee' && paidOrder) {
     try {
-      const sent = await sendPaymentInvoice(paidOrder.user.email, {
+      const { sendOrderConfirmation } = await import('../services/emailService');
+      const { sendOrderConfirmationSms, sendOrderConfirmationWhatsApp } = await import('../services/smsService');
+      if (paidOrder.user.email) {
+        sendOrderConfirmation(paidOrder.user.email, {
+          orderNumber: paidOrder.orderNumber,
+          total: Number(paidOrder.total),
+          items: paidOrder.items.map((i) => ({
+            productTitle: i.productTitle,
+            quantity: i.quantity,
+            unitPrice: Number(i.unitPrice),
+          })),
+        }).catch(() => {});
+      }
+      if (paidOrder.user.phone) {
+        sendOrderConfirmationSms(paidOrder.user.phone, paidOrder.orderNumber).catch(() => {});
+        sendOrderConfirmationWhatsApp(
+          paidOrder.user.phone,
+          paidOrder.orderNumber,
+          Number(paidOrder.total),
+          paidOrder.items.map((i) => ({ productTitle: i.productTitle, quantity: i.quantity })),
+        ).catch(() => {});
+      }
+    } catch { /* non-fatal */ }
+  } else if (paidOrder?.user.email) {
+    try {
+      await sendPaymentInvoice(paidOrder.user.email, {
         id: paidOrder.id,
         orderNumber: paidOrder.orderNumber,
         subtotal: Number(paidOrder.subtotal),
@@ -147,10 +268,15 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
       });
     }
   }
+
+  const amountLabel = Number(tx.amount).toLocaleString();
   sendToUser(tx.userId, {
-    title: 'Payment Under Verification ⏳',
-    body: `Order #${paidOrder?.orderNumber} — ৳${Number(tx.amount).toLocaleString()} received via ${method}. We'll confirm shortly.`,
-    url: `/en/orders/${tx.orderId}`,
+    title: outcome.purpose === 'delivery_fee' ? 'Delivery fee received ⏳' : 'Payment Under Verification ⏳',
+    body:
+      outcome.purpose === 'delivery_fee'
+        ? `Order #${paidOrder?.orderNumber} — delivery ৳${amountLabel} received. Goods payable on delivery.`
+        : `Order #${paidOrder?.orderNumber} — ৳${amountLabel} received via ${method}. We'll confirm shortly.`,
+    url: `/en/account/orders/${tx.orderId}`,
     tag: 'payment',
   }).catch(() => {});
 }
@@ -158,9 +284,18 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
 // ─── bKash ────────────────────────────────────────────────────────────────────
 
 router.post('/bkash/initiate', requireAuth, async (req: Request, res: Response) => {
-  const { orderId } = req.body as { orderId: string };
+  const { orderId } = req.body as { orderId: string; purpose?: string };
+  const purpose = parsePurpose(req.body?.purpose);
   const order = await prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } });
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+
+  let amount: number;
+  try {
+    amount = resolveChargeAmount(order, purpose);
+  } catch (err: any) {
+    res.status(err?.status || 400).json({ error: err?.message || 'Invalid payment amount' });
+    return;
+  }
 
   const tx = await prisma.paymentTransaction.create({
     data: {
@@ -168,8 +303,8 @@ router.post('/bkash/initiate', requireAuth, async (req: Request, res: Response) 
       orderId,
       userId: req.user!.userId,
       method: 'bkash',
-      amount: order.total,
-      metadata: { initiatedAt: new Date().toISOString() },
+      amount,
+      metadata: { purpose, initiatedAt: new Date().toISOString() },
     },
   });
 
@@ -182,7 +317,7 @@ router.post('/bkash/initiate', requireAuth, async (req: Request, res: Response) 
 
   try {
     const result = await bkash.createPayment({
-      amount: Number(order.total),
+      amount,
       orderId: order.id,
       orderNumber: order.orderNumber,
       callbackURL: `${API_BASE}/api/payments/bkash/callback`,
@@ -190,10 +325,10 @@ router.post('/bkash/initiate', requireAuth, async (req: Request, res: Response) 
 
     await prisma.paymentTransaction.update({
       where: { id: tx.id },
-      data: { metadata: { paymentID: result.paymentID, initiatedAt: new Date().toISOString() } },
+      data: { metadata: { purpose, paymentID: result.paymentID, initiatedAt: new Date().toISOString() } },
     });
 
-    res.json({ transactionId: tx.id, paymentID: result.paymentID, redirectUrl: result.bkashURL });
+    res.json({ transactionId: tx.id, paymentID: result.paymentID, redirectUrl: result.bkashURL, purpose });
   } catch (err: any) {
     console.error('[bKash] initiate error:', err.message);
     res.status(502).json({ error: 'Failed to initiate bKash payment. Please try again or use COD.' });
@@ -243,12 +378,21 @@ router.post('/bkash/confirm', requireAuth, async (req: Request, res: Response) =
 // ─── SSLCommerz ───────────────────────────────────────────────────────────────
 
 router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Response) => {
-  const { orderId } = req.body as { orderId: string };
+  const { orderId } = req.body as { orderId: string; purpose?: string };
+  const purpose = parsePurpose(req.body?.purpose);
   const [order, user] = await Promise.all([
     prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } }),
     prisma.user.findUnique({ where: { id: req.user!.userId } }),
   ]);
   if (!order || !user) { res.status(404).json({ error: 'Order not found' }); return; }
+
+  let amount: number;
+  try {
+    amount = resolveChargeAmount(order, purpose);
+  } catch (err: any) {
+    res.status(err?.status || 400).json({ error: err?.message || 'Invalid payment amount' });
+    return;
+  }
 
   const tx = await prisma.paymentTransaction.create({
     data: {
@@ -256,8 +400,8 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
       orderId,
       userId: req.user!.userId,
       method: 'sslcommerz',
-      amount: order.total,
-      metadata: { tran_id: '' },
+      amount,
+      metadata: { purpose, tran_id: '' },
     },
   });
 
@@ -269,18 +413,21 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
   }
 
   try {
-    await prisma.paymentTransaction.update({ where: { id: tx.id }, data: { metadata: { tran_id: tx.id } } });
+    await prisma.paymentTransaction.update({
+      where: { id: tx.id },
+      data: { metadata: { purpose, tran_id: tx.id } },
+    });
 
     const gatewayUrl = await ssl.initiatePayment({
       transactionId: tx.id,
       orderNumber: order.orderNumber,
-      amount: Number(order.total),
+      amount,
       customerName: user.name,
       customerEmail: user.email || '',
       customerPhone: user.phone || '',
     });
 
-    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl });
+    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl, purpose, amount });
   } catch (err: any) {
     console.error('[SSLCommerz] initiate error:', err.message);
     res.status(502).json({ error: 'Failed to initiate payment. Please try again or use COD.' });
@@ -358,12 +505,28 @@ router.post('/sslcommerz/cancel', async (req, res) => {
 // ─── Nagad ────────────────────────────────────────────────────────────────────
 
 router.post('/nagad/initiate', requireAuth, async (req: Request, res: Response) => {
-  const { orderId } = req.body as { orderId: string };
+  const { orderId } = req.body as { orderId: string; purpose?: string };
+  const purpose = parsePurpose(req.body?.purpose);
   const order = await prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } });
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
 
+  let amount: number;
+  try {
+    amount = resolveChargeAmount(order, purpose);
+  } catch (err: any) {
+    res.status(err?.status || 400).json({ error: err?.message || 'Invalid payment amount' });
+    return;
+  }
+
   const tx = await prisma.paymentTransaction.create({
-    data: { id: generateEntityId(), orderId, userId: req.user!.userId, method: 'nagad', amount: order.total },
+    data: {
+      id: generateEntityId(),
+      orderId,
+      userId: req.user!.userId,
+      method: 'nagad',
+      amount,
+      metadata: { purpose },
+    },
   });
 
   if (!nagad.isNagadConfigured()) {
@@ -377,9 +540,9 @@ router.post('/nagad/initiate', requireAuth, async (req: Request, res: Response) 
     const result = await nagad.createPayment({
       orderId: order.id,
       orderNumber: order.orderNumber,
-      amount: Number(order.total),
+      amount,
     });
-    res.json({ transactionId: tx.id, redirectUrl: result.callBackUrl });
+    res.json({ transactionId: tx.id, redirectUrl: result.callBackUrl, purpose });
   } catch (err: any) {
     console.error('[Nagad] initiate error:', err.message);
     res.status(502).json({ error: 'Failed to initiate Nagad payment. Please try again or use COD.' });
@@ -414,11 +577,28 @@ router.post('/nagad/confirm', requireAuth, async (req: Request, res: Response) =
 // ─── Rocket (DBBL Mobile Banking) ─────────────────────────────────────────────
 
 router.post('/rocket/initiate', requireAuth, async (req: Request, res: Response) => {
-  const { orderId } = req.body as { orderId: string };
+  const { orderId } = req.body as { orderId: string; purpose?: string };
+  const purpose = parsePurpose(req.body?.purpose);
   const order = await prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } });
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+
+  let amount: number;
+  try {
+    amount = resolveChargeAmount(order, purpose);
+  } catch (err: any) {
+    res.status(err?.status || 400).json({ error: err?.message || 'Invalid payment amount' });
+    return;
+  }
+
   const tx = await prisma.paymentTransaction.create({
-    data: { id: generateEntityId(), orderId, userId: req.user!.userId, method: 'rocket', amount: order.total },
+    data: {
+      id: generateEntityId(),
+      orderId,
+      userId: req.user!.userId,
+      method: 'rocket',
+      amount,
+      metadata: { purpose },
+    },
   });
   // Rocket uses SSLCommerz gateway — configure SSLCOMMERZ creds to enable
   if (!ssl.isSslConfigured()) {
@@ -428,9 +608,9 @@ router.post('/rocket/initiate', requireAuth, async (req: Request, res: Response)
   try {
     const gatewayUrl = await ssl.initiatePayment({
       transactionId: tx.id, orderNumber: order.orderNumber,
-      amount: Number(order.total), customerName: user?.name || '', customerEmail: user?.email || '', customerPhone: user?.phone || '',
+      amount, customerName: user?.name || '', customerEmail: user?.email || '', customerPhone: user?.phone || '',
     });
-    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl });
+    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl, purpose });
   } catch (err: any) {
     res.status(502).json({ error: 'Failed to initiate Rocket payment.' });
   }
@@ -439,11 +619,28 @@ router.post('/rocket/initiate', requireAuth, async (req: Request, res: Response)
 // ─── Upay ─────────────────────────────────────────────────────────────────────
 
 router.post('/upay/initiate', requireAuth, async (req: Request, res: Response) => {
-  const { orderId } = req.body as { orderId: string };
+  const { orderId } = req.body as { orderId: string; purpose?: string };
+  const purpose = parsePurpose(req.body?.purpose);
   const order = await prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } });
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+
+  let amount: number;
+  try {
+    amount = resolveChargeAmount(order, purpose);
+  } catch (err: any) {
+    res.status(err?.status || 400).json({ error: err?.message || 'Invalid payment amount' });
+    return;
+  }
+
   const tx = await prisma.paymentTransaction.create({
-    data: { id: generateEntityId(), orderId, userId: req.user!.userId, method: 'upay', amount: order.total },
+    data: {
+      id: generateEntityId(),
+      orderId,
+      userId: req.user!.userId,
+      method: 'upay',
+      amount,
+      metadata: { purpose },
+    },
   });
   // Upay uses SSLCommerz gateway
   if (!ssl.isSslConfigured()) {
@@ -453,9 +650,9 @@ router.post('/upay/initiate', requireAuth, async (req: Request, res: Response) =
   try {
     const gatewayUrl = await ssl.initiatePayment({
       transactionId: tx.id, orderNumber: order.orderNumber,
-      amount: Number(order.total), customerName: user?.name || '', customerEmail: user?.email || '', customerPhone: user?.phone || '',
+      amount, customerName: user?.name || '', customerEmail: user?.email || '', customerPhone: user?.phone || '',
     });
-    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl });
+    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl, purpose });
   } catch (err: any) {
     res.status(502).json({ error: 'Failed to initiate Upay payment.' });
   }

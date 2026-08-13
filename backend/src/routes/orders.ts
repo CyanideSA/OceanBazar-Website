@@ -80,12 +80,7 @@ router.post('/place', async (req: Request, res: Response) => {
 
   const pathaoCityId = Number((address as any).pathaoCityId) || 0;
   const pathaoZoneId = Number((address as any).pathaoZoneId) || 0;
-  if (!pathaoCityId || !pathaoZoneId) {
-    res.status(400).json({
-      error: 'Please update your delivery address with Pathao city and zone so we can calculate the courier delivery charge',
-    });
-    return;
-  }
+  // Pathao geo IDs are optional — live quote when present, otherwise core shipping fee.
 
   let resolvedCouponId: number | null = null;
   if (couponCode || couponId) {
@@ -137,10 +132,9 @@ router.post('/place', async (req: Request, res: Response) => {
 
   const codFeeAmount = paymentMethod === 'cod' ? COD_FEE : 0;
 
-  // Replace flat core shipping with live Pathao quote (unless core already waived shipping).
+  // Prefer live Pathao quote when address has courier geo IDs; otherwise keep core shipping.
   let shippingFee = result.totals.shippingFee;
-  let deliveryQuoteProvider: string | null = null;
-  if (shippingFee > 0) {
+  if (shippingFee > 0 && pathaoCityId && pathaoZoneId) {
     try {
       const quote = await quotePathaoDelivery({
         pathaoCityId,
@@ -148,7 +142,6 @@ router.post('/place', async (req: Request, res: Response) => {
         itemWeightKg: estimateCartWeightKg(coreValidation.lines.reduce((n, l) => n + (l.quantity || 1), 0)),
       });
       shippingFee = quote.price;
-      deliveryQuoteProvider = quote.provider;
     } catch (quoteErr) {
       appLog('warn', 'pathao_quote_on_place_failed', {
         detail: quoteErr instanceof Error ? quoteErr.message : String(quoteErr),
@@ -162,10 +155,6 @@ router.post('/place', async (req: Request, res: Response) => {
   const requiresDeliveryFeePayment = paymentMethod === 'cod' && shippingFee > 0;
   const onlineMethods = ['bkash', 'nagad', 'rocket', 'upay', 'sslcommerz'];
   const needsOnlinePayment = onlineMethods.includes(paymentMethod);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'place-order',hypothesisId:'H3',location:'orders.ts:place:prePersist',message:'place order shipping quote applied',data:{paymentMethod,coreShipping:result.totals.shippingFee,shippingFee,codFeeAmount,finalTotal,requiresDeliveryFeePayment,pathaoCityId,pathaoZoneId,deliveryQuoteProvider,userId:req.user!.userId},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 
   // ── Persist OB redemption ───────────────────────────────────────────────
   let obDiscount = 0;
@@ -230,7 +219,9 @@ router.post('/place', async (req: Request, res: Response) => {
             | 'cod' | 'bkash' | 'nagad' | 'rocket' | 'upay' | 'sslcommerz' | 'installment',
           shippingAddressId,
           notes,
-          ...(codFeeAmount > 0 ? { codFee: codFeeAmount } : {}),
+          codFee: codFeeAmount,
+          deliveryPaymentStatus: requiresDeliveryFeePayment ? 'pending' : 'none',
+          deliveryFeePaid: 0,
           items: { create: orderItems },
           timeline: {
             create: {
@@ -246,14 +237,6 @@ router.post('/place', async (req: Request, res: Response) => {
         include: { items: true, timeline: true },
       });
 
-      if (requiresDeliveryFeePayment) {
-        await tx.$executeRaw`
-          UPDATE orders
-          SET delivery_payment_status = 'pending', delivery_fee_paid = 0
-          WHERE id = ${createdOrder.id}
-        `;
-      }
-
       for (const item of createdOrder.items) {
         const url = imageByProductId.get(item.productId);
         if (!url) continue;
@@ -263,26 +246,19 @@ router.post('/place', async (req: Request, res: Response) => {
       }
 
       // Keep cart when online / delivery-fee payment is still required so a failed
-      // EasyCheckout can return the customer to checkout with items intact.
+      // gateway redirect can return the customer to checkout with items intact.
       const deferCartClear = needsOnlinePayment || requiresDeliveryFeePayment;
       if (!deferCartClear) {
         await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'cart-keep',hypothesisId:'H-A',location:'orders.ts:place:cartClear',message:'cart clear decision',data:{orderId:createdOrder.id,deferCartClear,paymentMethod,requiresDeliveryFeePayment},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       return createdOrder;
     });
   } catch (persistErr) {
-    // #region agent log
-    const pe = persistErr as { message?: string; code?: string; name?: string };
-    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'place-order',hypothesisId:'H3',location:'orders.ts:place:persistCatch',message:'order persist failed',data:{paymentMethod,codFeeAmount,errMsg:String(pe?.message||persistErr).slice(0,500)},timestamp:Date.now()})}).catch(()=>{});
     appLog('error', 'order_persist_failed', {
       paymentMethod,
       codFeeAmount,
       detail: persistErr instanceof Error ? persistErr.message : String(persistErr),
     });
-    // #endregion
     throw persistErr;
   }
 
@@ -332,10 +308,6 @@ router.post('/place', async (req: Request, res: Response) => {
         ).catch(() => {});
       }
     } catch { /* non-fatal */ }
-  } else {
-    // #region agent log
-    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'order-email',hypothesisId:'H4',location:'orders.ts:place:skipConfirm',message:'skipped confirmation until payment',data:{orderId:order.id,paymentMethod,requiresDeliveryFeePayment,needsOnlinePayment},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   }
 
   let pointsEarned = 0;
@@ -364,10 +336,6 @@ router.post('/place', async (req: Request, res: Response) => {
 
   const requiresPayment = needsOnlinePayment || requiresDeliveryFeePayment;
   const paymentPurpose = requiresDeliveryFeePayment ? 'delivery_fee' : 'order_total';
-
-  // #region agent log
-  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'place-order',hypothesisId:'H4',location:'orders.ts:place:success',message:'order placed',data:{orderId:order.id,paymentMethod,shippingFee,codFeeAmount,total:Number(order.total),requiresPayment,paymentPurpose},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 
   res.status(201).json({
     order,

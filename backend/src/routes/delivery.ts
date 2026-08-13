@@ -9,6 +9,7 @@ import {
   getPickupStoreDetails,
   calculateParcelCharge,
 } from '../services/redxService';
+import { estimateCartWeightKg, quotePathaoDelivery } from '../services/deliveryQuoteService';
 
 const router = Router();
 
@@ -128,6 +129,44 @@ router.post('/webhook/:carrier', async (req: Request, res: Response) => {
 // ─── Customer-authenticated tracking ─────────────────────────────────────────
 
 router.use(requireAuth);
+
+// POST /api/delivery/pathao/quote — live courier fee for checkout
+router.post('/pathao/quote', async (req: Request, res: Response) => {
+  const shippingAddressId = Number(req.body?.shippingAddressId);
+  const itemCount = Number(req.body?.itemCount) || 1;
+  if (!Number.isFinite(shippingAddressId) || shippingAddressId <= 0) {
+    res.status(400).json({ error: 'shippingAddressId is required' });
+    return;
+  }
+
+  const address = await prisma.savedAddress.findFirst({
+    where: { id: shippingAddressId, userId: req.user!.userId },
+  });
+  if (!address) {
+    res.status(404).json({ error: 'Address not found' });
+    return;
+  }
+
+  const pathaoCityId = Number((address as { pathaoCityId?: number | null }).pathaoCityId) || 0;
+  const pathaoZoneId = Number((address as { pathaoZoneId?: number | null }).pathaoZoneId) || 0;
+  if (!pathaoCityId || !pathaoZoneId) {
+    res.status(400).json({
+      error: 'Update address with Pathao city and zone to get delivery charge',
+    });
+    return;
+  }
+
+  try {
+    const quote = await quotePathaoDelivery({
+      pathaoCityId,
+      pathaoZoneId,
+      itemWeightKg: estimateCartWeightKg(itemCount),
+    });
+    res.json({ quote: { price: quote.price, provider: quote.provider, discount: quote.discount } });
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Could not load courier delivery charge' });
+  }
+});
 
 router.get('/my-shipments', async (req: Request, res: Response) => {
   const orders = await prisma.order.findMany({

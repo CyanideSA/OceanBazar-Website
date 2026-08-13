@@ -29,10 +29,8 @@
         <% } %>
 
         <h2><%= t('paymentMethod') %></h2>
-        <label class="radio-card"><input type="radio" name="paymentMethod" value="cod" checked /> <%= t('cod') %></label>
-        <label class="radio-card"><input type="radio" name="paymentMethod" value="sslcommerz" /> <%= t('sslcommerz') %></label>
-        <label class="radio-card"><input type="radio" name="paymentMethod" value="bkash" /> <%= t('bkash') %></label>
-        <label class="radio-card"><input type="radio" name="paymentMethod" value="nagad" /> <%= t('nagad') %></label>
+        <label class="radio-card"><input type="radio" name="paymentMethod" value="cod" checked /> <%= t('cod') %> / Pay later</label>
+        <label class="radio-card"><input type="radio" name="paymentMethod" value="sslcommerz" /> <%= t('sslcommerz') %> / Pay now</label>
 
         <label class="field">
           <span><%= t('notes') %></span>

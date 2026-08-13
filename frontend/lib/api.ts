@@ -202,13 +202,18 @@ export const ordersApi = {
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 export const paymentsApi = {
-  bkashInitiate: (orderId: string) => api.post('/payments/bkash/initiate', { orderId }),
+  bkashInitiate: (orderId: string, purpose: 'order_total' | 'delivery_fee' = 'order_total') =>
+    api.post('/payments/bkash/initiate', { orderId, purpose }),
   bkashConfirm: (transactionId: string, providerTxId: string) =>
     api.post('/payments/bkash/confirm', { transactionId, providerTxId }),
-  nagadInitiate: (orderId: string) => api.post('/payments/nagad/initiate', { orderId }),
-  sslcommerz: (orderId: string) => api.post('/payments/sslcommerz/initiate', { orderId }),
-  rocketInitiate: (orderId: string) => api.post('/payments/rocket/initiate', { orderId }),
-  upayInitiate: (orderId: string) => api.post('/payments/upay/initiate', { orderId }),
+  nagadInitiate: (orderId: string, purpose: 'order_total' | 'delivery_fee' = 'order_total') =>
+    api.post('/payments/nagad/initiate', { orderId, purpose }),
+  sslcommerz: (orderId: string, purpose: 'order_total' | 'delivery_fee' = 'order_total') =>
+    api.post('/payments/sslcommerz/initiate', { orderId, purpose }),
+  rocketInitiate: (orderId: string, purpose: 'order_total' | 'delivery_fee' = 'order_total') =>
+    api.post('/payments/rocket/initiate', { orderId, purpose }),
+  upayInitiate: (orderId: string, purpose: 'order_total' | 'delivery_fee' = 'order_total') =>
+    api.post('/payments/upay/initiate', { orderId, purpose }),
 };
 
 // ─── OB Points ────────────────────────────────────────────────────────────────
@@ -312,6 +317,11 @@ export const storefrontApi = {
 export const deliveryApi = {
   track: (trackingNumber: string) => api.get(`/delivery/track/${trackingNumber}`),
   carriers: () => api.get('/delivery/carriers'),
+  pathaoQuote: (data: { shippingAddressId: number; itemCount?: number }) =>
+    api.post<{ quote: { price: number; provider?: string; discount?: number } }>(
+      '/delivery/pathao/quote',
+      data,
+    ),
 };
 
 // ─── Notifications ──────────────────────────────────────────────────────────

@@ -583,6 +583,8 @@ export const adminApi = {
 
   // Payments extras
   markPaymentPaid: (id) => api.post(`/api/admin/payments/${id}/mark-paid`).then((r) => r.data),
+  requestPaymentAgain: (id, payload) =>
+    api.post(`/api/admin/payments/${id}/request-again`, payload || {}).then((r) => r.data),
   refundPayment: (id, payload, reauthToken) =>
     api.post(`/api/admin/payments/${id}/refund`, payload, {
       ...withReauthHeader(reauthToken),
