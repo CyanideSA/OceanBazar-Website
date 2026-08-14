@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/lib/api';
 import type { User } from '@/types';
@@ -25,6 +25,7 @@ function mapMeUser(raw: Record<string, unknown>): User {
 
 export default function AccountLayoutClient({ children }: { children: React.ReactNode }) {
   const locale = useLocale();
+  const tc = useTranslations('common');
   const router = useRouter();
   const { isAuthenticated, updateUser, logout } = useAuthStore();
 
@@ -49,9 +50,14 @@ export default function AccountLayoutClient({ children }: { children: React.Reac
   }, [isAuthenticated, locale, router, updateUser, logout]);
 
   if (!isAuthenticated) {
+    // Redirecting to sign-in (see effect above). Show a visible, accessible
+    // message rather than an aria-hidden skeleton so the state is meaningful to
+    // users and assistive tech while the redirect completes.
     return (
-      <div className="container-tight py-16">
-        <div className="h-40 animate-pulse rounded-2xl bg-muted" aria-hidden />
+      <div className="container-tight py-16 text-center">
+        <p className="text-lg font-semibold text-foreground">{tc('error')}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{tc('loading')}</p>
+        <div className="mt-6 h-40 animate-pulse rounded-2xl bg-muted" aria-hidden />
       </div>
     );
   }
