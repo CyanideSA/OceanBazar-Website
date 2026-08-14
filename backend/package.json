@@ -4,7 +4,7 @@
   "description": "Oceanbazar Node.js BFF / API Gateway",
   "main": "dist/app.js",
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
@@ -15,7 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:seed": "ts-node prisma/seed.ts",
+    "db:seed": "ts-node --transpile-only prisma/seed.ts",
     "prisma:unlock": "node scripts/kill-prisma-lock.js",
     "check:migrations": "node scripts/check-migration-overlap.mjs",
     "check:schema": "node ../scripts/ops/verify-schema-prisma-flyway.mjs",

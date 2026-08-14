@@ -42,6 +42,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oceanbazar
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/oceanbazar
       JWT_ACCESS_SECRET: playwright_ci_jwt_access_secret_32bytes__
       JWT_SECRET_KEY: playwright_ci_jwt_refresh_secret_32bytes__
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
@@ -92,11 +93,16 @@ jobs:
           echo "Java API failed to start."
           exit 1
 
-      - name: Backend — install & migrate & seed
+      - name: Backend — install, provision DB & seed
         working-directory: backend
         run: |
           npm ci
-          npx prisma migrate deploy
+          # The Prisma migration history is interleaved with Java/Flyway-owned
+          # catalog tables and cannot run standalone on an empty DB; the schema is
+          # a complete superset, so push it directly (matches .cursor/install.sh).
+          echo "CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS btree_gin;" | npx prisma db execute --url "$DATABASE_URL" --stdin
+          npx prisma db push --accept-data-loss
+          npx prisma db execute --url "$DATABASE_URL" --file prisma/dev-fix-updated-at-defaults.sql
           npm run db:seed
 
       - name: Frontend — install
