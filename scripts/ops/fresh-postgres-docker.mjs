@@ -70,8 +70,18 @@ if (volumes.length === 0) {
 console.log('\nStarting Postgres…');
 run('docker', ['compose', 'up', 'postgres', '-d', '--wait']);
 
-console.log('\nApplying Prisma migrations (empty database)…');
-run('docker', ['compose', 'run', '--rm', '--no-deps', '--build', 'api', 'npx', 'prisma', 'migrate', 'deploy']);
+console.log('\nApplying Prisma schema to the empty database…');
+// The Prisma migration history is interleaved with Java/Flyway-owned catalog
+// tables and cannot run standalone on an empty DB (see docs/HETZNER_DEPLOYMENT.md).
+// The schema.prisma is a complete superset, so push it directly, after enabling
+// the required extensions and restoring DB-level updated_at defaults that raw-SQL
+// routes rely on.
+const BOOTSTRAP_DB = [
+  'echo "CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS btree_gin;" | npx prisma db execute --url "$DATABASE_URL" --stdin',
+  'npx prisma db push --accept-data-loss',
+  'npx prisma db execute --url "$DATABASE_URL" --file prisma/dev-fix-updated-at-defaults.sql',
+].join(' && ');
+run('docker', ['compose', 'run', '--rm', '--no-deps', '--build', 'api', 'sh', '-c', BOOTSTRAP_DB]);
 
 if (seed) {
   console.log('\nSeeding default admin + demo data…');
@@ -84,7 +94,7 @@ if (bringUp) {
 }
 
 console.log(`
-✓ Fresh Postgres ready (Prisma schema applied).
+✓ Fresh Postgres ready (Prisma schema pushed).
 ${seed ? '  Seed complete — see backend/prisma/seed.ts for default credentials.' : '  Run with --seed to create default admin users.'}
 ${bringUp ? '  Full stack is up (docker compose --profile full).' : '  Start apps: docker compose --profile full --profile production up -d'}
 `);

@@ -51,9 +51,11 @@ This:
 1. Stops compose services
 2. Deletes the `postgres_data` Docker volume
 3. Starts Postgres
-4. Runs `npx prisma migrate deploy` (all migrations from scratch)
+4. Enables the `pg_trgm` / `btree_gin` extensions, applies the full Prisma schema with `prisma db push`, and restores DB-level `updated_at` defaults
 5. Optionally seeds default admin users (`--seed`)
 6. Optionally starts the full stack (`--up`)
+
+> The schema is applied with `prisma db push` rather than `prisma migrate deploy`: the Prisma migration history is interleaved with Java/Flyway-owned catalog tables and cannot run standalone on an empty database, whereas `schema.prisma` is a complete superset.
 
 **Do not** run `scripts/ops/baseline-prisma-docker.mjs` on a fresh volume — that script is only for legacy databases that already had tables before Prisma history existed.
 
