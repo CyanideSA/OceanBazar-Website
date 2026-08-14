@@ -156,7 +156,7 @@ export default function LoginPage() {
             <Link href={`/${locale}`} className="inline-flex items-center justify-center">
               <Logo width={182} height={76} priority interaction="brand" />
             </Link>
-            <p className="text-muted-foreground mt-2">{t('login')}</p>
+            <h1 className="text-muted-foreground mt-2 text-base font-normal">{t('login')}</h1>
           </div>
 
           {error && (
