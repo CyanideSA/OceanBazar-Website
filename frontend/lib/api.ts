@@ -198,6 +198,9 @@ export const ordersApi = {
   reorder: (id: string) => api.post(`/orders/${id}/reorder`),
   trackPublic: (orderNumber: string, phone: string) =>
     api.post('/orders/track-public', { orderNumber, phone }),
+  survey: (id: string) => api.get(`/orders/${id}/survey`),
+  submitSurvey: (id: string, data: { rating: number; comment?: string }) =>
+    api.post(`/orders/${id}/survey`, data),
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
