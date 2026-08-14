@@ -107,7 +107,9 @@ jobs:
 
       - name: Frontend — install
         working-directory: frontend
-        run: npm ci
+        # Storefront requires legacy peer resolution (see README); its lockfile is
+        # generated with --legacy-peer-deps, so npm ci must use it too.
+        run: npm ci --legacy-peer-deps
 
       - name: Admin — install
         working-directory: admin-frontend-react
