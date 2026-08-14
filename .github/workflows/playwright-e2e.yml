@@ -144,6 +144,9 @@ jobs:
         working-directory: admin-frontend-react
         env:
           VITE_ADMIN_API_URL: http://127.0.0.1:4000
+          # Vite dev proxies /api to this target; default (.env.development) points
+          # at the Docker BFF on :4401, which CI does not run. Point it at the BFF.
+          ADMIN_DEV_PROXY_API: http://127.0.0.1:4000
         run: |
           npm run dev -- --host 127.0.0.1 --port 5173 &
           sleep 3
