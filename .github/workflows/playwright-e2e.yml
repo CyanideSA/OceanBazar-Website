@@ -1,4 +1,4 @@
-# Playwright E2E — Postgres + Node BFF + Next + Vite admin.
+# Playwright E2E — Postgres + Node BFF + Next + Vite admin (CI).
 # Optional: Spring Boot on :8000 when repo variable CI_RUN_JAVA=true (Repository settings → Variables).
 # Optional: workflow_dispatch → "Skip full product wizard" if Cloudinary/Java catalog is unavailable.
 # BFF proxies /api/admin/* to Java when JAVA_API_URL is reachable.
