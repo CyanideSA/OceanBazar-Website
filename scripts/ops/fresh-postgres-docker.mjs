@@ -85,7 +85,10 @@ run('docker', ['compose', 'run', '--rm', '--no-deps', '--build', 'api', 'sh', '-
 
 if (seed) {
   console.log('\nSeeding default admin + demo data…');
-  run('docker', ['compose', 'run', '--rm', '--no-deps', 'api', 'npx', 'prisma', 'db', 'seed']);
+  // The production api image is pruned of devDependencies (no ts-node), so install
+  // ts-node/typescript on the fly to run the TypeScript seed (mirrors hetzner-run-seed.sh).
+  run('docker', ['compose', 'run', '--rm', '--no-deps', 'api', 'sh', '-c',
+    'npm install --no-save ts-node typescript && TS_NODE_TRANSPILE_ONLY=1 npx ts-node prisma/seed.ts']);
 }
 
 if (bringUp) {

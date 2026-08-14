@@ -70,12 +70,25 @@ Change passwords immediately after first login.
 
 ## 3. Production stack + TLS
 
+The nginx `production` profile listens on 443 and **fails to start unless `nginx/ssl/fullchain.pem` and `nginx/ssl/privkey.pem` exist**. On a brand-new server you don't have Let's Encrypt certs yet (certbot's HTTP-01 challenge needs nginx already running), so seed a self-signed placeholder first, bring the stack up, then replace it with a real cert:
+
 ```bash
-# Place certs in nginx/ssl/ (fullchain.pem + privkey.pem) or use certbot on the host
+# 1. Placeholder cert so nginx can boot
+mkdir -p nginx/ssl
+openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+  -keyout nginx/ssl/privkey.pem -out nginx/ssl/fullchain.pem \
+  -subj "/CN=oceanbazar.com.bd"
+
+# 2. Build + start the full production stack
 docker compose --profile full --profile production up -d --build
+
+# 3. Issue real certs (Let's Encrypt) once DNS points at this server, then reload
+bash scripts/ops/hetzner-enable-https.sh   # or run certbot, then: docker exec oceanbazar_nginx nginx -s reload
 ```
 
 Update `nginx/nginx.conf` `server_name` entries for `.com.bd` hosts if needed, then reload nginx.
+
+> The web (storefront) image bakes `NEXT_PUBLIC_*` and prerenders the homepage catalog **at build time**. Build it with the API reachable (or rebuild after seeding) so the homepage product sections are populated; product detail, listing, and category pages fetch dynamically and work immediately. Set `NEXT_PUBLIC_API_URL=https://api.oceanbazar.com.bd` (the public API domain) so both server-side rendering and the browser use the same URL.
 
 ## 4. DNS (Route53 or your registrar)
 

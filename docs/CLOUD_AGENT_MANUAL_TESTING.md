@@ -85,6 +85,34 @@ curl -s -o /dev/null -w '%{http_code}' localhost:5173/      # admin 200
 
 Seeded demo product: **Samsung Galaxy A54** (`/en/product/1621B5EF`).
 
+## 2c. Full Docker stack (the real Hetzner path) on a Cloud Agent
+
+The `docker compose --profile full --profile production` stack (postgres, redis, java_api, api, ml, web, web_lite, admin, nginx) can run on a Cloud Agent, but nested Docker needs a few tweaks:
+
+```bash
+# Docker + fuse-overlayfs (overlay-on-overlay is unsupported nested)
+sudo apt-get install -y docker.io docker-compose-v2 fuse-overlayfs
+echo '{"storage-driver":"fuse-overlayfs","features":{"containerd-snapshotter":false}}' | sudo tee /etc/docker/daemon.json
+sudo dockerd &                     # keep running; sudo chmod 666 /var/run/docker.sock
+
+# Nested bridge fix: let same-bridge container-to-container traffic through
+sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
+
+# Locally-trusted TLS so nginx boots and browsers/SSR trust it (no warnings)
+mkcert -install && mkdir -p nginx/ssl
+mkcert -cert-file nginx/ssl/fullchain.pem -key-file nginx/ssl/privkey.pem \
+  oceanbazar.com.bd www.oceanbazar.com.bd admin.oceanbazar.com.bd api.oceanbazar.com.bd
+
+# Resolve the prod domains to localhost so nginx routes by host
+echo "127.0.0.1 oceanbazar.com.bd admin.oceanbazar.com.bd api.oceanbazar.com.bd" | sudo tee -a /etc/hosts
+
+# Provision a fresh DB (db push + seed) and bring the stack up
+node scripts/ops/fresh-postgres-docker.mjs --yes --seed
+docker compose --profile full --profile production up -d --build
+```
+
+Then browse `https://oceanbazar.com.bd/en` and `https://admin.oceanbazar.com.bd/`. On a real Hetzner box none of the nested tweaks (fuse-overlayfs, bridge sysctl, mkcert) are needed — Docker bridge networking and real Let's Encrypt certs just work; use the flow in `docs/HETZNER_DEPLOYMENT.md`.
+
 ## 5. Suggested flows to ask the agent to test
 
 - Storefront: browse home → open Samsung Galaxy A54 → add to cart → view cart → proceed to checkout.
