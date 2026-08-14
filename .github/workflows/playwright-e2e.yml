@@ -44,6 +44,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oceanbazar
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/oceanbazar
       JWT_ACCESS_SECRET: playwright_ci_jwt_access_secret_32bytes__
+      JWT_REFRESH_SECRET: playwright_ci_jwt_refresh_secret_32bytes__
       JWT_SECRET_KEY: playwright_ci_jwt_refresh_secret_32bytes__
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_ADMIN_URL: http://127.0.0.1:5173
