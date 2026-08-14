@@ -13,6 +13,10 @@ test.describe('Admin — Product CRUD', () => {
     test.setTimeout(60_000);
     page = await browser.newPage();
     await page.goto(ADMIN_BASE, { waitUntil: 'domcontentloaded' });
+    const alreadyAuthed = await page.locator('nav').first().isVisible({ timeout: 3_000 }).catch(() => false);
+    if (!alreadyAuthed) {
+      await adminLogin(page);
+    }
   });
 
   test.afterAll(async () => {
