@@ -51,6 +51,9 @@ jobs:
       CI: true
       E2E_SKIP_FULL_WIZARD: '0'
       JAVA_API_URL: http://127.0.0.1:8000
+      # Non-production test bypass so seeded admins can authenticate without an
+      # interactive TOTP enrolment (see isAdmin2faDevMode in backend admin routes).
+      ADMIN_2FA_ONBOARDING_BYPASS: 'true'
 
     steps:
       - uses: actions/checkout@v4
