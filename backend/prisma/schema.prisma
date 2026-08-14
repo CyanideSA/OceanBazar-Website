@@ -112,6 +112,7 @@ model AdminUser {
   twoFaEnabled       Boolean        @default(false) @map("two_fa_enabled")
   twoFaSecret        String?        @map("two_fa_secret") @db.VarChar(128)
   twoFaLastCounter   Int?           @map("two_fa_last_counter")
+  mustResetTwoFa     Boolean        @default(false) @map("must_reset_two_fa")
   microsoftOid       String?        @unique @map("microsoft_oid") @db.VarChar(128)
   googleSub          String?        @unique @map("google_sub") @db.VarChar(128)
   authProvider       String         @default("local") @map("auth_provider") @db.VarChar(30)

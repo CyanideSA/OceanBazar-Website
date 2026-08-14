@@ -313,6 +313,41 @@ export async function sendShippingUpdate(
   return sendMail(to, `${s.emoji} Order #${orderNumber} — ${s.label}`, emailWrapper(body), 'shipping_update');
 }
 
+export async function sendReviewRequestEmail(
+  to: string,
+  orderNumber: string,
+  orderId: string,
+  productTitles: string[] = []
+): Promise<boolean> {
+  const rendered = await renderEmailTemplate('review_request', {
+    orderNumber,
+    orderId,
+    products: productTitles.join(', '),
+  });
+  if (rendered) return sendMail(to, rendered.subject, rendered.html, 'review_request');
+
+  const items = productTitles.filter(Boolean).slice(0, 6);
+  const itemsHtml = items.length
+    ? `<ul style="margin:8px 0 0;padding-left:18px;color:#374151;font-size:14px;">${items
+        .map((title) => `<li style="margin:2px 0;">${title}</li>`)
+        .join('')}</ul>`
+    : '';
+
+  const body = `
+    <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">How was your order?</h2>
+    <div style="background:${PRIMARY}1a;border:2px solid ${PRIMARY}40;border-radius:12px;padding:20px;text-align:center;margin:20px 0;">
+      <div style="font-size:36px;margin-bottom:8px;">⭐</div>
+      <div style="font-size:18px;font-weight:800;color:${PRIMARY};">Your order was delivered</div>
+      <div style="font-size:14px;color:#6b7280;margin-top:4px;">Order #${orderNumber}</div>
+    </div>
+    <p style="margin:0 0 8px;color:#374151;font-size:15px;">
+      We'd love to hear what you think. Your review helps other shoppers and helps us improve.
+    </p>
+    ${itemsHtml}
+    <div style="text-align:center;margin-top:20px;">${btn(`${CLIENT}/en/orders/${orderId}`, 'Rate your order')}</div>`;
+  return sendMail(to, `⭐ How was your order #${orderNumber}?`, emailWrapper(body), 'review_request');
+}
+
 export async function sendCartAbandonmentReminder(to: string, userName: string, itemCount: number): Promise<boolean> {
   const body = `
     <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Your cart misses you! 🛒</h2>

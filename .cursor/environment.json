@@ -1,0 +1,24 @@
+{
+  "name": "OceanBazar Full Stack",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "bff",
+      "command": "cd backend && npm run dev"
+    },
+    {
+      "name": "java-api",
+      "command": "bash .cursor/run-java.sh"
+    },
+    {
+      "name": "storefront",
+      "command": "cd frontend && npm run dev"
+    },
+    {
+      "name": "admin",
+      "command": "cd admin-frontend-react && npm run dev"
+    }
+  ],
+  "ports": [3000, 4000, 5173, 8000]
+}

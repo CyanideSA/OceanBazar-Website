@@ -37,7 +37,7 @@ export function formatVariantLabelFromAttrs(
 }
 
 export async function attachVariantLabels<T extends { variantId?: string | null }>(
-  prisma: { productVariant: { findMany: (args: unknown) => Promise<Array<{ id: string; attributes: unknown; nameEn?: string | null }>> } },
+  prisma: { productVariant: { findMany: (args: any) => Promise<Array<{ id: string; attributes: unknown; nameEn?: string | null }>> } },
   items: T[],
 ): Promise<Array<T & { variantLabel: string | null }>> {
   const ids = [...new Set(items.map((i) => i.variantId).filter((v): v is string => !!v))];
