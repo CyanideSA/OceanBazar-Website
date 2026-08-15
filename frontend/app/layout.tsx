@@ -131,6 +131,9 @@ const LITE_DEVICE_HINT = `(function(){
     } catch (e1) {}
     // #endregion
     if (!oldIos) return;
+    // Account and order pages exist only on the full site; the lite build 404s on
+    // them, so never divert those routes to lite.
+    if (/\\/(en|bn)\\/(account|orders)(\\/|$)/.test(location.pathname)) return;
     var lite = ${JSON.stringify(
       (process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://oceanbazar.com.bd/lite').replace(/\/$/, ''),
     )};

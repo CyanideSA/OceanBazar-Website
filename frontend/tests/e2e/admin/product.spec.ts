@@ -13,6 +13,10 @@ test.describe('Admin — Product CRUD', () => {
     test.setTimeout(60_000);
     page = await browser.newPage();
     await page.goto(ADMIN_BASE, { waitUntil: 'domcontentloaded' });
+    const alreadyAuthed = await page.locator('nav').first().isVisible({ timeout: 3_000 }).catch(() => false);
+    if (!alreadyAuthed) {
+      await adminLogin(page);
+    }
   });
 
   test.afterAll(async () => {
@@ -162,6 +166,10 @@ test.describe('Admin — Product wizard publish', () => {
   });
 
   test('full flow to publish (non-tiered, BFF + media)', async () => {
+    test.skip(
+      process.env.E2E_SKIP_FULL_WIZARD === '1',
+      'Full publish wizard requires Cloudinary media + complete catalog, unavailable in this CI.',
+    );
     await page.goto(ADMIN_BASE);
     const loginHeading = page.getByRole('heading', { name: /sign in/i }).first();
     if (await loginHeading.isVisible({ timeout: 1500 }).catch(() => false)) {

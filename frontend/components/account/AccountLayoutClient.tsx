@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/lib/api';
@@ -26,14 +26,11 @@ function mapMeUser(raw: Record<string, unknown>): User {
 export default function AccountLayoutClient({ children }: { children: React.ReactNode }) {
   const locale = useLocale();
   const tc = useTranslations('common');
-  const router = useRouter();
+  const tAuth = useTranslations('auth');
   const { isAuthenticated, updateUser, logout } = useAuthStore();
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.replace(`/${locale}/auth/login`);
-      return;
-    }
+    if (!isAuthenticated) return;
     authApi
       .me()
       .then((r) => {
@@ -42,22 +39,26 @@ export default function AccountLayoutClient({ children }: { children: React.Reac
       })
       .catch((err) => {
         const status = (err as { response?: { status?: number } })?.response?.status;
-        if (status === 401) {
-          logout();
-          router.replace(`/${locale}/auth/login`);
-        }
+        if (status === 401) logout();
       });
-  }, [isAuthenticated, locale, router, updateUser, logout]);
+  }, [isAuthenticated, updateUser, logout]);
 
   if (!isAuthenticated) {
-    // Redirecting to sign-in (see effect above). Show a visible, accessible
-    // message rather than an aria-hidden skeleton so the state is meaningful to
-    // users and assistive tech while the redirect completes.
+    // Show a stable, accessible sign-in prompt rather than an aria-hidden
+    // skeleton + immediate redirect (which raced across browsers and left the
+    // page with no meaningful content).
     return (
-      <div className="container-tight py-16 text-center">
-        <p className="text-lg font-semibold text-foreground">{tc('error')}</p>
-        <p className="mt-2 text-sm text-muted-foreground">{tc('loading')}</p>
-        <div className="mt-6 h-40 animate-pulse rounded-2xl bg-muted" aria-hidden />
+      <div className="container-tight py-16">
+        <div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center">
+          <p className="text-lg font-semibold text-foreground">{tc('error')}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{tc('loading')}</p>
+          <Link
+            href={`/${locale}/auth/login`}
+            className="mt-6 inline-block rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:brightness-110"
+          >
+            {tAuth('login')}
+          </Link>
+        </div>
       </div>
     );
   }

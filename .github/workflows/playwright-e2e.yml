@@ -49,7 +49,9 @@ jobs:
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_ADMIN_URL: http://127.0.0.1:5173
       CI: true
-      E2E_SKIP_FULL_WIZARD: '0'
+      # No Cloudinary media / full catalog pipeline in CI — skip the heavy publish
+      # wizard (the workflow_dispatch input can still force it on demand).
+      E2E_SKIP_FULL_WIZARD: '1'
       JAVA_API_URL: http://127.0.0.1:8000
       # Non-production test bypass so seeded admins can authenticate without an
       # interactive TOTP enrolment (see isAdmin2faDevMode in backend admin routes).
@@ -144,6 +146,9 @@ jobs:
         working-directory: admin-frontend-react
         env:
           VITE_ADMIN_API_URL: http://127.0.0.1:4000
+          # Vite dev proxies /api to this target; default (.env.development) points
+          # at the Docker BFF on :4401, which CI does not run. Point it at the BFF.
+          ADMIN_DEV_PROXY_API: http://127.0.0.1:4000
         run: |
           npm run dev -- --host 127.0.0.1 --port 5173 &
           sleep 3
