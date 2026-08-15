@@ -15,6 +15,8 @@ interface Props {
   variantPriceOverride?: number | null;
   effectiveStock: number;
   variantId?: string | null;
+  /** True when the product has variants and the shopper has not picked one yet. */
+  selectionRequired?: boolean;
   onAddToCart?: (qty: number, variantId?: string | null) => void;
   onBuyNow?: (qty: number, variantId?: string | null) => void;
 }
@@ -234,6 +236,7 @@ export default function PricingBlock({
   variantPriceOverride,
   effectiveStock,
   variantId,
+  selectionRequired = false,
   onAddToCart,
   onBuyNow,
 }: Props) {
@@ -371,7 +374,7 @@ export default function PricingBlock({
           disabled={effectiveStock === 0}
           className="flex-1 rounded-lg bg-primary py-3.5 font-semibold text-primary-foreground shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground min-h-[48px]"
         >
-          {effectiveStock === 0 ? tp('outOfStock') : tp('addToCart')}
+          {effectiveStock === 0 ? tp('outOfStock') : selectionRequired ? td('selectOption') : tp('addToCart')}
         </button>
         <button
           type="button"

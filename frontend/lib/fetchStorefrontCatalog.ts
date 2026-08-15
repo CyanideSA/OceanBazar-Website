@@ -98,6 +98,11 @@ export type StorefrontPublicSettings = {
   logoDarkUrl?: string;
   logoLightUrl?: string;
   faviconUrl?: string;
+  // Optional company/legal footer info (rendered only when present).
+  legalName?: string;
+  registeredAddress?: string;
+  tradeLicenseNo?: string;
+  tinNumber?: string;
 };
 
 export async function fetchStorefrontSettings(): Promise<StorefrontPublicSettings> {

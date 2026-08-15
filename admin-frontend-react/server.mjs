@@ -23,9 +23,7 @@ const apiProxy = createProxyMiddleware({
   pathFilter: (pathname) => pathname.startsWith("/api") || pathname.startsWith("/socket.io"),
   on: {
     error(err, _req, res) {
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9a9989'},body:JSON.stringify({sessionId:'9a9989',location:'server.mjs:proxy',message:'admin_proxy_error',data:{code:err?.code,message:err?.message},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
+      console.error('[admin-proxy] BFF proxy error:', err?.code || err?.message);
       if (res && !res.headersSent) {
         res.writeHead(502, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "BFF proxy error", code: err?.code || "PROXY_ERROR" }));
