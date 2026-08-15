@@ -1,0 +1,17 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section info-page bridge-page">
+  <div class="bridge-card">
+    <h1><%= bridgeTitle %></h1>
+    <p><%= bridgeBody %></p>
+    <a class="btn btn-primary" href="<%= fullHref %>"><%= t('openOnFullSite') %></a>
+    <p class="muted" style="margin-top:14px">
+      <a href="<%= basePath %>/<%= locale %>/support"><%= t('supportCenter') %></a>
+      ·
+      <a href="<%= basePath %>/<%= locale %>/policies/returns"><%= t('returnPolicy') %></a>
+    </p>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

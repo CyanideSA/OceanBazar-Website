@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { useQuery } from '@tanstack/react-query';
@@ -7,9 +8,14 @@ import {
   Award, ChevronLeft, Coins, Gift, ShoppingBag, Star,
   Zap, Users, MessageSquare, Crown, Shield, Sparkles, TrendingUp,
 } from 'lucide-react';
-import { obPointsApi } from '@/lib/api';
+import { obPointsApi, storefrontApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
+import { getMessageOverrides, tx } from '@/lib/pageContent';
+import {
+  STOREFRONT_SETTINGS_QUERY_KEY,
+  coalesceStorefrontSettings,
+} from '@/lib/storefrontSettings';
 
 const TIER_CONFIG = [
   { key: 'bronze', color: 'from-amber-700 to-amber-500', icon: Shield, ring: 'ring-amber-400/30' },
@@ -25,9 +31,24 @@ const PERKS_BY_TIER: Record<string, boolean[]> = {
 
 export default function AccountPointsPage() {
   const locale = useLocale();
-  const t = useTranslations('obPoints');
+  const tRaw = useTranslations('obPoints');
   const tc = useTranslations('common');
   const { isAuthenticated } = useAuthStore();
+
+  const { data: settingsData } = useQuery({
+    queryKey: STOREFRONT_SETTINGS_QUERY_KEY,
+    queryFn: () => storefrontApi.settings().then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const settings = coalesceStorefrontSettings(settingsData);
+  const ov = useMemo(
+    () => getMessageOverrides(settings.pageContent, 'obPoints', locale),
+    [settings.pageContent, locale]
+  );
+  const t = useMemo(
+    () => ((key: string) => tx(ov, key, tRaw(key as Parameters<typeof tRaw>[0]))) as typeof tRaw,
+    [ov, tRaw]
+  );
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['ob-points-balance'],
@@ -53,7 +74,7 @@ export default function AccountPointsPage() {
   const perkKeys = ['perkDiscount', 'perkEarlyAccess', 'perkPrioritySupport'] as const;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
+    <div className="container-tight py-8 sm:py-12">
       {/* Back + title */}
       <div className="mb-8 flex items-center gap-3">
         <Link href={`/${locale}/account`} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground">
@@ -90,6 +111,13 @@ export default function AccountPointsPage() {
                 </div>
                 <p className="mt-3 text-4xl font-extrabold tabular-nums text-primary">{(data?.balance ?? 0).toLocaleString()}</p>
                 <p className="mt-1 text-xs text-muted-foreground">OB Points</p>
+                <p className="mt-2 text-xs text-muted-foreground">{t('redeemAtCheckout')}</p>
+                <Link
+                  href={`/${locale}/checkout`}
+                  className="mt-3 inline-flex rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+                >
+                  {t('redeemAtCheckoutCta')}
+                </Link>
               </div>
             </div>
 

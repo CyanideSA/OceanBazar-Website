@@ -7,13 +7,16 @@ import { useTranslations } from 'next-intl';
 import { authApi, referralApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { validatePassword, getPasswordStrength } from '@/lib/passwordRules';
-import { signInWithGoogle, signInWithFacebook } from '@/lib/firebase';
+import { beginGooglePopup, finishGooglePopup } from '@/lib/firebase';
 import Logo from '@/components/shared/Logo';
 import { loadRecaptchaScript, executeRecaptcha } from '@/lib/recaptcha';
+import { useRecaptchaBadge } from '@/lib/useRecaptchaBadge';
+import RecaptchaLegalNotice from '@/components/auth/RecaptchaLegalNotice';
 import { CheckCircle2, Gift } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
-import { normalizePhoneTarget } from '@/lib/phoneNormalize';
+import { normalizePhoneTarget, isValidBdMobile } from '@/lib/phoneNormalize';
+import { resolveAuthNextPath } from '@/lib/authNext';
 
 /* ── rate-limit constants ───────────────────────────────────────── */
 const RESEND_COOLDOWN = 30;   // seconds between resends
@@ -81,6 +84,7 @@ function RegisterPageInner() {
   const [phoneLocked, setPhoneLocked]         = useState(false);
   const phoneTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  useRecaptchaBadge('register');
   useEffect(() => { loadRecaptchaScript(); }, []);
 
   // Check locks on mount
@@ -207,6 +211,10 @@ function RegisterPageInner() {
     if (!email || !phone) { setError(t('bothRequired')); return; }
     // Email verification required at signup; phone OTP is optional (required only for phone login).
     if (!emailVerified) { setError(t('verifyEmailRequired')); return; }
+    if (!isValidBdMobile(phone)) {
+      setError(t('invalidPhone'));
+      return;
+    }
 
     const { valid, errors } = validatePassword(password);
     if (!valid) { setPwErrors(errors); return; }
@@ -217,6 +225,10 @@ function RegisterPageInner() {
       const name = `${firstName} ${lastName}`.trim();
       const normalizedPhone = normalizePhoneTarget(phone);
       const recaptchaToken = await executeRecaptcha('register');
+      if (!recaptchaToken) {
+        setError('Security check failed to load. Disable blockers for Google reCAPTCHA and try again.');
+        return;
+      }
       const { data } = await authApi.register({ name, email, phone: normalizedPhone, password, userType: 'retail', recaptchaToken });
       const token = data.token || data.access;
       setUser(data.user as User, token);
@@ -226,24 +238,53 @@ function RegisterPageInner() {
         referralApi.claim(referralCode).catch(() => {});
       }
 
-      router.push(`/${locale}`);
+      router.push(resolveAuthNextPath(locale));
     } catch (e: unknown) {
-      const err = e as { response?: { status?: number; data?: { error?: string; reason?: string; errors?: unknown } } };
-      setError(err.response?.data?.error ?? tc('error'));
+      const err = e as {
+        response?: {
+          status?: number;
+          data?: {
+            error?: string;
+            reason?: string;
+            detail?: string;
+            message?: string;
+            errors?: Array<{ msg?: string; path?: string }>;
+          };
+        };
+      };
+      const data = err.response?.data;
+      const validationMsg = Array.isArray(data?.errors)
+        ? data.errors.map((x) => x.msg).filter(Boolean).join('. ')
+        : '';
+      const base = validationMsg || data?.error || data?.message || tc('error');
+      setError(data?.reason ? `${base} (${data.reason}${data.detail ? `: ${data.detail}` : ''})` : base);
     } finally { setLoading(false); }
   }
 
   /* ── social login ──────────────────────────────────────────────── */
   async function handleSocialLogin(provider: 'google' | 'facebook') {
+    if (provider === 'facebook') return;
+    let popupPromise: ReturnType<typeof beginGooglePopup>;
+    try {
+      popupPromise = beginGooglePopup();
+    } catch (e: unknown) {
+      setError((e as Error)?.message || tc('error'));
+      return;
+    }
     setSocialLoading(provider); setError('');
     try {
-      const idToken = provider === 'google' ? await signInWithGoogle() : await signInWithFacebook();
+      const idToken = await finishGooglePopup(popupPromise);
       const { data } = await authApi.firebaseLogin(idToken);
       setUser(data.user as User, data.token || data.access);
-      router.push(`/${locale}`);
+      router.push(resolveAuthNextPath(locale));
     } catch (e: unknown) {
-      const code = (e as any)?.code;
+      const code = (e as { code?: string })?.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setSocialLoading(null);
+        return;
+      }
+      if (code === 'auth/popup-blocked') {
+        setError('Popup blocked. Allow popups for oceanbazar.com.bd and try again.');
         setSocialLoading(null);
         return;
       }
@@ -526,6 +567,7 @@ function RegisterPageInner() {
             >
               {loading ? tc('loading') : t('register')}
             </button>
+            <RecaptchaLegalNotice className="pt-1" />
           </form>
 
           {/* ── Social login divider ─────────────────────────── */}
@@ -548,16 +590,14 @@ function RegisterPageInner() {
               Google
             </button>
             <button
-              onClick={() => handleSocialLogin('facebook')}
-              disabled={!!socialLoading}
-              className="flex items-center justify-center gap-1.5 border border-border rounded-xl py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+              type="button"
+              disabled
+              aria-disabled="true"
+              title={t('facebookComingSoon')}
+              className="relative flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-muted/30 py-2.5 text-sm font-medium text-muted-foreground opacity-70"
             >
-              {socialLoading === 'facebook' ? (
-                <span className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
-              ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-              )}
-              Facebook
+              <svg className="w-4 h-4 opacity-70" viewBox="0 0 24 24" fill="#1877F2" aria-hidden><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+              <span className="leading-tight">{t('facebookComingSoon')}</span>
             </button>
           </div>
 

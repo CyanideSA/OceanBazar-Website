@@ -54,10 +54,15 @@ function CampaignBlock({ campaign, locale }: { campaign: FlashCampaign; locale: 
   );
 }
 
-export default function FlashDealSection() {
+export default function FlashDealSection({
+  initialCampaigns,
+}: {
+  initialCampaigns?: FlashCampaign[];
+}) {
   const locale = useLocale();
-  const [campaigns, setCampaigns] = useState<FlashCampaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  const seeded = Array.isArray(initialCampaigns) ? initialCampaigns : [];
+  const [campaigns, setCampaigns] = useState<FlashCampaign[]>(seeded);
+  const [loading, setLoading] = useState(seeded.length === 0);
 
   const fetchFlash = useCallback(async () => {
     try {
@@ -75,6 +80,7 @@ export default function FlashDealSection() {
   }, [locale]);
 
   useEffect(() => {
+    // Refresh in background even when SSR seeded products (keeps countdowns accurate).
     fetchFlash();
     const id = setInterval(fetchFlash, 60_000);
     return () => clearInterval(id);
@@ -92,7 +98,7 @@ export default function FlashDealSection() {
   if (!loading && campaigns.length === 0) return null;
 
   return (
-    <section id={FLASH_DEALS_ANCHOR} className="section-padding content-visibility-auto scroll-mt-28">
+    <section id={FLASH_DEALS_ANCHOR} className="section-padding scroll-mt-28">
       <div className="container-tight">
         {loading ? (
           <FlashGlowShell>

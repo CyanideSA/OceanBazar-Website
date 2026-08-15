@@ -1,6 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { getRedisClient } from '../cache/redisClient';
 import { prisma } from '../lib/prisma';
+import { MAIL_BUSINESS } from '../config/mailAddresses';
+import {
+  DEFAULT_COMPANY_VISION,
+  DEFAULT_LEADERSHIP_INTRO,
+  DEFAULT_LEADERSHIP_TEAM,
+  normalizeLeadershipTeam,
+} from '../data/companyLeadershipDefaults';
 
 import axios from 'axios';
 
@@ -60,6 +67,17 @@ router.get('/settings', async (_req: Request, res: Response) => {
       heroSlides: m('heroSlides', []),
       testimonials: m('testimonials', []),
       trustBadges: m('trustBadges', []),
+      storefrontPopups: m('storefrontPopups', []),
+      appDownload: m('appDownload', {
+        enabled: true,
+        androidUrl: '',
+        iosUrl: '',
+        windowsUrl: '',
+        macUrl: '',
+        bannerText: 'Get the OceanBazar app for a faster shopping experience',
+        animation: 'slide-down',
+      }),
+      defaultHeroAnimation: m('defaultHeroAnimation', 'fade'),
       featuredProductIds: m('featuredProductIds', []),
       bestDealsProductIds: m('bestDealsProductIds', []),
       newArrivalsProductIds: m('newArrivalsProductIds', []),
@@ -67,13 +85,31 @@ router.get('/settings', async (_req: Request, res: Response) => {
       testimonialCarouselMs: Number(m('testimonialCarouselMs', 6000)),
       supportEmail: m('supportEmail'),
       supportPhone: m('supportPhone'),
+      contactAddress: m('contactAddress'),
+      businessInquiryEmail: m('businessInquiryEmail') || MAIL_BUSINESS,
       facebookUrl: m('facebookUrl'),
       instagramUrl: m('instagramUrl'),
       twitterUrl: m('twitterUrl'),
       youtubeUrl: m('youtubeUrl'),
+      threadsUrl: m('threadsUrl'),
       logoDarkUrl: m('logoDarkUrl'),
       logoLightUrl: m('logoLightUrl'),
       faviconUrl: m('faviconUrl'),
+      legalName: m('legalName') || 'Ocean Bazar',
+      tradeLicenseNo: m('tradeLicenseNo') || 'TRAD/NCC/0002285/2026',
+      tinNumber: m('tinNumber') || '790019137950',
+      registeredAddress: m('registeredAddress') || m('contactAddress') || 'Tatkhana L N Mills-1432, Siddhirganj, Narayanganj',
+      managementDetails: m('managementDetails') || '',
+      companyVision: m('companyVision') || DEFAULT_COMPANY_VISION,
+      leadershipIntro: m('leadershipIntro') || DEFAULT_LEADERSHIP_INTRO,
+      leadershipTeam: (() => {
+        const normalized = normalizeLeadershipTeam(m('leadershipTeam', []));
+        return normalized.length > 0 ? normalized : DEFAULT_LEADERSHIP_TEAM;
+      })(),
+      pageContent: (() => {
+        const raw = m('pageContent', {});
+        return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+      })(),
     };
 
     // Cache for next requests
@@ -83,6 +119,10 @@ router.get('/settings', async (_req: Request, res: Response) => {
       } catch { /* non-fatal */ }
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'078c95'},body:JSON.stringify({sessionId:'078c95',runId:'settings-e2e',hypothesisId:'D',location:'storefront.ts:settings',message:'public settings served',data:{logoLight:!!publicSettings.logoLightUrl,logoDark:!!publicSettings.logoDarkUrl,favicon:!!publicSettings.faviconUrl,testimonials:Array.isArray(publicSettings.testimonials)?publicSettings.testimonials.length:0,trustBadges:Array.isArray(publicSettings.trustBadges)?publicSettings.trustBadges.length:0,featuredIds:Array.isArray(publicSettings.featuredProductIds)?publicSettings.featuredProductIds.length:0,bannerMs:publicSettings.defaultBannerRotationMs,testimonialMs:publicSettings.testimonialCarouselMs},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
     return res.json(publicSettings);
   } catch (err: any) {
     // Return safe defaults if everything is down
@@ -90,6 +130,17 @@ router.get('/settings', async (_req: Request, res: Response) => {
       heroSlides: [],
       testimonials: [],
       trustBadges: [],
+      storefrontPopups: [],
+      appDownload: {
+        enabled: true,
+        androidUrl: '',
+        iosUrl: '',
+        windowsUrl: '',
+        macUrl: '',
+        bannerText: 'Get the OceanBazar app for a faster shopping experience',
+        animation: 'slide-down',
+      },
+      defaultHeroAnimation: 'fade',
       featuredProductIds: [],
       bestDealsProductIds: [],
       newArrivalsProductIds: [],
@@ -97,8 +148,24 @@ router.get('/settings', async (_req: Request, res: Response) => {
       testimonialCarouselMs: 6000,
       supportEmail: '',
       supportPhone: '',
+      contactAddress: '',
+      businessInquiryEmail: '',
+      facebookUrl: '',
+      instagramUrl: '',
+      twitterUrl: '',
+      youtubeUrl: '',
+      threadsUrl: '',
       logoDarkUrl: '',
       logoLightUrl: '',
+      legalName: 'Ocean Bazar',
+      tradeLicenseNo: 'TRAD/NCC/0002285/2026',
+      tinNumber: '790019137950',
+      registeredAddress: 'Tatkhana L N Mills-1432, Siddhirganj, Narayanganj',
+      managementDetails: '',
+      companyVision: DEFAULT_COMPANY_VISION,
+      leadershipIntro: DEFAULT_LEADERSHIP_INTRO,
+      leadershipTeam: DEFAULT_LEADERSHIP_TEAM,
+      pageContent: {},
     });
   }
 });

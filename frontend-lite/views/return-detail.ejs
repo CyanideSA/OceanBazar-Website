@@ -1,0 +1,75 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<%
+  var rr = returnRequest || {};
+  var status = rr.status || '';
+  var canRefund = status === 'refund_eligible' || status === 'refund_processing';
+%>
+
+<section class="section svc-page">
+  <p class="crumb"><a href="<%= basePath %>/<%= locale %>/returns">← <%= t('returnsRefunds') %></a></p>
+  <div class="svc-hero svc-hero-returns">
+    <h1><%= t('returnsRefunds') %></h1>
+    <p class="info-intro">
+      <span class="pill pill-warn"><%= status %></span>
+      <% if (rr.reason) { %><span class="muted"><%= rr.reason %></span><% } %>
+    </p>
+  </div>
+
+  <div class="svc-card stack">
+    <p><strong><%= t('returnOrder') %>:</strong> <%= rr.order_id || rr.orderId %></p>
+    <% if (rr.description) { %><p><%= rr.description %></p><% } %>
+    <% if (rr.refund_amount != null) { %>
+    <p><strong><%= t('refundAmount') %>:</strong> <%= rr.refund_amount %></p>
+    <% } %>
+  </div>
+
+  <% if (canRefund) { %>
+  <form method="post" action="<%= basePath %>/<%= locale %>/returns/<%= encodeURIComponent(rr.id) %>/refund-account" class="svc-card stack auth-form">
+    <h2><%= t('refundAccountTitle') %></h2>
+    <label class="field">
+      <span><%= t('refundMethod') %></span>
+      <select name="method">
+        <option value="bkash">bKash</option>
+        <option value="nagad">Nagad</option>
+        <option value="rocket">Rocket</option>
+        <option value="bank_transfer"><%= t('bankTransfer') %></option>
+      </select>
+    </label>
+    <label class="field">
+      <span><%= t('refundAccountNumber') %></span>
+      <input name="accountNumber" required inputmode="numeric" />
+    </label>
+    <label class="field">
+      <span><%= t('refundAccountName') %></span>
+      <input name="accountName" />
+    </label>
+    <label class="field">
+      <span><%= t('refundBankName') %></span>
+      <input name="bankName" />
+    </label>
+    <label class="field">
+      <span><%= t('notes') %></span>
+      <textarea name="notes" rows="2"></textarea>
+    </label>
+    <button type="submit" class="btn btn-primary"><%= t('save') %></button>
+  </form>
+  <% } %>
+
+  <% if (refundRecords && refundRecords.length) { %>
+  <div class="svc-card">
+    <h2><%= t('refundRecords') %></h2>
+    <ul class="svc-list">
+      <% refundRecords.forEach(function (rec) { %>
+      <li>
+        <strong><%= rec.method || rec.account_method || '—' %></strong>
+        <span class="muted"><%= rec.account_number || rec.accountNumber || '' %></span>
+        <span class="pill"><%= rec.status || '' %></span>
+      </li>
+      <% }) %>
+    </ul>
+  </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

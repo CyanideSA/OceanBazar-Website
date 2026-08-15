@@ -1,0 +1,71 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section svc-page">
+  <div class="svc-hero svc-hero-tickets">
+    <p class="info-eyebrow">OceanBazar</p>
+    <h1><%= t('supportTickets') %></h1>
+    <p class="info-intro"><%= t('ticketsIntro') %></p>
+  </div>
+
+  <div class="svc-grid-2">
+    <form method="post" action="<%= basePath %>/<%= locale %>/tickets" class="svc-card stack auth-form">
+      <h2><%= t('ticketNew') %></h2>
+      <label class="field">
+        <span><%= t('ticketSubject') %></span>
+        <input name="subject" required maxlength="160" />
+      </label>
+      <label class="field">
+        <span><%= t('ticketCategory') %></span>
+        <select name="category">
+          <option value="payment"><%= t('catPayment') %></option>
+          <option value="delivery"><%= t('catDelivery') %></option>
+          <option value="product"><%= t('catProduct') %></option>
+          <option value="other" selected><%= t('catOther') %></option>
+        </select>
+      </label>
+      <label class="field">
+        <span><%= t('ticketPriority') %></span>
+        <select name="priority">
+          <option value="low"><%= t('priorityLow') %></option>
+          <option value="medium" selected><%= t('priorityMedium') %></option>
+          <option value="high"><%= t('priorityHigh') %></option>
+        </select>
+      </label>
+      <label class="field">
+        <span><%= t('ticketMessage') %></span>
+        <textarea name="message" rows="4" required></textarea>
+      </label>
+      <button type="submit" class="btn btn-primary btn-block"><%= t('ticketSubmit') %></button>
+    </form>
+
+    <div class="svc-card">
+      <h2><%= t('ticketYourList') %></h2>
+      <% if (!tickets || !tickets.length) { %>
+      <p class="muted"><%= t('ticketEmpty') %></p>
+      <% } else { %>
+      <ul class="svc-list">
+        <% tickets.forEach(function (tk) { %>
+        <li>
+          <a href="<%= basePath %>/<%= locale %>/tickets/<%= encodeURIComponent(tk.id) %>">
+            <strong><%= tk.subject %></strong>
+            <span class="pill pill-<%= tk.status === 'open' || tk.status === 'in_progress' ? 'info' : 'ok' %>"><%= tk.status %></span>
+            <span class="muted"><%= tk.createdAt || tk.created_at || '' %></span>
+          </a>
+        </li>
+        <% }) %>
+      </ul>
+      <% } %>
+    </div>
+  </div>
+
+  <p class="svc-alt-links muted">
+    <a href="<%= basePath %>/<%= locale %>/chat"><%= t('liveChat') %></a>
+    ·
+    <a href="<%= basePath %>/<%= locale %>/returns"><%= t('returnsRefunds') %></a>
+    ·
+    <a href="<%= basePath %>/<%= locale %>/support"><%= t('supportCenter') %></a>
+  </p>
+</section>
+
+<%- include('partials/footer') %>

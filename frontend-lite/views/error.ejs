@@ -1,0 +1,10 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section narrow">
+  <h1><%= title || 'Error' %></h1>
+  <p><%= message || t('errorGeneric') %></p>
+  <p><a class="btn" href="<%= basePath %>/<%= locale || 'bn' %>"><%= t('home') %></a></p>
+</section>
+
+<%- include('partials/footer') %>

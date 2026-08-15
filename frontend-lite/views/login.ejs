@@ -1,0 +1,113 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var authLogo = (settings && (settings.logoLightUrl || settings.logoDarkUrl))
+    ? (settings.logoLightUrl || settings.logoDarkUrl)
+    : (basePath + '/ob-brand-logo.png?v=8');
+  var otpSent = mode === 'otp' && !!target;
+%>
+
+<section class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <a href="<%= basePath %>/<%= locale %>" class="auth-logo-link" aria-label="<%= t('siteName') %>">
+        <% if (!(settings && (settings.logoLightUrl || settings.logoDarkUrl))) { %>
+        <picture>
+          <source srcset="<%= basePath %>/ob-brand-logo.webp?v=8" type="image/webp" />
+          <img src="<%= authLogo %>" alt="OceanBazar" width="182" height="76" decoding="async" />
+        </picture>
+        <% } else { %>
+        <img src="<%= authLogo %>" alt="OceanBazar" width="182" height="76" decoding="async" />
+        <% } %>
+      </a>
+      <p class="auth-subtitle"><%= t('login') %></p>
+    </div>
+
+    <div class="auth-tabs" role="tablist">
+      <a
+        class="auth-tab<%= mode !== 'otp' ? ' is-active' : '' %>"
+        href="<%= basePath %>/<%= locale %>/auth/login?mode=password&amp;next=<%= encodeURIComponent(next) %>"
+        role="tab"
+        aria-selected="<%= mode !== 'otp' ? 'true' : 'false' %>"
+      ><%= t('tabPassword') %></a>
+      <a
+        class="auth-tab<%= mode === 'otp' ? ' is-active' : '' %>"
+        href="<%= basePath %>/<%= locale %>/auth/login?mode=otp&amp;next=<%= encodeURIComponent(next) %>"
+        role="tab"
+        aria-selected="<%= mode === 'otp' ? 'true' : 'false' %>"
+      ><%= t('tabOtp') %></a>
+    </div>
+
+    <% if (mode === 'otp') { %>
+      <% if (!otpSent) { %>
+      <form method="post" action="<%= basePath %>/<%= locale %>/auth/otp/send" class="auth-form stack">
+        <input type="hidden" name="next" value="<%= next %>" />
+        <label class="field">
+          <span><%= t('phoneOrEmail') %></span>
+          <input name="target" value="<%= target %>" required autocomplete="username" inputmode="email" placeholder="<%= t('phoneOrEmail') %>" />
+        </label>
+        <button type="submit" class="btn btn-primary auth-submit"><%= t('sendOtp') %></button>
+      </form>
+      <% } else { %>
+      <form method="post" action="<%= basePath %>/<%= locale %>/auth/otp/verify" class="auth-form stack" id="otpVerifyForm">
+        <input type="hidden" name="next" value="<%= next %>" />
+        <input type="hidden" name="target" value="<%= target %>" />
+        <p class="auth-otp-hint muted"><%= t('phoneOrEmail') %>: <strong><%= target %></strong></p>
+        <label class="field">
+          <span><%= t('otp') %></span>
+          <input
+            class="auth-otp-input"
+            name="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]{4,8}"
+            maxlength="8"
+            required
+            placeholder="••••••"
+          />
+        </label>
+        <button type="submit" class="btn btn-primary auth-submit"><%= t('verifyOtp') %></button>
+      </form>
+      <div class="auth-footer muted auth-otp-actions">
+        <a href="<%= basePath %>/<%= locale %>/auth/login?mode=otp&amp;next=<%= encodeURIComponent(next) %>"><%= t('back') %></a>
+        <span aria-hidden="true">·</span>
+        <form method="post" action="<%= basePath %>/<%= locale %>/auth/otp/send" class="inline-form">
+          <input type="hidden" name="next" value="<%= next %>" />
+          <input type="hidden" name="target" value="<%= target %>" />
+          <button type="submit" class="link-btn"><%= t('sendOtp') %></button>
+        </form>
+      </div>
+      <% } %>
+    <% } else { %>
+    <form method="post" action="<%= basePath %>/<%= locale %>/auth/login" class="auth-form stack" id="litePasswordLogin">
+      <input type="hidden" name="next" value="<%= next %>" />
+      <label class="field">
+        <span><%= t('phoneOrEmail') %></span>
+        <input name="identifier" required autocomplete="username" placeholder="<%= t('phoneOrEmail') %>" />
+      </label>
+      <label class="field">
+        <span><%= t('password') %></span>
+        <input type="password" name="password" required autocomplete="current-password" placeholder="<%= t('password') %>" />
+      </label>
+      <button type="submit" class="btn btn-primary auth-submit"><%= t('login') %></button>
+    </form>
+    <% } %>
+
+    <% if (typeof googleEnabled !== 'undefined' && googleEnabled) { %>
+    <div class="auth-social">
+      <p class="auth-or muted"><span><%= t('orContinueWith') %></span></p>
+      <a class="btn btn-outline auth-google" href="<%= basePath %>/<%= locale %>/auth/google?next=<%= encodeURIComponent(next) %>">
+        <%= t('continueWithGoogle') %>
+      </a>
+    </div>
+    <% } %>
+
+    <p class="auth-footer muted">
+      <%= t('dontHaveAccount') %>
+      <a href="<%= basePath %>/<%= locale %>/auth/register?next=<%= encodeURIComponent(next) %>"><%= t('register') %></a>
+    </p>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

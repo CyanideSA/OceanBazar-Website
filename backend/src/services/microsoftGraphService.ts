@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { extractEmailAddress, MAIL_NO_REPLY } from '../config/mailAddresses';
 
 /**
  * Microsoft 365 (Graph API) integration using the OAuth2 client-credentials flow.
@@ -9,8 +10,11 @@ import axios from 'axios';
  *   MS_CLIENT_ID         Application (client) ID
  *   MS_CLIENT_SECRET     Client secret value
  *   MS_SENDER_ADDRESSES  Comma-separated allowed shared mailboxes
- *                        (e.g. no-reply@oceanbazar.com.bd,support@oceanbazar.com.bd)
- *   MS_DEFAULT_SENDER    Default From address (defaults to first of MS_SENDER_ADDRESSES)
+ *                        (e.g. no-reply@oceanbazar.com.bd,contact@oceanbazar.com.bd,business@oceanbazar.com.bd)
+ *   MS_DEFAULT_SENDER    Default From address (defaults to first of MS_SENDER_ADDRESSES / no-reply@)
+ *
+ * For inbox avatars that match each mailbox theme icon, also grant `User.ReadWrite.All`
+ * (or equivalent photo write) and call the admin sync-photos endpoint once.
  *
  * When credentials are absent the service reports `isConfigured() === false` and callers
  * transparently fall back to SMTP (see emailService.ts).
@@ -39,15 +43,15 @@ export function isConfigured(): boolean {
 }
 
 export function defaultSender(): string {
-  const explicit = process.env.MS_DEFAULT_SENDER?.trim().toLowerCase();
+  const explicit = extractEmailAddress(process.env.MS_DEFAULT_SENDER) || process.env.MS_DEFAULT_SENDER?.trim().toLowerCase();
   if (explicit) return explicit;
   const list = senderAddresses();
-  return list[0] || 'no-reply@oceanbazar.com.bd';
+  return list[0] || MAIL_NO_REPLY;
 }
 
 /** Resolves the mailbox to act on, defaulting to the configured default sender. */
 function resolveMailbox(address?: string): string {
-  const candidate = address?.trim().toLowerCase();
+  const candidate = extractEmailAddress(address) || address?.trim().toLowerCase() || '';
   const allowed = senderAddresses();
   if (candidate && (allowed.length === 0 || allowed.includes(candidate))) return candidate;
   return defaultSender();
@@ -91,17 +95,35 @@ export async function sendGraphMail(opts: {
   subject: string;
   html: string;
   from?: string;
+  /** Display name shown in recipient inbox (e.g. OceanBazar System) */
+  fromName?: string;
   cc?: string[];
   replyTo?: string;
+  inlineAttachments?: Array<{
+    name: string;
+    contentType: string;
+    contentBytes: string;
+    contentId: string;
+  }>;
 }): Promise<GraphSendResult> {
   const sender = resolveMailbox(opts.from);
   if (!isConfigured()) return { ok: false, sender, error: 'graph_not_configured' };
   try {
     const token = await getAccessToken();
-    const message = {
+    const message: Record<string, unknown> = {
       subject: opts.subject,
       body: { contentType: 'HTML', content: opts.html },
       toRecipients: [{ emailAddress: { address: opts.to } }],
+      ...(opts.fromName
+        ? {
+            from: {
+              emailAddress: {
+                address: sender,
+                name: opts.fromName,
+              },
+            },
+          }
+        : {}),
       ...(opts.cc?.length
         ? { ccRecipients: opts.cc.map((c) => ({ emailAddress: { address: c } })) }
         : {}),
@@ -109,6 +131,16 @@ export async function sendGraphMail(opts: {
         ? { replyTo: [{ emailAddress: { address: opts.replyTo } }] }
         : {}),
     };
+    if (opts.inlineAttachments?.length) {
+      message.attachments = opts.inlineAttachments.map((a) => ({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: a.name,
+        contentType: a.contentType,
+        contentBytes: a.contentBytes,
+        contentId: a.contentId,
+        isInline: true,
+      }));
+    }
     await axios.post(
       `${GRAPH_BASE}/users/${encodeURIComponent(sender)}/sendMail`,
       { message, saveToSentItems: true },
@@ -410,6 +442,39 @@ export async function createCalendarEvent(opts: {
   } catch (err: unknown) {
     const msg = (err as { response?: { data?: { error?: { message?: string } } }; message?: string })?.response?.data?.error?.message || (err as Error)?.message;
     return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Set the Outlook / Microsoft 365 profile photo for a shared mailbox.
+ * Requires application permission User.ReadWrite.All (admin consent).
+ * Use once per mailbox so recipients see the theme icon beside the sender.
+ */
+export async function setMailboxPhoto(opts: {
+  mailbox: string;
+  contentType: string;
+  content: Buffer;
+}): Promise<{ ok: boolean; sender: string; error?: string }> {
+  const sender = resolveMailbox(opts.mailbox);
+  if (!isConfigured()) return { ok: false, sender, error: 'graph_not_configured' };
+  try {
+    const token = await getAccessToken();
+    await axios.put(
+      `${GRAPH_BASE}/users/${encodeURIComponent(sender)}/photo/$value`,
+      opts.content,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': opts.contentType || 'image/png',
+        },
+        timeout: 30_000,
+        maxBodyLength: Infinity,
+      },
+    );
+    return { ok: true, sender };
+  } catch (err: any) {
+    const detail = err?.response?.data?.error?.message || err?.message || 'unknown';
+    return { ok: false, sender, error: detail };
   }
 }
 

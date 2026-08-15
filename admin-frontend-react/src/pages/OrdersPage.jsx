@@ -35,14 +35,22 @@ function paymentIsPaid(raw) {
   return n === "paid" || n === "completed" || n === "captured";
 }
 
-function paymentStatusLabel(raw) {
+function paymentStatusLabel(raw, order) {
   const n = normalizePaymentStatus(raw);
+  const delivery = String(order?.deliveryPaymentStatus || order?.delivery_payment_status || "").toLowerCase();
+  const method = String(order?.paymentMethod || order?.payment_method || "").toLowerCase();
+  if ((method === "cod" || n === "unpaid") && delivery === "under_verification") {
+    return "Unpaid · Delivery under verification";
+  }
+  if ((method === "cod" || n === "unpaid") && delivery === "paid") {
+    return "Unpaid · Delivery paid";
+  }
   const labels = {
     unpaid: "Unpaid",
     paid: "Paid",
     pending: "Pending",
-    under_verification: "Under Verification",
-    pending_verification: "Under Verification",
+    under_verification: "Paid · Under Verification",
+    pending_verification: "Paid · Under Verification",
     failed: "Failed",
     refunded: "Refunded",
     partially_refunded: "Partially refunded",
@@ -153,7 +161,7 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0, onOpenCus
         o.user?.name || o.customer?.name || 'Guest',
         o.user?.email || o.customer?.email || '',
         o.status,
-        paymentStatusLabel(o.paymentStatus),
+        paymentStatusLabel(o.paymentStatus, o),
         Number(o.total || 0).toFixed(2),
         o.createdAt ? format(new Date(o.createdAt), 'yyyy-MM-dd HH:mm') : '',
       ])
@@ -294,7 +302,7 @@ export default function OrdersPage({ initialSearch = "", liveTick = 0, onOpenCus
                     <td><span className={`crm-badge border ${cfg.cls}`}>{cfg.label || order.status}</span></td>
                     <td>
                       <span className={`text-[10px] font-bold uppercase ${paymentIsPaid(order.paymentStatus) ? "text-crm-success" : "text-crm-warning"}`}>
-                        {paymentStatusLabel(order.paymentStatus)}
+                        {paymentStatusLabel(order.paymentStatus, order)}
                       </span>
                     </td>
                     <td className="font-bold tabular-nums text-crm-text-bright">৳{Number(order.total).toLocaleString()}</td>

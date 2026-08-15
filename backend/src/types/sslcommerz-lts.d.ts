@@ -32,6 +32,7 @@ declare module 'sslcommerz-lts' {
     status?: string;
     failedreason?: string;
     GatewayPageURL?: string;
+    storeLogo?: string;
     sessionkey?: string;
     [key: string]: unknown;
   }

@@ -118,6 +118,17 @@ async function processWebhookEvent(
     if (order.user.email) {
       sendShippingUpdate(order.user.email, order.orderNumber, internalStatus, cs.tracking_code || undefined, courierProvider)
         .catch(e => console.error('[webhook] Email notify error:', e.message));
+      if (internalStatus === 'delivered' || orderStatus === 'delivered' || String(order.status) === 'delivered') {
+        import('../services/emailService').then(({ sendReviewRequestEmail }) =>
+          prisma.orderItem.findMany({ where: { orderId: order.id }, select: { productTitle: true }, take: 6 })
+            .then((items) => sendReviewRequestEmail(
+              order.user.email!,
+              order.orderNumber,
+              order.id,
+              items.map((i) => i.productTitle).filter(Boolean),
+            )),
+        ).catch((e: any) => console.error('[webhook] Review request email error:', e?.message));
+      }
     }
     if (order.user.phone) {
       sendShippingUpdateSms(order.user.phone, order.orderNumber, internalStatus, cs.tracking_code || undefined)

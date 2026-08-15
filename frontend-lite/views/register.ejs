@@ -1,0 +1,47 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var authLogo = (settings && (settings.logoLightUrl || settings.logoDarkUrl))
+    ? (settings.logoLightUrl || settings.logoDarkUrl)
+    : (basePath + '/ob-brand-logo.png?v=7');
+%>
+
+<section class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <a href="<%= basePath %>/<%= locale %>" class="auth-logo-link" aria-label="<%= t('siteName') %>">
+        <img src="<%= authLogo %>" alt="OceanBazar" width="182" height="76" decoding="async" />
+      </a>
+      <p class="auth-subtitle"><%= t('register') %></p>
+    </div>
+
+    <form method="post" action="<%= basePath %>/<%= locale %>/auth/register" class="auth-form stack">
+      <input type="hidden" name="next" value="<%= next %>" />
+      <label class="field">
+        <span><%= t('name') %></span>
+        <input name="name" required autocomplete="name" placeholder="<%= t('name') %>" />
+      </label>
+      <label class="field">
+        <span><%= t('email') %></span>
+        <input type="email" name="email" autocomplete="email" placeholder="<%= t('email') %>" />
+      </label>
+      <label class="field">
+        <span><%= t('phone') %></span>
+        <input name="phone" type="tel" autocomplete="tel" placeholder="<%= t('phone') %>" />
+      </label>
+      <label class="field">
+        <span><%= t('password') %></span>
+        <input type="password" name="password" required minlength="6" autocomplete="new-password" placeholder="<%= t('password') %>" />
+      </label>
+      <button type="submit" class="btn btn-primary auth-submit"><%= t('register') %></button>
+    </form>
+
+    <p class="auth-footer muted">
+      <%= t('alreadyHaveAccount') %>
+      <a href="<%= basePath %>/<%= locale %>/auth/login?next=<%= encodeURIComponent(next) %>"><%= t('login') %></a>
+    </p>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

@@ -35,7 +35,7 @@ function kvToJson(rows) {
   return JSON.stringify(filled.map(r => ({ key: String(r.key || "").trim(), value: String(r.value || "").trim() })));
 }
 
-export default function ProductDetailPanel({ onClose, onProductUpdated }) {
+export default function ProductDetailPanel({ onClose, onProductUpdated, onOpenFullEditor }) {
   const { openProductId, productDetail, setProductDetail, loadingDetail, setLoadingDetail } = useCatalogStore();
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("Info");
@@ -62,6 +62,7 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
         titleEn: d.titleEn || "",
         titleBn: d.titleBn || "",
         descriptionEn: d.descriptionEn || "",
+        descriptionBn: d.descriptionBn || "",
         sku: d.sku || "",
         status: d.status || "draft",
         stock: d.stock ?? 0,
@@ -96,10 +97,13 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
     if (!form || !openProductId) return;
     setSaving(true);
     try {
+      const specsRows = (form.specifications || []).filter((r) => String(r.key || "").trim());
+      const attrRows = (form.keyAttributes || []).filter((r) => String(r.key || "").trim());
       await adminApi.updateProduct(openProductId, {
         titleEn: form.titleEn,
         titleBn: form.titleBn,
         descriptionEn: form.descriptionEn,
+        descriptionBn: form.descriptionBn || null,
         sku: form.sku || null,
         status: form.status,
         stock: Number(form.stock),
@@ -111,8 +115,8 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
         brandId: form.brandId || null,
         seoTitle: form.seoTitle || null,
         seoDescription: form.seoDescription || null,
-        specifications: kvToJson(form.specifications),
-        attributesExtra: kvToJson(form.keyAttributes),
+        specifications: specsRows.length ? specsRows.map((r) => ({ key: String(r.key).trim(), value: String(r.value || "").trim() })) : null,
+        attributesExtra: attrRows.length ? attrRows.map((r) => ({ key: String(r.key).trim(), value: String(r.value || "").trim() })) : null,
       });
       if (form.categoryId) {
         await adminApi.setProductCategories(openProductId, [form.categoryId]);
@@ -163,6 +167,17 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
           <IconClose size={13} />
         </button>
       </div>
+      {onOpenFullEditor && (
+        <div className="px-4 py-2 border-b border-crm-border bg-crm-bg/40">
+          <button
+            type="button"
+            className="crm-btn crm-btn-primary text-xs w-full justify-center"
+            onClick={() => onOpenFullEditor(openProductId)}
+          >
+            Open full product editor (same as New Product)
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="detail-tabs flex border-b border-crm-border bg-crm-bg/30 overflow-x-auto no-scrollbar">
@@ -197,8 +212,12 @@ export default function ProductDetailPanel({ onClose, onProductUpdated }) {
                   <input className="crm-input" value={form.titleBn} onChange={(e) => setField("titleBn", e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-crm-text-dim uppercase">Description</label>
+                  <label className="text-xs font-bold text-crm-text-dim uppercase">Description (EN)</label>
                   <RichTextEditor value={form.descriptionEn} onChange={(v) => setField("descriptionEn", v)} minHeight={160} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-crm-text-dim uppercase">Description (BN)</label>
+                  <RichTextEditor value={form.descriptionBn || ""} onChange={(v) => setField("descriptionBn", v)} minHeight={160} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -758,7 +777,17 @@ function TagsTab({ productId, currentTags, onRefresh }) {
 }
 
 /* ─── Variants Tab ─────────────────────────────────────────── */
-const EMPTY_VARIANT = { nameEn: "", nameBn: "", sku: "", stock: 0, priceOverride: "", isActive: true, sortOrder: 0, attributes: "" };
+const EMPTY_VARIANT = {
+  nameEn: "",
+  nameBn: "",
+  sku: "",
+  stock: 0,
+  priceOverride: "",
+  isActive: true,
+  sortOrder: 0,
+  optionAxis: "color",
+  optionValue: "",
+};
 
 function VariantsTab({ productDetail }) {
   const productId = productDetail.id;
@@ -773,38 +802,27 @@ function VariantsTab({ productDetail }) {
     adminApi.productVariants(productId).then((d) => setVariants(Array.isArray(d) ? d : d.variants || [])).catch(() => {});
   }, [productId]);
 
-  function parseAttrs(str) {
-    if (!str) return "{}";
-    try { JSON.parse(str); return str; } catch {}
-    const obj = {};
-    str.split(",").forEach((pair) => {
-      const [k, v] = pair.split(":").map((s) => s.trim());
-      if (k) obj[k] = v || "";
-    });
-    return JSON.stringify(obj);
-  }
-
-  function attrsToString(attrs) {
-    if (!attrs) return "";
-    try {
-      const obj = typeof attrs === "string" ? JSON.parse(attrs) : attrs;
-      return Object.entries(obj).map(([k, v]) => `${k}: ${v}`).join(", ");
-    } catch { return String(attrs); }
+  function buildAttributes() {
+    const axis = form.optionAxis || "color";
+    const value = String(form.optionValue || form.nameEn || "").trim();
+    if (!value) return {};
+    return { [axis]: value };
   }
 
   async function handleSave() {
-    if (!form.nameEn.trim()) { setErr("Name (EN) is required"); return; }
+    const label = String(form.optionValue || form.nameEn || "").trim();
+    if (!label) { setErr("Option label is required"); return; }
     setSaving(true); setErr("");
     try {
       const payload = {
-        nameEn: form.nameEn.trim(),
-        nameBn: form.nameBn.trim() || form.nameEn.trim(),
+        nameEn: label,
+        nameBn: form.nameBn.trim() || label,
         sku: form.sku.trim() || null,
         stock: parseInt(form.stock, 10) || 0,
         priceOverride: form.priceOverride !== "" ? parseFloat(form.priceOverride) : null,
         isActive: form.isActive,
         sortOrder: parseInt(form.sortOrder, 10) || 0,
-        attributes: parseAttrs(form.attributes),
+        attributes: buildAttributes(),
       };
       let updated;
       if (editId) {
@@ -816,21 +834,34 @@ function VariantsTab({ productDetail }) {
       }
       setAdding(false); setEditId(null); setForm(EMPTY_VARIANT);
     } catch (e) {
-      setErr(e?.response?.data?.detail || e.message || "Save failed");
+      setErr(e?.response?.data?.error || e?.response?.data?.detail || e.message || "Save failed");
     } finally { setSaving(false); }
   }
 
   async function handleDelete(variantId) {
-    if (!window.confirm("Delete this variant?")) return;
+    if (!window.confirm("Delete this option?")) return;
     try {
       await adminApi.deleteProductVariant(productId, variantId);
       setVariants((prev) => prev.filter((v) => v.id !== variantId));
-    } catch (e) { setErr(e?.response?.data?.detail || e.message || "Delete failed"); }
+    } catch (e) { setErr(e?.response?.data?.error || e?.response?.data?.detail || e.message || "Delete failed"); }
   }
 
   function startEdit(v) {
+    const attrs = typeof v.attributes === "string" ? (() => { try { return JSON.parse(v.attributes); } catch { return {}; } })() : (v.attributes || {});
+    const axis = Object.keys(attrs)[0] || "color";
+    const value = attrs[axis] || v.nameEn || "";
     setEditId(v.id);
-    setForm({ nameEn: v.nameEn || "", nameBn: v.nameBn || "", sku: v.sku || "", stock: v.stock ?? 0, priceOverride: v.priceOverride ?? "", isActive: v.isActive !== false, sortOrder: v.sortOrder ?? 0, attributes: attrsToString(v.attributes) });
+    setForm({
+      nameEn: v.nameEn || value,
+      nameBn: v.nameBn || "",
+      sku: v.sku || "",
+      stock: v.stock ?? 0,
+      priceOverride: v.priceOverride ?? "",
+      isActive: v.isActive !== false,
+      sortOrder: v.sortOrder ?? 0,
+      optionAxis: ["color", "style", "size"].includes(axis) ? axis : "color",
+      optionValue: value,
+    });
     setAdding(true);
   }
 
@@ -839,10 +870,10 @@ function VariantsTab({ productDetail }) {
   return (
     <div className="tab-section">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span className="section-label">Variants ({variants.length})</span>
+        <span className="section-label">Color / style options ({variants.length})</span>
         {!adding && (
           <button className="btn-xs btn-primary" onClick={() => { setAdding(true); setEditId(null); setForm(EMPTY_VARIANT); }}>
-            <IconPlus size={11} /> Add Variant
+            <IconPlus size={11} /> Add option
           </button>
         )}
       </div>
@@ -851,72 +882,68 @@ function VariantsTab({ productDetail }) {
         <div className="form-group" style={{ background: "var(--crm-bg-hover)", padding: 12, borderRadius: 6, marginBottom: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <div>
-              <label className="form-label">Name EN *</label>
-              <input className="form-input" value={form.nameEn} onChange={(e) => setForm((f) => ({ ...f, nameEn: e.target.value }))} placeholder="e.g. Red / XL" />
+              <label className="form-label">Type</label>
+              <select className="form-input" value={form.optionAxis} onChange={(e) => setForm((f) => ({ ...f, optionAxis: e.target.value }))}>
+                <option value="color">Color</option>
+                <option value="style">Style</option>
+                <option value="size">Size</option>
+              </select>
             </div>
             <div>
-              <label className="form-label">Name BN</label>
-              <input className="form-input" value={form.nameBn} onChange={(e) => setForm((f) => ({ ...f, nameBn: e.target.value }))} placeholder="Bengali name" />
+              <label className="form-label">Label *</label>
+              <input className="form-input" value={form.optionValue} onChange={(e) => setForm((f) => ({ ...f, optionValue: e.target.value, nameEn: e.target.value }))} placeholder="e.g. Ruby Red" />
             </div>
             <div>
-              <label className="form-label">SKU</label>
-              <input className="form-input" value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} placeholder="SKU-001" />
+              <label className="form-label">Price override (৳)</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={form.priceOverride} onChange={(e) => setForm((f) => ({ ...f, priceOverride: e.target.value }))} placeholder="Blank = base price" />
             </div>
             <div>
               <label className="form-label">Stock</label>
               <input className="form-input" type="number" min="0" value={form.stock} onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} />
             </div>
             <div>
-              <label className="form-label">Price Override (৳)</label>
-              <input className="form-input" type="number" min="0" step="0.01" value={form.priceOverride} onChange={(e) => setForm((f) => ({ ...f, priceOverride: e.target.value }))} placeholder="Leave blank to use base price" />
+              <label className="form-label">SKU</label>
+              <input className="form-input" value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} placeholder="Optional" />
             </div>
             <div>
-              <label className="form-label">Sort Order</label>
-              <input className="form-input" type="number" min="0" value={form.sortOrder} onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))} />
+              <label className="form-label">Name BN</label>
+              <input className="form-input" value={form.nameBn} onChange={(e) => setForm((f) => ({ ...f, nameBn: e.target.value }))} placeholder="Optional Bengali" />
             </div>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <label className="form-label">Attributes (e.g. color: red, size: XL)</label>
-            <input className="form-input" value={form.attributes} onChange={(e) => setForm((f) => ({ ...f, attributes: e.target.value }))} placeholder="color: red, size: XL, material: cotton" />
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="btn-xs btn-primary" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : editId ? "Update" : "Add"}</button>
+            <button className="btn-xs" onClick={cancelForm}>Cancel</button>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--crm-text-dim)", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} />
-              Active
-            </label>
-          </div>
-          {err && <div className="error-text" style={{ marginTop: 6 }}>{err}</div>}
-          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-            <button className="btn-xs btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? <IconSpinner size={11} /> : <IconCheck size={11} />} {editId ? "Update" : "Create"}
-            </button>
-            <button className="btn-xs btn-ghost" onClick={cancelForm}>Cancel</button>
-          </div>
+          {err && <p style={{ color: "var(--crm-danger)", fontSize: 12, marginTop: 8 }}>{err}</p>}
         </div>
       )}
 
       {variants.length === 0 && !adding && (
-        <div className="tab-empty">No variants yet. Click "Add Variant" to create size, color, or other options.</div>
+        <p className="text-muted" style={{ fontSize: 12 }}>No options yet. Add colors/styles so shoppers can pick a shade on the product page.</p>
       )}
 
-      {variants.map((v) => (
-        <div key={v.id} className="variant-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ flex: 1 }}>
-            <div className="v-name">{v.nameEn || "Variant"}</div>
-            <div className="v-meta">SKU: {v.sku || "—"} · Stock: {v.stock ?? 0} {v.priceOverride != null ? `· ৳${v.priceOverride}` : ""}</div>
-            {v.attributes && v.attributes !== "{}" && (
-              <div className="v-meta" style={{ color: "var(--crm-primary)" }}>{attrsToString(v.attributes)}</div>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-            <span className={v.isActive !== false ? "badge-active" : "badge-inactive"} style={{ marginRight: 4 }}>
-              {v.isActive !== false ? "Active" : "Inactive"}
-            </span>
-            <button className="icon-btn" title="Edit" onClick={() => startEdit(v)}><IconEdit size={12} /></button>
-            <button className="icon-btn danger" title="Delete" onClick={() => handleDelete(v.id)}><IconTrash size={12} /></button>
-          </div>
-        </div>
-      ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {variants.map((v) => {
+          const attrs = typeof v.attributes === "string" ? (() => { try { return JSON.parse(v.attributes); } catch { return {}; } })() : (v.attributes || {});
+          const attrStr = Object.entries(attrs).map(([k, val]) => `${k}: ${val}`).join(", ");
+          return (
+            <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 6, background: "var(--crm-bg-alt)", border: "1px solid var(--crm-border)" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{v.nameEn}</div>
+                <div style={{ fontSize: 11, opacity: 0.7 }}>
+                  {attrStr || "—"} · stock {v.stock ?? 0}
+                  {v.priceOverride != null && v.priceOverride !== "" ? ` · ৳${v.priceOverride}` : " · base price"}
+                  {v.sku ? ` · ${v.sku}` : ""}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn-xs" onClick={() => startEdit(v)}>Edit</button>
+                <button className="btn-xs" style={{ color: "var(--crm-danger)" }} onClick={() => handleDelete(v.id)}>Delete</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

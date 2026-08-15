@@ -13,6 +13,9 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     logger.error("ErrorBoundary caught:", error, errorInfo);
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'edit-map-crash',hypothesisId:'H-boundary',location:'ErrorBoundary.jsx:componentDidCatch',message:String(error?.message||error),data:{name:error?.name,stack:String(error?.stack||'').slice(0,1200),componentStack:String(errorInfo?.componentStack||'').slice(0,1200)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   }
 
   render() {

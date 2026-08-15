@@ -48,9 +48,34 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
+/**
+ * ES5: auto-send low-end devices to Lite — aligned with nginx `$ob_old_ua`.
+ * UA-only (old iOS ≤15, Android ≤12). Never use deviceMemory / hardwareConcurrency.
+ */
+const LITE_DEVICE_HINT = `(function(){
+  try {
+    if (/[?&]ob_view=full(?:&|$)/.test(location.search)) return;
+    var m = document.cookie.match(/(?:^|; )ob_view=([^;]*)/);
+    var view = m ? decodeURIComponent(m[1]) : '';
+    if (view === 'full') return;
+    var ua = navigator.userAgent || '';
+    var lowEnd = /iP(hone|od|ad).*OS (1[0-5])_/i.test(ua) || /Android (?:[4-9]\\.|1[0-2][;.)])/i.test(ua);
+    var shouldLite = view === 'lite' || lowEnd;
+    if (!shouldLite) return;
+    var lite = ${JSON.stringify(
+      (process.env.NEXT_PUBLIC_LITE_SITE_URL || 'https://oceanbazar.com.bd/lite').replace(/\/$/, ''),
+    )};
+    var next = location.pathname + location.search + location.hash;
+    location.replace(lite + '/prefer?view=lite&next=' + encodeURIComponent(next || '/bn'));
+  } catch (e) {}
+})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="bn" suppressHydrationWarning className={`${inter.variable} ${notoSansBengali.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: LITE_DEVICE_HINT }} />
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased" suppressHydrationWarning>
         {children}
         <MetaPixel />

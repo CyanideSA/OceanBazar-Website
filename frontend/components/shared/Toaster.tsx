@@ -1,10 +1,12 @@
 'use client';
 
+import type { ElementType } from 'react';
 import { useToastStore, type ToastVariant } from '@/hooks/useToast';
 import { CheckCircle2, XCircle, AlertCircle, Info, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isIosSafari } from '@/lib/iosSafari';
 
-const ICONS: Record<ToastVariant, React.ElementType> = {
+const ICONS: Record<ToastVariant, ElementType> = {
   success: CheckCircle2,
   error:   XCircle,
   warning: AlertCircle,
@@ -20,6 +22,7 @@ const STYLES: Record<ToastVariant, string> = {
 
 export default function Toaster() {
   const { toasts, remove } = useToastStore();
+  const skipMotion = typeof window !== 'undefined' && isIosSafari();
 
   if (toasts.length === 0) return null;
 
@@ -31,19 +34,26 @@ export default function Toaster() {
     >
       {toasts.map((t) => {
         const Icon = ICONS[t.variant];
+        // #region agent log
+        if (typeof t.message !== 'string') {
+          fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'pre-fix',hypothesisId:'H1',location:'Toaster.tsx:render',message:'non-string toast message about to render',data:{type:typeof t.message,keys:t.message&&typeof t.message==='object'?Object.keys(t.message as object).slice(0,8):[]},timestamp:Date.now()})}).catch(()=>{});
+        }
+        // #endregion
         return (
           <div
             key={t.id}
             role="alert"
             className={cn(
               'flex max-w-xs items-start gap-3 rounded-xl border px-4 py-3 shadow-lg',
-              'animate-[slideInUp_0.25s_ease-out]',
+              !skipMotion && 'animate-[slideInUp_0.25s_ease-out]',
               'sm:max-w-sm',
               STYLES[t.variant],
             )}
           >
             <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-            <p className="flex-1 text-sm font-medium leading-snug">{t.message}</p>
+            <p className="flex-1 text-sm font-medium leading-snug">
+              {typeof t.message === 'string' ? t.message : String((t.message as { message?: string })?.message ?? t.message ?? '')}
+            </p>
             <button
               type="button"
               onClick={() => remove(t.id)}

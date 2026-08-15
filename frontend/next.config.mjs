@@ -60,8 +60,34 @@ const nextConfig = {
               headers: securityHeaders,
             },
             {
+              // Avoid `immutable` — browsers were caching chunk 404s forever after deploys,
+              // which trapped older phones in a reload / "Something went wrong" loop.
               source: '/_next/static/:path*',
-              headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+              headers: [
+                {
+                  key: 'Cache-Control',
+                  value: 'public, max-age=3600, stale-while-revalidate=86400',
+                },
+              ],
+            },
+            // HTML/RSC documents must not be long-cached — stale shells request dead chunk hashes on iOS.
+            {
+              source: '/:locale(en|bn)',
+              headers: [
+                {
+                  key: 'Cache-Control',
+                  value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+                },
+              ],
+            },
+            {
+              source: '/:locale(en|bn)/:path*',
+              headers: [
+                {
+                  key: 'Cache-Control',
+                  value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+                },
+              ],
             },
             {
               source: '/:path*(\\.ico|\\.png|\\.jpg|\\.jpeg|\\.svg|\\.webp|\\.avif|\\.woff2?|\\.ttf)',
@@ -82,6 +108,9 @@ const nextConfig = {
         },
       }),
   webpack: (config, { isServer }) => {
+    // Do not salt contenthashes — changing every chunk URL on each deploy broke
+    // older phones that still referenced prior filenames (and 404s were cached).
+    // Retention of prior `/_next/static` files is handled by docker-entrypoint.sh.
     if (isServer) {
       config.ignoreWarnings = [
         ...(config.ignoreWarnings ?? []),

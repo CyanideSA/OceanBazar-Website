@@ -39,16 +39,13 @@ api.interceptors.request.use((config) => {
     if (token) config.headers.Authorization = `Bearer ${token}`;
     let deviceId = localStorage.getItem('ob_device_id');
     if (!deviceId) {
-      deviceId =
-        (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
-        `device-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+      // Avoid crypto.randomUUID — missing on older Safari; optional-call syntax can also
+      // fail to parse if the bundle is not downleveled for iOS < 13.1.
+      deviceId = `device-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
       localStorage.setItem('ob_device_id', deviceId);
     }
     config.headers['X-Device-Id'] = deviceId;
-    const rid =
-      (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
-      `ob-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-    config.headers['X-Request-Id'] = rid;
+    config.headers['X-Request-Id'] = `ob-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   }
   return config;
 });
@@ -96,27 +93,15 @@ api.interceptors.response.use(
         typeof window !== 'undefined' &&
         (localStorage.getItem('ob-auth')?.includes('"isAuthenticated":true') ||
           useAuthStore.getState().isAuthenticated);
-      // #region agent log
-      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1,S2',location:'frontend/lib/api.ts:response-401',message:'API request received first 401',data:{url:String(original?.url||''),method:String(original?.method||''),hadToken,claimedAuth},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (!hadToken && !claimedAuth) {
         return Promise.reject(err);
       }
 
       try {
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'frontend/lib/api.ts:refresh-start',message:'Refresh requested after 401 (single-flight shared)',data:{url:String(original?.url||''),sharedInFlight:Boolean(refreshInFlight)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         const access = await refreshAccessToken();
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S1',location:'frontend/lib/api.ts:refresh-success',message:'Refresh succeeded and request will retry',data:{url:String(original?.url||'')},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         original.headers.Authorization = `Bearer ${access}`;
         return api(original);
       } catch (refreshError) {
-        // #region agent log
-        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'session-fix',hypothesisId:'S2',location:'frontend/lib/api.ts:refresh-failure',message:'Refresh failed — clearing zombie auth state',data:{url:String(original?.url||''),refreshStatus:(refreshError as {response?:{status?:number}})?.response?.status??null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         clearZombieClientAuth();
         if (typeof window !== 'undefined') {
           const path = window.location.pathname;
@@ -127,7 +112,8 @@ api.interceptors.response.use(
           if (isProtected && !path.includes('/auth/')) {
             const seg = path.split('/').filter(Boolean)[0];
             const localePrefix = seg && seg.length <= 5 ? `/${seg}` : '';
-            window.location.href = `${localePrefix}/auth/login`;
+            const next = encodeURIComponent(path + (window.location.search || ''));
+            window.location.href = `${localePrefix}/auth/login?next=${next}`;
           }
         }
         return Promise.reject(err);
@@ -191,9 +177,14 @@ export const cartApi = {
   get: async () => cartRequest(api.get('/cart')),
   add: (productId: string, quantity: number, variantId?: string) =>
     cartRequest(api.post('/cart/add', { productId, quantity, variantId })),
-  update: (productId: string, quantity: number) =>
-    cartRequest(api.put('/cart/update', { productId, quantity })),
-  remove: (productId: string) => cartRequest(api.delete(`/cart/remove/${productId}`)),
+  update: (productId: string, quantity: number, variantId?: string | null) =>
+    cartRequest(api.put('/cart/update', { productId, quantity, variantId: variantId ?? undefined })),
+  remove: (productId: string, variantId?: string | null) =>
+    cartRequest(
+      api.delete(`/cart/remove/${productId}`, {
+        params: variantId ? { variantId } : undefined,
+      })
+    ),
   applyCoupon: (code: string) => api.post('/cart/apply-coupon', { code }),
   applyObPoints: (points: number) => api.post('/cart/apply-ob-points', { points }),
 };
@@ -208,6 +199,8 @@ export const ordersApi = {
   reorder: (id: string) => api.post(`/orders/${id}/reorder`),
   trackPublic: (orderNumber: string, phone: string) =>
     api.post('/orders/track-public', { orderNumber, phone }),
+  surveyState: (id: string) => api.get(`/orders/${id}/survey`),
+  submitSurvey: (id: string, data: object) => api.post(`/orders/${id}/survey`, data),
 };
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
@@ -216,7 +209,9 @@ export const paymentsApi = {
   bkashConfirm: (transactionId: string, providerTxId: string) =>
     api.post('/payments/bkash/confirm', { transactionId, providerTxId }),
   nagadInitiate: (orderId: string) => api.post('/payments/nagad/initiate', { orderId }),
-  sslcommerz: (orderId: string) => api.post('/payments/sslcommerz/initiate', { orderId }),
+  sslcommerz: (orderId: string, opts?: { purpose?: 'order_total' | 'delivery_fee'; storefront?: string; locale?: string }) =>
+    api.post('/payments/sslcommerz/initiate', { orderId, ...opts }),
+  sslcommerzConfig: () => api.get('/payments/sslcommerz/config'),
   rocketInitiate: (orderId: string) => api.post('/payments/rocket/initiate', { orderId }),
   upayInitiate: (orderId: string) => api.post('/payments/upay/initiate', { orderId }),
 };
@@ -281,6 +276,16 @@ export const newsletterApi = {
   subscribe: (email: string) => api.post('/newsletter/subscribe', { email }),
 };
 
+export const wholesaleApi = {
+  apply: (data: {
+    businessName: string;
+    tradeLicense: string;
+    address: string;
+    notes?: string;
+  }) => api.post('/wholesale/apply', data),
+  status: () => api.get('/wholesale/status'),
+};
+
 // ─── Back-in-Stock ──────────────────────────────────────────────────────────
 export const stockNotifyApi = {
   subscribe: (productId: string, email: string) =>
@@ -290,8 +295,10 @@ export const stockNotifyApi = {
 // ─── Q&A ────────────────────────────────────────────────────────────────────
 export const qaApi = {
   list: (productId: string) => api.get(`/qa/${productId}`),
-  ask: (productId: string, payload: { question: string; askerName?: string; askerEmail?: string }) =>
-    api.post(`/qa/${productId}`, payload),
+  ask: (
+    productId: string,
+    payload: { question: string; askerName?: string; askerEmail?: string; imageUrls?: string[] },
+  ) => api.post(`/qa/${productId}`, payload),
 };
 
 // ─── Upload (Cloudinary) ───────────────────────────────────────────────────
@@ -300,6 +307,12 @@ export const uploadApi = {
     const fd = new FormData();
     fd.append('photo', file);
     return api.post('/upload/profile-photo', fd);
+  },
+  image: (file: File, folder = 'reviews') => {
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('folder', folder);
+    return api.post('/upload/image', fd);
   },
 };
 
@@ -316,12 +329,33 @@ export const profileApi = {
 // ─── Storefront Settings ─────────────────────────────────────────────────────
 export const storefrontApi = {
   settings: () => api.get('/storefront/settings'),
+  trustBadges: () => api.get('/trust-badges'),
+};
+
+export const businessInquiriesApi = {
+  submit: (payload: {
+    name: string;
+    email: string;
+    company?: string;
+    phone?: string;
+    businessType?: string;
+    message: string;
+  }) => api.post('/business-inquiries', payload),
 };
 
 // ─── Delivery ────────────────────────────────────────────────────────────────
 export const deliveryApi = {
   track: (trackingNumber: string) => api.get(`/delivery/track/${trackingNumber}`),
   carriers: () => api.get('/delivery/carriers'),
+  pathaoCities: () => api.get('/delivery/pathao/cities'),
+  pathaoZones: (cityId: number) => api.get(`/delivery/pathao/zones/${cityId}`),
+  pathaoAreas: (zoneId: number) => api.get(`/delivery/pathao/areas/${zoneId}`),
+  pathaoQuote: (body: {
+    shippingAddressId?: number;
+    pathaoCityId?: number;
+    pathaoZoneId?: number;
+    itemCount?: number;
+  }) => api.post('/delivery/pathao/quote', body),
 };
 
 // ─── Notifications ──────────────────────────────────────────────────────────

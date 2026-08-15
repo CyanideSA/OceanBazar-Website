@@ -231,8 +231,23 @@ router.put('/products/:id', requireRole('super_admin', 'admin'), async (req: Req
       sortOrder?: number;
       altEn?: string | null;
       altBn?: string | null;
+      colorKey?: string | null;
     }>;
   };
+
+  /** Admin may send stringified JSON arrays; store real JSON arrays so entries don't collapse. */
+  function coerceJsonField(v: unknown): unknown {
+    if (v === undefined) return undefined;
+    if (v === null || v === '') return null;
+    if (typeof v === 'string') {
+      try {
+        return JSON.parse(v);
+      } catch {
+        return v;
+      }
+    }
+    return v;
+  }
 
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) {
@@ -259,10 +274,38 @@ router.put('/products/:id', requireRole('super_admin', 'admin'), async (req: Req
         ...(b.isFeatured !== undefined && { isFeatured: b.isFeatured }),
         ...(b.isBestSeller !== undefined && { isBestSeller: b.isBestSeller }),
         ...(b.isBestRated !== undefined && { isBestRated: b.isBestRated }),
-        ...(b.specifications !== undefined && { specifications: b.specifications }),
-        ...(b.attributesExtra !== undefined && { attributesExtra: b.attributesExtra }),
+        ...(b.specifications !== undefined && { specifications: coerceJsonField(b.specifications) as any }),
+        ...(b.attributesExtra !== undefined && { attributesExtra: coerceJsonField(b.attributesExtra) as any }),
       },
     });
+
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e24651' },
+      body: JSON.stringify({
+        sessionId: 'e24651',
+        runId: 'attrs-specs',
+        hypothesisId: 'A',
+        location: 'studio.ts:updateProduct',
+        message: 'coerced specs/attrs before save',
+        data: {
+          productId: id,
+          specsInType: typeof b.specifications,
+          attrsInType: typeof b.attributesExtra,
+          specsCoercedIsArray: Array.isArray(coerceJsonField(b.specifications)),
+          attrsCoercedIsArray: Array.isArray(coerceJsonField(b.attributesExtra)),
+          specsLen: Array.isArray(coerceJsonField(b.specifications))
+            ? (coerceJsonField(b.specifications) as unknown[]).length
+            : null,
+          attrsLen: Array.isArray(coerceJsonField(b.attributesExtra))
+            ? (coerceJsonField(b.attributesExtra) as unknown[]).length
+            : null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
 
     // Update product_category_map if categoryId provided
     if (b.categoryId) {
@@ -287,6 +330,7 @@ router.put('/products/:id', requireRole('super_admin', 'admin'), async (req: Req
             sortOrder: img.sortOrder ?? i,
             altEn: img.altEn ?? null,
             altBn: img.altBn ?? null,
+            colorKey: img.colorKey ? String(img.colorKey).trim().toLowerCase().replace(/\s+/g, '-') : null,
           })),
         });
       }
@@ -564,27 +608,34 @@ router.post('/products/:id/assets/upload', requireRole('super_admin', 'admin'), 
   if (!req.file) { res.status(400).json({ error: 'No file' }); return; }
   const mime = req.file.mimetype || '';
   const rt: 'image' | 'video' | 'auto' = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') ? 'image' : 'auto';
-  const uploaded = await uploadMedia(req.file.buffer, 'products', { resourceType: rt });
-  const count = await prisma.productAsset.count({ where: { productId } });
-  const assetType = (req.body.assetType as string) || (mime.startsWith('video/') ? 'video' : 'image');
-  const asset = await prisma.productAsset.create({
-    data: {
-      productId,
-      url: uploaded.secureUrl || uploaded.url,
-      assetType,
-      isPrimary: req.body.isPrimary === 'true' || count === 0,
-      sortOrder: count,
-      mimeType: mime || null,
-      fileSize: req.file.size ? BigInt(req.file.size) : null,
-    },
-  });
-  res.status(201).json({ asset });
+  try {
+    const uploaded = await uploadMedia(req.file.buffer, 'products', { resourceType: rt });
+    const count = await prisma.productAsset.count({ where: { productId } });
+    const assetType = (req.body.assetType as string) || (mime.startsWith('video/') ? 'video' : 'image');
+    const asset = await prisma.productAsset.create({
+      data: {
+        productId,
+        url: uploaded.secureUrl || uploaded.url,
+        assetType,
+        isPrimary: req.body.isPrimary === 'true' || (count === 0 && assetType === 'image'),
+        sortOrder: count,
+        mimeType: mime || null,
+        fileSize: req.file.size ? BigInt(req.file.size) : null,
+      },
+    });
+    res.status(201).json({ asset });
+  } catch (err: any) {
+    console.error('[assets/upload]', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Asset upload failed' });
+  }
 });
 
 router.put('/products/:id/assets/:assetId', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   const { url, assetType, isPrimary, sortOrder, altEn, altBn } = req.body;
+  const assetId = parseInt(routeParam(req.params.assetId), 10);
+  if (!Number.isFinite(assetId)) { res.status(400).json({ error: 'Invalid asset id' }); return; }
   const asset = await prismaAny.productAsset.update({
-    where: { id: routeParam(req.params.assetId) },
+    where: { id: assetId },
     data: {
       ...(url !== undefined && { url }),
       ...(assetType !== undefined && { assetType }),
@@ -598,7 +649,9 @@ router.put('/products/:id/assets/:assetId', requireRole('super_admin', 'admin'),
 });
 
 router.delete('/products/:id/assets/:assetId', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
-  await prismaAny.productAsset.delete({ where: { id: routeParam(req.params.assetId) } });
+  const assetId = parseInt(routeParam(req.params.assetId), 10);
+  if (!Number.isFinite(assetId)) { res.status(400).json({ error: 'Invalid asset id' }); return; }
+  await prismaAny.productAsset.delete({ where: { id: assetId } });
   res.json({ ok: true });
 });
 
@@ -666,30 +719,230 @@ router.put('/products/:id/tags', requireRole('super_admin', 'admin'), async (req
   res.json({ ok: true });
 });
 
-// ─── Product Variants ────────────────────────────────────────────────────────
+// ─── Product Trust Badges ────────────────────────────────────────────────────
+
+router.get('/products/:id/trust-badges', async (req: Request, res: Response) => {
+  const productId = routeParam(req.params.id);
+  const rows = await prismaAny.productTrustBadge.findMany({
+    where: { productId },
+    include: { badge: true },
+  });
+  res.json({
+    badgeIds: rows.map((r: { badgeId: number }) => r.badgeId),
+    badges: rows.map((r: any) => ({
+      id: r.badge.id,
+      slug: r.badge.slug,
+      nameEn: r.badge.nameEn,
+      nameBn: r.badge.nameBn,
+      icon: r.badge.icon || 'shield',
+      description: r.badge.description || '',
+    })),
+  });
+});
+
+router.put('/products/:id/trust-badges', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
+  const productId = routeParam(req.params.id);
+  const badgeIds = Array.isArray((req.body as { badgeIds?: unknown })?.badgeIds)
+    ? [...new Set((req.body as { badgeIds: unknown[] }).badgeIds.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))]
+    : [];
+  await prismaAny.productTrustBadge.deleteMany({ where: { productId } });
+  if (badgeIds.length) {
+    await prismaAny.productTrustBadge.createMany({
+      data: badgeIds.map((badgeId) => ({ productId, badgeId })),
+      skipDuplicates: true,
+    });
+  }
+  try {
+    await invalidateCache('bff:trust-badges');
+    await invalidateCache('bff:products');
+    await invalidateCache('bff:product-detail');
+  } catch { /* non-fatal */ }
+  res.json({ ok: true, badgeIds });
+});
+
+// ─── Product Variants (modern product_variants + legacy sync for cart FK) ────
+
+function parseVariantAttributes(raw: unknown): Prisma.InputJsonValue {
+  if (raw == null || raw === '') return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Prisma.InputJsonValue;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Prisma.InputJsonValue;
+    } catch {
+      /* fall through — "color: red, size: XL" */
+    }
+    const obj: Record<string, string> = {};
+    raw.split(',').forEach((pair) => {
+      const [k, ...rest] = pair.split(':');
+      const key = (k || '').trim();
+      if (key) obj[key] = rest.join(':').trim();
+    });
+    return obj;
+  }
+  return {};
+}
+
+function normalizeVariantInput(body: Record<string, unknown>, productId: string) {
+  const nameEn = String(body.nameEn ?? body.name_en ?? '').trim();
+  const nameBn = String(body.nameBn ?? body.name_bn ?? nameEn).trim() || nameEn;
+  const priceRaw = body.priceOverride ?? body.price_override;
+  let priceOverride: number | null = null;
+  if (priceRaw !== undefined && priceRaw !== null && priceRaw !== '') {
+    const n = Number(priceRaw);
+    if (Number.isFinite(n) && n >= 0) priceOverride = n;
+  }
+  return {
+    productId,
+    sku: body.sku != null && String(body.sku).trim() !== '' ? String(body.sku).trim() : null,
+    nameEn,
+    nameBn,
+    attributes: parseVariantAttributes(body.attributes),
+    priceOverride,
+    stock: Math.max(0, Math.floor(Number(body.stock) || 0)),
+    weight:
+      body.weight != null && body.weight !== '' && Number.isFinite(Number(body.weight))
+        ? Number(body.weight)
+        : null,
+    isActive: body.isActive !== false && body.is_active !== false,
+    sortOrder: Math.max(0, Math.floor(Number(body.sortOrder ?? body.sort_order) || 0)),
+  };
+}
+
+/** Cart/order FK still references product_variants_legacy — keep IDs in sync. */
+async function syncLegacyVariant(
+  id: string,
+  data: ReturnType<typeof normalizeVariantInput>
+) {
+  const legacyData = {
+    product_id: data.productId,
+    sku: data.sku,
+    name_en: data.nameEn,
+    name_bn: data.nameBn,
+    attributes: data.attributes,
+    price_override: data.priceOverride,
+    stock: data.stock,
+    weight: data.weight,
+    is_active: data.isActive,
+    sort_order: data.sortOrder,
+  };
+  await prismaAny.productVariantsLegacy.upsert({
+    where: { id },
+    create: { id, ...legacyData },
+    update: legacyData,
+  });
+}
 
 router.get('/products/:id/variants', async (req: Request, res: Response) => {
-  const variants = await prismaAny.productVariantsLegacy.findMany({ where: { product_id: routeParam(req.params.id) } });
-  res.json({ variants });
+  const productId = routeParam(req.params.id);
+  const variants = await prisma.productVariant.findMany({
+    where: { productId },
+    orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+  });
+  res.json({
+    variants: variants.map((v) => ({
+      ...v,
+      priceOverride: v.priceOverride != null ? Number(v.priceOverride) : null,
+      weight: v.weight != null ? Number(v.weight) : null,
+    })),
+  });
 });
 
 router.post('/products/:id/variants', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
-  const variant = await prismaAny.productVariantsLegacy.create({
-    data: { id: generateEntityId(), product_id: routeParam(req.params.id), ...req.body },
+  const productId = routeParam(req.params.id);
+  const data = normalizeVariantInput((req.body || {}) as Record<string, unknown>, productId);
+  if (!data.nameEn) {
+    res.status(400).json({ error: 'Variant name (EN) is required' });
+    return;
+  }
+  const id = generateEntityId();
+  const variant = await prisma.productVariant.create({
+    data: {
+      id,
+      productId: data.productId,
+      sku: data.sku,
+      nameEn: data.nameEn,
+      nameBn: data.nameBn,
+      attributes: data.attributes,
+      priceOverride: data.priceOverride,
+      stock: data.stock,
+      weight: data.weight,
+      isActive: data.isActive,
+      sortOrder: data.sortOrder,
+    },
   });
-  res.status(201).json({ variant });
+  try {
+    await syncLegacyVariant(id, data);
+  } catch (err) {
+    console.warn('[variants] legacy sync failed on create', err);
+  }
+  res.status(201).json({
+    variant: {
+      ...variant,
+      priceOverride: variant.priceOverride != null ? Number(variant.priceOverride) : null,
+      weight: variant.weight != null ? Number(variant.weight) : null,
+    },
+  });
 });
 
 router.put('/products/:id/variants/:variantId', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
-  const variant = await prismaAny.productVariantsLegacy.update({
-    where: { id: routeParam(req.params.variantId) },
-    data: req.body,
+  const productId = routeParam(req.params.id);
+  const variantId = routeParam(req.params.variantId);
+  const existing = await prisma.productVariant.findFirst({ where: { id: variantId, productId } });
+  if (!existing) {
+    res.status(404).json({ error: 'Variant not found' });
+    return;
+  }
+  const data = normalizeVariantInput(
+    { ...existing, ...(req.body || {}), nameEn: (req.body as { nameEn?: string })?.nameEn ?? existing.nameEn },
+    productId
+  );
+  if (!data.nameEn) {
+    res.status(400).json({ error: 'Variant name (EN) is required' });
+    return;
+  }
+  const variant = await prisma.productVariant.update({
+    where: { id: variantId },
+    data: {
+      sku: data.sku,
+      nameEn: data.nameEn,
+      nameBn: data.nameBn,
+      attributes: data.attributes,
+      priceOverride: data.priceOverride,
+      stock: data.stock,
+      weight: data.weight,
+      isActive: data.isActive,
+      sortOrder: data.sortOrder,
+    },
   });
-  res.json({ variant });
+  try {
+    await syncLegacyVariant(variantId, data);
+  } catch (err) {
+    console.warn('[variants] legacy sync failed on update', err);
+  }
+  res.json({
+    variant: {
+      ...variant,
+      priceOverride: variant.priceOverride != null ? Number(variant.priceOverride) : null,
+      weight: variant.weight != null ? Number(variant.weight) : null,
+    },
+  });
 });
 
-router.delete('/products/:id/variants/:variantId', requireRole('super_admin'), async (req: Request, res: Response) => {
-  await prismaAny.productVariantsLegacy.delete({ where: { id: routeParam(req.params.variantId) } });
+router.delete('/products/:id/variants/:variantId', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
+  const productId = routeParam(req.params.id);
+  const variantId = routeParam(req.params.variantId);
+  const existing = await prisma.productVariant.findFirst({ where: { id: variantId, productId } });
+  if (!existing) {
+    res.status(404).json({ error: 'Variant not found' });
+    return;
+  }
+  await prisma.productVariant.delete({ where: { id: variantId } });
+  try {
+    await prismaAny.productVariantsLegacy.delete({ where: { id: variantId } }).catch(() => null);
+  } catch {
+    /* ignore missing legacy row */
+  }
   res.json({ ok: true });
 });
 
@@ -826,19 +1079,68 @@ router.delete('/banners/:id', requireRole('super_admin'), async (req: Request, r
 
 // ─── Tag Groups + Tags ───────────────────────────────────────────────────────
 
+function slugifyTag(input: string): string {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100) || `tag-${Date.now()}`;
+}
+
+function mapTag(row: any) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    groupId: row.group_id ?? null,
+    nameEn: row.name_en,
+    nameBn: row.name_bn,
+    slug: row.slug,
+    sortOrder: row.sortOrder ?? row.sort_order ?? 0,
+  };
+}
+
+function mapTagGroup(row: any) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    nameEn: row.name_en,
+    nameBn: row.name_bn,
+    slug: row.slug,
+    sortOrder: row.sort_order ?? 0,
+    tags: Array.isArray(row.tags) ? row.tags.map(mapTag) : [],
+  };
+}
+
 router.get('/tag-groups', async (_req: Request, res: Response) => {
   try {
-    const groups = await prismaAny.tagGroup.findMany({ include: { tags: true }, orderBy: { id: 'asc' } });
-    res.json({ groups });
-  } catch {
-    res.json({ groups: [] }); // schema may not have tagGroup yet
+    const groups = await prisma.tag_groups.findMany({
+      include: { tags: { orderBy: { sortOrder: 'asc' } } },
+      orderBy: { sort_order: 'asc' },
+    });
+    res.json({ groups: groups.map(mapTagGroup) });
+  } catch (e: any) {
+    console.error('[tag-groups GET]', e?.message || e);
+    res.json({ groups: [] });
   }
 });
 
 router.post('/tag-groups', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
-    const group = await prismaAny.tagGroup.create({ data: req.body });
-    res.status(201).json({ group });
+    const nameEn = String(req.body.nameEn || req.body.name_en || '').trim();
+    const nameBn = String(req.body.nameBn || req.body.name_bn || nameEn).trim();
+    if (!nameEn) { res.status(400).json({ error: 'nameEn required' }); return; }
+    const slug = String(req.body.slug || slugifyTag(nameEn));
+    const group = await prisma.tag_groups.create({
+      data: {
+        name_en: nameEn,
+        name_bn: nameBn || nameEn,
+        slug,
+        sort_order: Number(req.body.sortOrder ?? req.body.sort_order ?? 0) || 0,
+      },
+      include: { tags: true },
+    });
+    res.status(201).json({ group: mapTagGroup(group) });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -846,8 +1148,18 @@ router.post('/tag-groups', requireRole('super_admin', 'admin'), async (req: Requ
 
 router.put('/tag-groups/:id', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
-    const group = await prismaAny.tagGroup.update({ where: { id: parseInt(routeParam(req.params.id)) }, data: req.body });
-    res.json({ group });
+    const id = parseInt(routeParam(req.params.id), 10);
+    const data: Record<string, unknown> = {};
+    if (req.body.nameEn != null || req.body.name_en != null) data.name_en = String(req.body.nameEn || req.body.name_en);
+    if (req.body.nameBn != null || req.body.name_bn != null) data.name_bn = String(req.body.nameBn || req.body.name_bn);
+    if (req.body.slug != null) data.slug = String(req.body.slug);
+    if (req.body.sortOrder != null || req.body.sort_order != null) data.sort_order = Number(req.body.sortOrder ?? req.body.sort_order) || 0;
+    const group = await prisma.tag_groups.update({
+      where: { id },
+      data,
+      include: { tags: true },
+    });
+    res.json({ group: mapTagGroup(group) });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -855,7 +1167,9 @@ router.put('/tag-groups/:id', requireRole('super_admin', 'admin'), async (req: R
 
 router.delete('/tag-groups/:id', requireRole('super_admin'), async (req: Request, res: Response) => {
   try {
-    await prismaAny.tagGroup.delete({ where: { id: parseInt(routeParam(req.params.id)) } });
+    const id = parseInt(routeParam(req.params.id), 10);
+    await prisma.tags.updateMany({ where: { group_id: id }, data: { group_id: null } });
+    await prisma.tag_groups.delete({ where: { id } });
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -864,8 +1178,21 @@ router.delete('/tag-groups/:id', requireRole('super_admin'), async (req: Request
 
 router.post('/tags', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
-    const tag = await prismaAny.tag.create({ data: req.body });
-    res.status(201).json({ tag });
+    const nameEn = String(req.body.nameEn || req.body.name_en || '').trim();
+    const nameBn = String(req.body.nameBn || req.body.name_bn || nameEn).trim();
+    if (!nameEn) { res.status(400).json({ error: 'nameEn required' }); return; }
+    const groupIdRaw = req.body.groupId ?? req.body.group_id;
+    const groupId = groupIdRaw == null || groupIdRaw === '' ? null : Number(groupIdRaw);
+    const tag = await prisma.tags.create({
+      data: {
+        name_en: nameEn,
+        name_bn: nameBn || nameEn,
+        slug: String(req.body.slug || slugifyTag(nameEn)),
+        group_id: Number.isFinite(groupId as number) ? (groupId as number) : null,
+        sortOrder: Number(req.body.sortOrder ?? req.body.sort_order ?? 0) || 0,
+      },
+    });
+    res.status(201).json({ tag: mapTag(tag) });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -873,16 +1200,28 @@ router.post('/tags', requireRole('super_admin', 'admin'), async (req: Request, r
 
 router.put('/tags/:id', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
-    const tag = await prismaAny.tag.update({ where: { id: parseInt(routeParam(req.params.id)) }, data: req.body });
-    res.json({ tag });
+    const id = parseInt(routeParam(req.params.id), 10);
+    const data: Record<string, unknown> = {};
+    if (req.body.nameEn != null || req.body.name_en != null) data.name_en = String(req.body.nameEn || req.body.name_en);
+    if (req.body.nameBn != null || req.body.name_bn != null) data.name_bn = String(req.body.nameBn || req.body.name_bn);
+    if (req.body.slug != null) data.slug = String(req.body.slug);
+    if (req.body.groupId !== undefined || req.body.group_id !== undefined) {
+      const g = req.body.groupId ?? req.body.group_id;
+      data.group_id = g == null || g === '' ? null : Number(g);
+    }
+    if (req.body.sortOrder != null || req.body.sort_order != null) data.sortOrder = Number(req.body.sortOrder ?? req.body.sort_order) || 0;
+    const tag = await prisma.tags.update({ where: { id }, data });
+    res.json({ tag: mapTag(tag) });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
 });
 
-router.delete('/tags/:id', requireRole('super_admin'), async (req: Request, res: Response) => {
+router.delete('/tags/:id', requireRole('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
-    await prismaAny.tag.delete({ where: { id: parseInt(routeParam(req.params.id)) } });
+    const id = parseInt(routeParam(req.params.id), 10);
+    await prisma.productTag.deleteMany({ where: { tagId: id } });
+    await prisma.tags.delete({ where: { id } });
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });

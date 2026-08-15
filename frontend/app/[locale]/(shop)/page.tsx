@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import type { Metadata } from 'next';
 import HomePageContent from '@/components/home/HomePageContent';
+import { fetchHomeCatalog } from '@/lib/fetchHomeCatalog';
 
 export async function generateMetadata(props: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const params = await props.params;
@@ -11,6 +12,10 @@ export async function generateMetadata(props: { params: Promise<{ locale: string
   };
 }
 
-export default function HomePage() {
-  return <HomePageContent />;
+export default async function HomePage(props: { params: Promise<{ locale: string }> }) {
+  const params = await props.params;
+  const catalog = await fetchHomeCatalog(params.locale);
+
+
+  return <HomePageContent catalog={catalog} />;
 }

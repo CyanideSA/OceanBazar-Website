@@ -35,15 +35,22 @@ router.post('/', async (req: Request, res: Response) => {
     include: { messages: true },
   });
 
-  emitToRoom('admin:chat', 'ticket:new', { ticket });
-  emitToRoom('admin:crm', 'ticket:new', { ticket });
-  if (subject?.toLowerCase().includes('return') || category === 'other') {
-    emitToRoom('admin:returns', 'admin:return:new', { ticketId: ticket.id, subject, userId: req.user!.userId });
+  const isApplicationMirror =
+    typeof subject === 'string' &&
+    (subject.startsWith('[APP:WHOLESALE]') || subject.startsWith('[APP:BUSINESS]'));
+
+  // Application mirrors are for customer tracking only — do not surface in Admin Tickets.
+  if (!isApplicationMirror) {
+    emitToRoom('admin:chat', 'ticket:new', { ticket });
+    emitToRoom('admin:crm', 'ticket:new', { ticket });
+    if (subject?.toLowerCase().includes('return') || category === 'other') {
+      emitToRoom('admin:returns', 'admin:return:new', { ticketId: ticket.id, subject, userId: req.user!.userId });
+    }
+    try {
+      const { alertNewTicket } = await import('../services/teamsService');
+      alertNewTicket(ticket.id, subject, priority).catch(() => {});
+    } catch { /* non-fatal */ }
   }
-  try {
-    const { alertNewTicket } = await import('../services/teamsService');
-    alertNewTicket(ticket.id, subject, priority).catch(() => {});
-  } catch { /* non-fatal */ }
   res.status(201).json({ ticket });
 });
 

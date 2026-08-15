@@ -70,25 +70,52 @@ router.get('/addresses', async (req: Request, res: Response) => {
   res.json({ addresses });
 });
 
+function parsePathaoAddressBody(body: Record<string, unknown>) {
+  const label = String(body.label ?? body.name ?? '').trim();
+  const line1 = String(body.line1 ?? body.addressLine1 ?? body.addressLine ?? '').trim();
+  const line2 = body.line2 != null ? String(body.line2).trim() : undefined;
+  const postalCode = body.postalCode != null ? String(body.postalCode).trim() : undefined;
+  const pathaoCityId = Number(body.pathaoCityId) || 0;
+  const pathaoZoneId = Number(body.pathaoZoneId) || 0;
+  const pathaoAreaId = Number(body.pathaoAreaId) || 0;
+  const pathaoCityName = String(body.pathaoCityName ?? body.city ?? '').trim();
+  const pathaoZoneName = String(body.pathaoZoneName ?? body.district ?? body.area ?? '').trim();
+  const pathaoAreaName = String(body.pathaoAreaName ?? '').trim() || null;
+  const city = pathaoCityName || String(body.city ?? '').trim();
+  const district = pathaoZoneName || String(body.district ?? body.area ?? '').trim();
+  const isDefault = Boolean(body.isDefault);
+  return {
+    label,
+    line1,
+    line2: line2 || null,
+    postalCode: postalCode || null,
+    pathaoCityId,
+    pathaoZoneId,
+    pathaoAreaId: pathaoAreaId || null,
+    pathaoCityName: pathaoCityName || null,
+    pathaoZoneName: pathaoZoneName || null,
+    pathaoAreaName,
+    city,
+    district,
+    isDefault,
+  };
+}
+
 // POST /api/profile/addresses
 router.post('/addresses', async (req: Request, res: Response) => {
-  const { label, line1, line2, city, district, area, postalCode, isDefault = false } = req.body as {
-    label?: string;
-    line1?: string;
-    line2?: string;
-    city?: string;
-    district?: string;
-    area?: string;
-    postalCode?: string;
-    isDefault?: boolean;
-  };
-  const resolvedDistrict = String(district ?? area ?? '').trim();
-  if (!String(label ?? '').trim() || !String(line1 ?? '').trim() || !String(city ?? '').trim() || !resolvedDistrict) {
-    res.status(400).json({ error: 'label, line1, city, and district (or area) are required' });
+  const parsed = parsePathaoAddressBody(req.body as Record<string, unknown>);
+  if (!parsed.label || !parsed.line1) {
+    res.status(400).json({ error: 'label and street address (line1) are required' });
+    return;
+  }
+  if (!parsed.pathaoCityId || !parsed.pathaoZoneId || !parsed.city || !parsed.district) {
+    res.status(400).json({
+      error: 'Select Pathao city and zone (district) so your address matches the courier delivery network',
+    });
     return;
   }
 
-  if (isDefault) {
+  if (parsed.isDefault) {
     await prisma.savedAddress.updateMany({
       where: { userId: req.user!.userId },
       data: { isDefault: false },
@@ -98,34 +125,48 @@ router.post('/addresses', async (req: Request, res: Response) => {
   const address = await prisma.savedAddress.create({
     data: {
       userId: req.user!.userId,
-      label: String(label).trim(),
-      line1: String(line1).trim(),
-      line2,
-      city: String(city).trim(),
-      district: resolvedDistrict,
-      postalCode,
-      isDefault,
+      label: parsed.label,
+      line1: parsed.line1,
+      line2: parsed.line2,
+      city: parsed.city,
+      district: parsed.district,
+      postalCode: parsed.postalCode,
+      isDefault: parsed.isDefault,
     },
   });
-  res.status(201).json({ address });
+
+  await prisma.$executeRaw`
+    UPDATE saved_addresses
+    SET pathao_city_id = ${parsed.pathaoCityId},
+        pathao_zone_id = ${parsed.pathaoZoneId},
+        pathao_area_id = ${parsed.pathaoAreaId},
+        pathao_city_name = ${parsed.pathaoCityName},
+        pathao_zone_name = ${parsed.pathaoZoneName},
+        pathao_area_name = ${parsed.pathaoAreaName}
+    WHERE id = ${address.id}
+  `;
+
+  const full = await prisma.savedAddress.findUnique({ where: { id: address.id } });
+
+  // #region agent log
+  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'addr-pathao',hypothesisId:'H1',location:'profile.ts:addresses:create',message:'address saved with pathao ids',data:{id:address.id,cityId:parsed.pathaoCityId,zoneId:parsed.pathaoZoneId,areaId:parsed.pathaoAreaId},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+
+  res.status(201).json({ address: full || address });
 });
 
 // PUT /api/profile/addresses/:id
 router.put('/addresses/:id', async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id), 10);
-  const { label, line1, line2, city, district, area, postalCode, isDefault = false } = req.body as {
-    label?: string;
-    line1?: string;
-    line2?: string;
-    city?: string;
-    district?: string;
-    area?: string;
-    postalCode?: string;
-    isDefault?: boolean;
-  };
-  const resolvedDistrict = String(district ?? area ?? '').trim();
-  if (!String(label ?? '').trim() || !String(line1 ?? '').trim() || !String(city ?? '').trim() || !resolvedDistrict) {
-    res.status(400).json({ error: 'label, line1, city, and district (or area) are required' });
+  const parsed = parsePathaoAddressBody(req.body as Record<string, unknown>);
+  if (!parsed.label || !parsed.line1) {
+    res.status(400).json({ error: 'label and street address (line1) are required' });
+    return;
+  }
+  if (!parsed.pathaoCityId || !parsed.pathaoZoneId || !parsed.city || !parsed.district) {
+    res.status(400).json({
+      error: 'Select Pathao city and zone (district) so your address matches the courier delivery network',
+    });
     return;
   }
 
@@ -137,25 +178,36 @@ router.put('/addresses/:id', async (req: Request, res: Response) => {
     return;
   }
 
-  if (isDefault) {
+  if (parsed.isDefault) {
     await prisma.savedAddress.updateMany({
       where: { userId: req.user!.userId },
       data: { isDefault: false },
     });
   }
 
-  const address = await prisma.savedAddress.update({
+  await prisma.savedAddress.update({
     where: { id },
     data: {
-      label: String(label).trim(),
-      line1: String(line1).trim(),
-      line2,
-      city: String(city).trim(),
-      district: resolvedDistrict,
-      postalCode,
-      isDefault,
+      label: parsed.label,
+      line1: parsed.line1,
+      line2: parsed.line2,
+      city: parsed.city,
+      district: parsed.district,
+      postalCode: parsed.postalCode,
+      isDefault: parsed.isDefault,
     },
   });
+  await prisma.$executeRaw`
+    UPDATE saved_addresses
+    SET pathao_city_id = ${parsed.pathaoCityId},
+        pathao_zone_id = ${parsed.pathaoZoneId},
+        pathao_area_id = ${parsed.pathaoAreaId},
+        pathao_city_name = ${parsed.pathaoCityName},
+        pathao_zone_name = ${parsed.pathaoZoneName},
+        pathao_area_name = ${parsed.pathaoAreaName}
+    WHERE id = ${id}
+  `;
+  const address = await prisma.savedAddress.findUnique({ where: { id } });
   res.json({ address });
 });
 

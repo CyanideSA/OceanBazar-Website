@@ -8,7 +8,7 @@ import {
   FiChevronRight, FiSearch, FiVolume2, FiVolumeX, FiLogOut,
   FiActivity, FiStar, FiFileText, FiHelpCircle, FiImage,
   FiChevronDown, FiCommand, FiClock, FiCheck, FiSun, FiMoon, FiLock,
-  FiMail, FiTrendingUp, FiZap, FiTarget, FiCpu, FiLink
+  FiMail, FiTrendingUp, FiZap, FiTarget, FiCpu, FiLink, FiMessageCircle
 } from "react-icons/fi";
 import { getAccessibleModules } from "../auth/permissionMatrix";
 import { adminApi } from "../lib/api";
@@ -24,6 +24,7 @@ const NAV_GROUPS = [
   { title: "Catalog", items: [
     { key: "products", label: "Products", icon: FiBox, badgeKey: "products" },
     { key: "catalog", label: "Explorer", icon: FiFolder },
+    { key: "tags", label: "Tags", icon: FiTag },
     { key: "inventory", label: "Inventory", icon: FiPackage },
     { key: "searchAnalytics", label: "Search Analytics", icon: FiSearch },
   ]},
@@ -39,6 +40,7 @@ const NAV_GROUPS = [
   { title: "Customers", items: [
     { key: "customers", label: "Customers", icon: FiUsers },
     { key: "reviews", label: "Reviews", icon: FiStar },
+    { key: "qa", label: "Q&A", icon: FiMessageCircle },
     { key: "disputes", label: "Disputes", icon: FiAlertCircle },
   ]},
   { title: "Communications", items: [
@@ -219,6 +221,10 @@ export default function Layout({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  /** true = tablet/desktop left sidebar; false = mobile bottom dock (mutually exclusive in DOM). */
+  const [isDesktopNav, setIsDesktopNav] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 768px)").matches : true
+  );
   const notifRef = useRef(null);
 
   const accessibleNavKeys = useMemo(() => new Set(getAccessibleModules(admin?.role)), [admin?.role]);
@@ -263,18 +269,94 @@ export default function Layout({
     return () => window.removeEventListener("keydown", h);
   }, []);
 
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = () => {
+      const desktop = mq.matches;
+      setIsDesktopNav(desktop);
+      if (desktop) setMobileNavOpen(false);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  // #region agent log
+  useEffect(() => {
+    const measure = () => {
+      const shell = document.querySelector("[data-ob-admin-shell]");
+      const sidebar = document.querySelector(".crm-sidebar");
+      const tree = document.querySelector(".folder-tree-panel");
+      const sr = sidebar?.getBoundingClientRect();
+      const tr = tree?.getBoundingClientRect();
+      const cs = sidebar ? getComputedStyle(sidebar) : null;
+      const inViewport = sr
+        ? sr.bottom > 0 && sr.top < window.innerHeight && sr.right > 0 && sr.left < window.innerWidth
+        : false;
+      const payload = {
+        sessionId: "1eb282",
+        runId: "post-fix",
+        hypothesisId: "H4",
+        location: "LayoutV2.jsx:navMeasure",
+        message: "CRM nav visibility on route",
+        data: {
+          active,
+          isDesktopNav,
+          collapsed,
+          vw: window.innerWidth,
+          vh: window.innerHeight,
+          scrollY: window.scrollY || document.documentElement.scrollTop || 0,
+          shellHeight: shell?.getBoundingClientRect()?.height ?? null,
+          sidebarMounted: Boolean(sidebar),
+          sidebarDisplay: cs?.display || null,
+          sidebarVisibility: cs?.visibility || null,
+          sidebarOpacity: cs?.opacity || null,
+          sidebarWidth: cs?.width || null,
+          sidebarRect: sr ? { top: sr.top, left: sr.left, bottom: sr.bottom, width: sr.width, height: sr.height } : null,
+          sidebarInViewport: sidebar ? inViewport : false,
+          explorerTreeMounted: Boolean(tree),
+          explorerTreeRect: tr ? { top: tr.top, width: tr.width, height: tr.height } : null,
+          overlayFixed: Array.from(document.querySelectorAll(".fixed.inset-0, [class*='fixed'][class*='inset-0']")).length,
+        },
+        timestamp: Date.now(),
+      };
+      const body = JSON.stringify(payload);
+      fetch("/__ob-debug/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+      fetch("http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "1eb282" },
+        body,
+      }).catch(() => {});
+    };
+    measure();
+    const t = window.setTimeout(measure, 300);
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [active, isDesktopNav, collapsed]);
+  // #endregion
+
   return (
-    <div className="crm-shell">
-      {/* ── Desktop Sidebar ── */}
+    <div className="crm-shell" data-ob-admin-shell="1" data-ob-nav-mode={isDesktopNav ? "sidebar" : "bottom"}>
+      {/* ── Desktop/Tablet Sidebar (not mounted on mobile — avoids logout strip next to bottom tabs) ── */}
+      {isDesktopNav && (
       <motion.aside
-        className={`crm-sidebar hidden lg:flex ${collapsed ? "collapsed" : ""}`}
+        className={`crm-sidebar flex ${collapsed ? "collapsed" : ""}`}
         initial={false}
         animate={{ width: collapsed ? "var(--crm-sidebar-collapsed)" : "var(--crm-sidebar-width)" }}
       >
         <div className="flex items-center justify-between p-4 mb-1">
           {!collapsed && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 select-none">
-              <img src="/ob-brand-logo.png?v=5" alt="OceanBazar" className="h-12 w-auto object-contain drop-shadow-md" />
+              <img
+                src="/ob-footer-logo.png?v=7"
+                alt="OceanBazar"
+                className="h-12 w-auto object-contain drop-shadow-md"
+              />
               <span className="text-[9px] font-semibold text-crm-text-muted align-top">CRM</span>
             </motion.div>
           )}
@@ -344,17 +426,18 @@ export default function Layout({
           </div>
         </div>
       </motion.aside>
+      )}
 
-      {/* ── Mobile Sidebar Overlay ── */}
+      {/* ── Mobile drawer (hamburger / More) — logout lives here on phones ── */}
       <AnimatePresence>
         {mobileNavOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
             <motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: "spring", damping: 30, stiffness: 350 }}
-              className="fixed left-0 top-0 bottom-0 w-[280px] z-50 lg:hidden bg-crm-bg-alt border-r border-crm-border flex flex-col overflow-y-auto"
+              className="fixed left-0 top-0 bottom-0 w-[280px] z-50 bg-crm-bg-alt border-r border-crm-border flex flex-col overflow-y-auto"
             >
               <div className="flex items-center justify-between p-4">
-                <img src="/ob-brand-logo.png?v=5" alt="OceanBazar" className="h-11 w-auto object-contain drop-shadow-md" />
+                <img src="/ob-footer-logo.png?v=7" alt="OceanBazar" className="h-11 w-auto object-contain drop-shadow-md" />
                 <button onClick={() => setMobileNavOpen(false)} className="p-1.5 text-crm-primary hover:text-crm-primary-hover"><FiX size={20} /></button>
               </div>
               <nav className="flex-1 px-3 space-y-5 overflow-y-auto pb-4">
@@ -391,9 +474,11 @@ export default function Layout({
         {/* Topbar */}
         <header className="crm-topbar">
           <div className="flex items-center gap-3">
-            <button className="lg:hidden p-2 rounded-md text-crm-primary hover:bg-crm-bg-hover" onClick={() => setMobileNavOpen(true)}>
-              <FiMenu size={22} />
-            </button>
+            {!isDesktopNav && (
+              <button type="button" className="p-2 rounded-md text-crm-primary hover:bg-crm-bg-hover" onClick={() => setMobileNavOpen(true)} data-ob-hamburger="1">
+                <FiMenu size={22} />
+              </button>
+            )}
             <div className="hidden sm:flex items-center gap-1.5 text-sm">
               <span className="text-crm-text-dim font-semibold">Admin</span>
               <FiChevronRight size={12} className="text-crm-primary" />
@@ -471,35 +556,59 @@ export default function Layout({
         </header>
 
         {/* Content Area */}
-        <main className="crm-content custom-scrollbar">
+        <main className="crm-content custom-scrollbar" data-ob-crm-content="1">
           <AnimatePresence mode="wait">
-            <motion.div key={active} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
+            <motion.div
+              key={active}
+              className="min-h-0"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18 }}
+            >
               {children}
             </motion.div>
           </AnimatePresence>
         </main>
 
-        {/* Mobile Bottom Tabs */}
-        <nav className="lg:hidden flex items-center justify-around border-t border-crm-border bg-crm-bg-alt px-1 py-1 shrink-0" style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))" }}>
-          {MOBILE_TABS.map(tab => {
-            const isActive = active === tab.key;
-            const badgeVal = tab.key === "chat" ? liveCounters.messages : tab.key === "notifications" ? adminUnreadCount : 0;
-            return (
-              <button key={tab.key} onClick={() => onSelect(tab.key)}
-                className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors relative font-semibold ${isActive ? "text-crm-primary" : "text-crm-text-bright"}`}
-              >
-                <tab.icon size={20} className="text-crm-primary" />
-                <span className="text-[10px] font-bold">{tab.label}</span>
-                {badgeVal > 0 && (
-                  <span className="absolute -top-0.5 right-1 h-4 min-w-[1rem] px-1 bg-crm-danger text-[9px] font-bold text-white rounded-full flex items-center justify-center">{badgeVal > 9 ? "9+" : badgeVal}</span>
-                )}
-              </button>
-            );
-          })}
-          <button onClick={() => setMobileNavOpen(true)} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-crm-text">
-            <FiMenu size={20} className="text-crm-primary" /><span className="text-[10px] font-bold">More</span>
-          </button>
+        {/* Bottom dock — mobile only; never includes logout (logout is in More drawer). */}
+        {!isDesktopNav && (
+        <nav
+          className="crm-bottom-nav flex"
+          data-ob-bottom-nav="1"
+          data-ob-build="no-bottom-logout-v4"
+          aria-label="Admin quick navigation"
+        >
+          <div className="flex min-w-0 items-center gap-2 border-r border-crm-border pr-2 mr-1 shrink-0" data-ob-bottom-profile="1">
+            <AdminProfileAvatar admin={admin} collapsed onUpdated={onAdminUpdate} />
+            <div className="min-w-0 max-w-[7.5rem]">
+              <p className="text-xs font-semibold truncate text-crm-text-bright leading-tight">{admin?.name}</p>
+              <p className="text-[9px] text-crm-primary uppercase tracking-wider leading-tight">{admin?.roleLabel || admin?.role}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-1 items-center justify-around min-w-0">
+            {MOBILE_TABS.map(tab => {
+              const isActive = active === tab.key;
+              const badgeVal = tab.key === "chat" ? liveCounters.messages : tab.key === "notifications" ? adminUnreadCount : 0;
+              return (
+                <button key={tab.key} type="button" onClick={() => onSelect(tab.key)}
+                  className={`flex flex-col items-center gap-0.5 px-2 sm:px-3 py-1.5 rounded-lg transition-colors relative font-semibold ${isActive ? "text-crm-primary" : "text-crm-text-bright"}`}
+                >
+                  <tab.icon size={20} className="text-crm-primary" />
+                  <span className="text-[10px] font-bold">{tab.label}</span>
+                  {badgeVal > 0 && (
+                    <span className="absolute -top-0.5 right-1 h-4 min-w-[1rem] px-1 bg-crm-danger text-[9px] font-bold text-white rounded-full flex items-center justify-center">{badgeVal > 9 ? "9+" : badgeVal}</span>
+                  )}
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => setMobileNavOpen(true)} className="flex flex-col items-center gap-0.5 px-2 sm:px-3 py-1.5 rounded-lg text-crm-text">
+              <FiMenu size={20} className="text-crm-primary" /><span className="text-[10px] font-bold">More</span>
+            </button>
+          </div>
         </nav>
+        )}
       </div>
 
       {/* ── Command Palette ── */}

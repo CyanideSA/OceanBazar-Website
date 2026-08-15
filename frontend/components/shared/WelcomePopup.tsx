@@ -6,24 +6,28 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { X, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/authStore';
 
 const STORAGE_KEY = 'ob_welcome_dismissed';
 const DISMISS_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const WELCOME_BANNER = '/welcome-popup-banner.png?v=5';
 
+/** Legacy fallback — prefer StorefrontPopups (CMS-driven). Hidden when logged in. */
 export default function WelcomePopup() {
   const t = useTranslations('welcome');
   const locale = useLocale();
+  const user = useAuthStore((s) => s.user);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (user) return; // logged-in sessions never see welcome popup
     if (process.env.NEXT_PUBLIC_E2E_DISABLE_POPUPS === '1') return;
     if (typeof window !== 'undefined' && window.localStorage.getItem('ob_e2e_disable_popups') === '1') return;
     const dismissed = localStorage.getItem(STORAGE_KEY);
     if (dismissed && Date.now() - Number(dismissed) < DISMISS_DURATION_MS) return;
     const timer = setTimeout(() => setVisible(true), 1200);
     return () => clearTimeout(timer);
-  }, []);
+  }, [user]);
 
   function dismiss() {
     setVisible(false);

@@ -5,11 +5,13 @@ import { createPortal } from 'react-dom';
 import { Loader2 } from 'lucide-react';
 import { routeKeyFromLocation } from '@/lib/navigationRouteKey';
 import { useNavigationLoadingContext } from '@/components/shared/NavigationLoadingContext';
+import { debugSessionLog } from '@/lib/debugSessionLog';
+import { isLegacyStorefrontDevice } from '@/lib/legacyDevice';
 
 /**
  * Full-screen loading during in-app navigation.
- * - Link taps: pointerdown on same-origin <a href> → loading until pathname/search updates.
- * - Programmatic: use useShopRouter().push / pushWithLoading from @/lib/shopNavigation.
+ * Disabled on legacy phones — the max-z overlay was blocking taps for up to 12s
+ * when soft navigations stalled (looked like “all buttons dead”).
  * Opt out: data-no-nav-loading="true" on an element or ancestor.
  */
 export default function NavigationLoadingOverlay() {
@@ -17,17 +19,23 @@ export default function NavigationLoadingOverlay() {
   const loading = ctx?.loading ?? false;
   const beginLinkNavigation = ctx?.beginLinkNavigation;
   const [mounted, setMounted] = useState(false);
+  const [legacy, setLegacy] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    setLegacy(isLegacyStorefrontDevice());
   }, []);
 
   useEffect(() => {
-    if (!beginLinkNavigation) return;
+    if (!beginLinkNavigation || legacy) return;
 
     const ignoreSubtree = (el: EventTarget | null) => {
       if (!(el instanceof Element)) return false;
-      return Boolean(el.closest('[data-no-nav-loading="true"]'));
+      return Boolean(
+        el.closest('[data-no-nav-loading="true"]') ||
+          el.closest('button') ||
+          el.closest('[role="button"]'),
+      );
     };
 
     const onClick = (e: MouseEvent) => {
@@ -55,18 +63,28 @@ export default function NavigationLoadingOverlay() {
       const curKey = routeKeyFromLocation(window.location.pathname, new URLSearchParams(window.location.search).toString());
       if (nextKey === curKey) return;
 
+      // #region agent log
+      debugSessionLog({
+        hypothesisId: 'H12',
+        location: 'NavigationLoadingOverlay.tsx:begin',
+        message: 'nav loading overlay started',
+        data: { href: url.pathname, nextKey, curKey },
+        runId: 'post-test-hydration',
+      });
+      // #endregion
       beginLinkNavigation();
     };
 
     document.addEventListener('click', onClick, false);
     return () => document.removeEventListener('click', onClick, false);
-  }, [beginLinkNavigation]);
+  }, [beginLinkNavigation, legacy]);
 
-  if (!loading || !mounted) return null;
+  if (legacy || !loading || !mounted) return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-background/75 backdrop-blur-sm"
+      className="fixed inset-0 z-[2147483647] flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(15, 23, 42, 0.72)' }}
       role="status"
       aria-live="polite"
       aria-busy="true"

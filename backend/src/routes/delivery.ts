@@ -9,8 +9,105 @@ import {
   getPickupStoreDetails,
   calculateParcelCharge,
 } from '../services/redxService';
+import * as pathaoService from '../services/pathaoService';
+import { estimateCartWeightKg, quotePathaoDelivery } from '../services/deliveryQuoteService';
 
 const router = Router();
+
+// ─── Pathao geo + quote (customer storefront — synced with courier) ──────────
+
+router.get('/pathao/cities', async (_req: Request, res: Response) => {
+  try {
+    res.json({ cities: await pathaoService.getCities() });
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Failed to load Pathao cities' });
+  }
+});
+
+router.get('/pathao/zones/:cityId', async (req: Request, res: Response) => {
+  try {
+    const cityId = Number(routeParam(req.params.cityId));
+    if (!Number.isFinite(cityId) || cityId <= 0) {
+      res.status(400).json({ error: 'cityId is required' });
+      return;
+    }
+    res.json({ zones: await pathaoService.getZones(cityId) });
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Failed to load Pathao zones' });
+  }
+});
+
+router.get('/pathao/areas/:zoneId', async (req: Request, res: Response) => {
+  try {
+    const zoneId = Number(routeParam(req.params.zoneId));
+    if (!Number.isFinite(zoneId) || zoneId <= 0) {
+      res.status(400).json({ error: 'zoneId is required' });
+      return;
+    }
+    res.json({ areas: await pathaoService.getAreas(zoneId) });
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Failed to load Pathao areas' });
+  }
+});
+
+/** POST /api/delivery/pathao/quote — estimate delivery charge for checkout */
+router.post('/pathao/quote', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const {
+      pathaoCityId,
+      pathaoZoneId,
+      shippingAddressId,
+      itemWeightKg,
+      itemCount,
+    } = req.body as {
+      pathaoCityId?: number;
+      pathaoZoneId?: number;
+      shippingAddressId?: number;
+      itemWeightKg?: number;
+      itemCount?: number;
+    };
+
+    let cityId = Number(pathaoCityId) || 0;
+    let zoneId = Number(pathaoZoneId) || 0;
+
+    if (shippingAddressId) {
+      const addr = await prisma.savedAddress.findFirst({
+        where: { id: Number(shippingAddressId), userId: req.user!.userId },
+      });
+      if (!addr) {
+        res.status(404).json({ error: 'Shipping address not found' });
+        return;
+      }
+      cityId = Number((addr as any).pathaoCityId) || cityId;
+      zoneId = Number((addr as any).pathaoZoneId) || zoneId;
+    }
+
+    if (!cityId || !zoneId) {
+      res.status(400).json({
+        error: 'Select a delivery address with Pathao city and zone (district) before quoting delivery',
+      });
+      return;
+    }
+
+    const weight = itemWeightKg ?? estimateCartWeightKg(itemCount ?? 1);
+    const quote = await quotePathaoDelivery({
+      pathaoCityId: cityId,
+      pathaoZoneId: zoneId,
+      itemWeightKg: weight,
+    });
+
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'courier-quote',hypothesisId:'H2',location:'delivery.ts:pathao/quote',message:'pathao delivery quote',data:{cityId,zoneId,price:quote.price,weightKg:quote.weightKg,userId:req.user!.userId},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
+    res.json({ quote });
+  } catch (err: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'courier-quote',hypothesisId:'H2',location:'delivery.ts:pathao/quote:err',message:'pathao quote failed',data:{err:String(err?.message||err).slice(0,300)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    res.status(502).json({ error: err?.message || 'Could not quote delivery charge' });
+  }
+});
 
 // ─── RedX Area Lookup (public) ────────────────────────────────────────────────
 // GET /api/delivery/redx/areas?post_code=1207

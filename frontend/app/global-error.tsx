@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { reportClientError } from '@/lib/reportClientError';
+import { isChunkLoadError, reloadOnceForChunkError } from '@/lib/chunkLoadRecovery';
 
 /**
  * Catches errors in the root layout. Must define <html> and <body>.
@@ -15,6 +16,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
+    if (isChunkLoadError(error) && reloadOnceForChunkError(error.message)) return;
     reportClientError({
       digest: error.digest,
       message: error.message,
@@ -41,7 +43,7 @@ export default function GlobalError({
         }}
       >
         <img
-          src="/ob-brand-logo.png?v=4"
+          src="/ob-brand-logo.png?v=7"
           alt="OceanBazar"
           width={200}
           height={94}
@@ -73,7 +75,14 @@ export default function GlobalError({
         ) : null}
         <button
           type="button"
-          onClick={reset}
+          onClick={() => {
+            try {
+              localStorage.removeItem('ob_chunk_reload_v2');
+            } catch {
+              /* ignore */
+            }
+            window.location.replace(`/bn?_obcb=${Date.now()}`);
+          }}
           style={{
             padding: '0.65rem 1.25rem',
             borderRadius: '0.75rem',

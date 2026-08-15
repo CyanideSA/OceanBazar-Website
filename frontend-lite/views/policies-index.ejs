@@ -1,0 +1,19 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section info-page">
+  <h1><%= t('legalSection') %></h1>
+  <div class="info-card-grid">
+    <% policyOrder.forEach(function(key) {
+      var p = policies[key];
+      if (!p) return;
+    %>
+    <a class="info-card" href="<%= basePath %>/<%= locale %>/policies/<%= key %>">
+      <strong><%= p.title %></strong>
+      <span><%= p.intro %></span>
+    </a>
+    <% }) %>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

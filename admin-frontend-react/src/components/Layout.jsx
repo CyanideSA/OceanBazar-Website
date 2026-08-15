@@ -23,6 +23,7 @@ const NAV_GROUPS = [
     items: [
       { key: "products", label: "Products", icon: FiBox },
       { key: "catalog", label: "Explorer", icon: FiFolder },
+      { key: "tags", label: "Tags", icon: FiTag },
       { key: "inventory", label: "Inventory", icon: FiPackage },
       { key: "fileImport", label: "Import", icon: FiFilePlus },
     ]

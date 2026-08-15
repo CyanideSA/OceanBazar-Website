@@ -21,8 +21,12 @@ const TABS = [
 ];
 
 const SYSTEM_CATEGORIES = [
+  { value: "otp", label: "OTP" },
+  { value: "welcome", label: "Welcome" },
   { value: "order_confirmation", label: "Order confirmation" },
+  { value: "payment_invoice", label: "Payment invoice" },
   { value: "shipping_update", label: "Shipping update" },
+  { value: "delivery_update", label: "Delivery update" },
   { value: "payment_verification", label: "Payment verification" },
   { value: "payment_received", label: "Payment received" },
   { value: "return_initiated", label: "Return initiated" },
@@ -30,8 +34,6 @@ const SYSTEM_CATEGORIES = [
   { value: "refund_eligible", label: "Refund eligible" },
   { value: "refund_payment_info_request", label: "Refund payment info request" },
   { value: "refund_completed", label: "Refund completed" },
-  { value: "delivery_update", label: "Delivery update" },
-  { value: "otp", label: "OTP" },
   { value: "support_reply", label: "Support reply" },
   { value: "password_reset", label: "Password reset" },
   { value: "password_changed", label: "Password changed" },
@@ -286,11 +288,42 @@ export default function EmailInboxPage() {
             <p className="text-crm-text-dim text-sm">Shared mailbox inbox, compose and full send log</p>
           </div>
         </div>
-        {status?.mailboxes?.length > 0 && (
-          <select className="crm-input max-w-xs" value={mailbox} onChange={(e) => setMailbox(e.target.value)}>
-            {status.mailboxes.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {status?.graphConfigured && (
+            <button
+              type="button"
+              className="crm-btn text-xs"
+              onClick={async () => {
+                try {
+                  const res = await adminApi.emailSyncThemePhotos();
+                  const ok = (res?.results || []).filter((r) => r.ok).length;
+                  const fail = (res?.results || []).filter((r) => !r.ok);
+                  if (fail.length) {
+                    toast.error(`Theme photos: ${ok} ok, ${fail.length} failed — ${fail[0]?.error || "check Graph User.ReadWrite.All"}`);
+                  } else {
+                    toast.success(`Synced theme icons to ${ok} mailboxes`);
+                  }
+                } catch (err) {
+                  toast.error(err?.response?.data?.error || "Failed to sync mailbox theme photos");
+                }
+              }}
+            >
+              Sync theme icons
+            </button>
+          )}
+          {status?.mailboxes?.length > 0 && (
+            <select className="crm-input max-w-xs" value={mailbox} onChange={(e) => setMailbox(e.target.value)}>
+              {status.mailboxes.map((m) => {
+                const id = (status.identities || []).find((x) => x.address === m);
+                return (
+                  <option key={m} value={m}>
+                    {id ? `${id.displayName} <${m}>` : m}
+                  </option>
+                );
+              })}
+            </select>
+          )}
+        </div>
       </div>
 
       {status && !status.graphConfigured && (
@@ -374,9 +407,16 @@ export default function EmailInboxPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-crm-text-dim uppercase font-bold">From</label>
-              {status?.mailboxes?.length ? (
+              {status?.identities?.length || status?.mailboxes?.length ? (
                 <select className="crm-input w-full" value={compose.from} onChange={(e) => setCompose({ ...compose, from: e.target.value })}>
-                  {status.mailboxes.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {(status.identities || []).map((id) => (
+                    <option key={id.address} value={id.address}>
+                      {id.displayName} &lt;{id.address}&gt;
+                    </option>
+                  ))}
+                  {!status.identities?.length && status.mailboxes.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
                 </select>
               ) : (
                 <input className="crm-input w-full" value={compose.from} onChange={(e) => setCompose({ ...compose, from: e.target.value })} placeholder="no-reply@oceanbazar.com.bd" />

@@ -1,0 +1,197 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var heroInterval = (settings && settings.defaultBannerRotationMs) ? Number(settings.defaultBannerRotationMs) : 5000;
+  if (!heroInterval || heroInterval < 1000) heroInterval = 5000;
+  var defaultHeroAnim = (settings && settings.defaultHeroAnimation) ? settings.defaultHeroAnimation : 'fade';
+%>
+<% if (heroSlides && heroSlides.length) { %>
+<section class="hero" data-hero-slider data-interval="<%= heroInterval %>" data-default-anim="<%= defaultHeroAnim %>" aria-roledescription="carousel">
+  <div class="hero-track">
+    <% heroSlides.forEach(function(slide, i) {
+      var imgRaw = (slide && (slide.mobileImage || slide.imageUrl || slide.image || slide.src || slide.desktopImage)) || '';
+      var img = imgRaw ? helpers.optimizeImageUrl(imgRaw, { width: 960, crop: 'limit' }) : '';
+      var title = slide.title || slide.headline || '';
+      var productsHref = basePath + '/' + locale + '/products';
+      var slideAnim = slide.animation || defaultHeroAnim || 'fade';
+      var slideMs = slide.rotationMs != null && Number(slide.rotationMs) > 0 ? Number(slide.rotationMs) : '';
+      // Mirror full storefront: prefer admin-defined overlays; else synthesize from legacy fields.
+      var overlays = (slide && Array.isArray(slide.overlays) && slide.overlays.length) ? slide.overlays : [];
+      if (!overlays.length) {
+        if (slide.title) overlays.push({ type: 'text', text: slide.title, x: 8, y: 26, fontSize: 34, fontWeight: 800, color: '#ffffff' });
+        if (slide.subtitle) overlays.push({ type: 'text', text: slide.subtitle, x: 8, y: 44, fontSize: 16, fontWeight: 500, color: '#ffffff' });
+        if (slide.ctaText || slide.ctaLink || slide.linkUrl || slide.href || slide.link || slide.url) {
+          overlays.push({ type: 'button', text: slide.ctaText || t('shopNow'), linkUrl: slide.ctaLink || slide.linkUrl || slide.href || slide.link || slide.url || productsHref, x: 8, y: 62 });
+        }
+      }
+    %>
+    <div class="hero-slide hero-anim-<%= String(slideAnim).replace(/[^a-z0-9-]/gi, '') %><%= i === 0 ? ' is-active' : '' %>" data-hero-slide="<%= i %>" data-animation="<%= slideAnim %>" <% if (slideMs) { %>data-rotation-ms="<%= slideMs %>"<% } %> <%= i === 0 ? '' : 'aria-hidden="true"' %>>
+      <% if (img) { %><img src="<%= img %>" alt="<%= title %>" width="960" height="420" decoding="<%= i === 0 ? 'sync' : 'async' %>" <%= i === 0 ? 'fetchpriority="high"' : 'loading="lazy"' %> /><% } %>
+      <% if (overlays.length) { %>
+      <div class="hero-overlays">
+        <% overlays.forEach(function(ov) {
+          var ox = Number(ov.x) || 0; var oy = Number(ov.y) || 0;
+          if (ov.type === 'button') {
+            var bhref = ov.linkUrl || ov.link || productsHref;
+        %>
+        <a class="hero-cta" href="<%= bhref %>" style="left:<%= ox %>%;top:<%= oy %>%;<% if (ov.bgColor) { %>background:<%= ov.bgColor %>;<% } %><% if (ov.color) { %>color:<%= ov.color %>;<% } %>"><%= ov.text || t('shopNow') %></a>
+        <% } else { %>
+        <span class="hero-ovtext" style="left:<%= ox %>%;top:<%= oy %>%;<% if (ov.color) { %>color:<%= ov.color %>;<% } %><% if (ov.fontWeight) { %>font-weight:<%= ov.fontWeight %>;<% } %>"><%= ov.text %></span>
+        <% } %>
+        <% }) %>
+      </div>
+      <% } else if (title) { %>
+      <a class="hero-caption" href="<%= productsHref %>"><%= title %></a>
+      <% } %>
+    </div>
+    <% }) %>
+  </div>
+  <% if (heroSlides.length > 1) { %>
+  <button type="button" class="hero-nav hero-prev" data-hero-prev aria-label="Previous">‹</button>
+  <button type="button" class="hero-nav hero-next" data-hero-next aria-label="Next">›</button>
+  <div class="hero-dots" role="tablist">
+    <% heroSlides.forEach(function(_, i) { %>
+    <button type="button" class="hero-dot<%= i === 0 ? ' is-active' : '' %>" data-hero-dot="<%= i %>" aria-label="Slide <%= i + 1 %>"></button>
+    <% }) %>
+  </div>
+  <% } %>
+</section>
+<% } else { %>
+<section class="hero plain">
+  <h1>OceanBazar</h1>
+  <p><%= t('tagline') %></p>
+  <p style="margin-top:14px">
+    <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/products"><%= t('products') %></a>
+  </p>
+</section>
+<% } %>
+
+<% if (categories && categories.length) { %>
+<section class="section">
+  <div class="section-head">
+    <h2><%= t('categories') %></h2>
+    <a href="<%= basePath %>/<%= locale %>/products"><%= t('seeAll') %></a>
+  </div>
+  <div class="chips">
+    <% categories.forEach(function(cat) { %>
+      <%- include('partials/category-chip', { cat: cat, categoryId: '' }) %>
+    <% }) %>
+  </div>
+</section>
+<% } %>
+
+<% var flashProducts = (flash && Array.isArray(flash.products)) ? flash.products : []; %>
+<% if (flash && flashMs > 0 && flashProducts.length) { %>
+<section class="section flash-section">
+  <div class="flash-head">
+    <div class="flash-head-title">
+      <span class="flash-tag"><%= t('flashDeals') %></span>
+      <% var flashSale = flash.sale || flash; %>
+      <% if (flashSale && (flashSale.name || flashSale.banner_text)) { %>
+      <span class="flash-name"><%= flashSale.banner_text || flashSale.name %></span>
+      <% } %>
+    </div>
+    <span class="flash-countdown" data-countdown="<%= flashMs %>" data-label="<%= t('endsIn') %>">
+      <%= t('endsIn') %> <%= flashCountdown %>
+    </span>
+  </div>
+  <div class="grid">
+    <% flashProducts.slice(0, 8).forEach(function(product) { %>
+      <%- include('partials/product-card', { product: product }) %>
+    <% }) %>
+  </div>
+  <div class="section-more">
+    <a class="btn btn-outline" href="<%= basePath %>/<%= locale %>/flash-deals"><%= t('seeAll') %></a>
+  </div>
+</section>
+<% } %>
+
+<% sections.forEach(function(sec) { %>
+<% if (sec.products && sec.products.length) { %>
+<% var homeProducts = sec.products.slice(0, 10); %>
+<section class="section home-product-section">
+  <div class="section-head">
+    <h2><%= t(sec.titleKey) %></h2>
+    <a href="<%= basePath %>/<%= locale %>/products/<%= encodeURIComponent(sec.collection) %>"><%= t('seeAll') %></a>
+  </div>
+  <div class="grid grid-home">
+    <% homeProducts.forEach(function(product) { %>
+      <%- include('partials/product-card', { product: product }) %>
+    <% }) %>
+  </div>
+  <div class="section-more section-more-tiny">
+    <a class="btn-show-more" href="<%= basePath %>/<%= locale %>/products/<%= encodeURIComponent(sec.collection) %>"><%= t('seeAll') %> →</a>
+  </div>
+</section>
+<% } %>
+<% }) %>
+
+<%
+  var testimonials = (settings && Array.isArray(settings.testimonials)) ? settings.testimonials : [];
+  var testimonialMs = (settings && Number(settings.testimonialCarouselMs) > 0) ? Number(settings.testimonialCarouselMs) : 6000;
+  if (testimonialMs < 2000) testimonialMs = 6000;
+%>
+<% if (testimonials.length) { %>
+<section class="testimonials testimonials-premium" data-testimonial-slider data-interval="<%= testimonialMs %>" aria-roledescription="carousel" aria-label="<%= t('testimonialsTitle') %>">
+  <p class="testimonials-eyebrow"><%= t('testimonialsTitle') %></p>
+  <h2 class="testimonials-title"><%= t('testimonialsHeadline') %></h2>
+  <div class="testimonials-card">
+    <div class="testimonials-track">
+      <% testimonials.forEach(function(item, ti) {
+        var tquote = item.quote || item.comment || '';
+        var trating = Math.min(5, Math.max(1, Number(item.rating) || 5));
+        var tname = item.name || 'OceanBazar';
+        var initials = String(tname).split(/\s+/).map(function(p){ return p.charAt(0); }).join('').slice(0,2).toUpperCase();
+      %>
+      <blockquote class="testimonial-slide<%= ti === 0 ? ' is-active' : '' %>" data-testimonial-slide="<%= ti %>" <%= ti === 0 ? '' : 'aria-hidden="true"' %>>
+        <p class="testimonial-stars" aria-hidden="true"><% for (var si = 0; si < trating; si++) { %>★<% } %></p>
+        <p class="testimonial-quote">“<%= tquote %>”</p>
+        <footer class="testimonial-meta">
+          <span class="testimonial-avatar" aria-hidden="true"><%= initials %></span>
+          <span>
+            <strong><%= tname %></strong>
+            <% if (item.title) { %><span class="testimonial-role"> · <%= item.title %></span><% } %>
+            <% if (item.verified) { %><span class="testimonial-verified"> · <%= t('verified') %></span><% } %>
+          </span>
+        </footer>
+      </blockquote>
+      <% }) %>
+    </div>
+    <% if (testimonials.length > 1) { %>
+    <div class="testimonials-dots" role="tablist">
+      <% testimonials.forEach(function(_, ti) { %>
+      <button type="button" class="testimonials-dot<%= ti === 0 ? ' is-active' : '' %>" data-testimonial-dot="<%= ti %>" aria-label="<%= ti + 1 %>"></button>
+      <% }) %>
+    </div>
+    <% } %>
+  </div>
+</section>
+<% } %>
+
+<%
+  var productTrustBadges = (typeof trustBadges !== 'undefined' && Array.isArray(trustBadges)) ? trustBadges : [];
+%>
+<% if (productTrustBadges.length) { %>
+<section class="trust trust-product" aria-label="<%= t('trustTitle') %>" data-ob-trust="product-linked">
+  <div class="section-head" style="margin-bottom:12px">
+    <h2><%= t('trustShopTitle') %></h2>
+  </div>
+  <div class="trust-grid">
+  <% productTrustBadges.slice(0, 8).forEach(function(badge) {
+    var blabel = (locale === 'bn' && badge.nameBn) ? badge.nameBn : (badge.nameEn || badge.label || '');
+    var bdesc = badge.description || '';
+    var bcount = Number(badge.productCount) || 0;
+    var bhref = basePath + '/' + locale + '/products?trustBadge=' + encodeURIComponent(badge.slug || badge.id);
+  %>
+  <a class="trust-item trust-link" href="<%= bhref %>">
+    <strong><%= blabel %></strong>
+    <% if (bdesc) { %><span><%= bdesc %></span><% } %>
+    <span class="trust-count"><%= bcount %> <%= bcount === 1 ? t('productSingular') : t('products') %></span>
+  </a>
+  <% }) %>
+  </div>
+</section>
+<% } %>
+
+<%- include('partials/footer') %>

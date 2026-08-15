@@ -1,0 +1,43 @@
+<%
+  var userType = helpers.resolveUserType(typeof user !== 'undefined' ? user : null);
+  var name = helpers.pickName(product, locale);
+  var href = helpers.productHref(locale, product);
+  var img = helpers.productImage(product, { width: 360 });
+  var pid = helpers.productId(product);
+  var price = helpers.productPrice(product, { userType: userType, qty: 1 });
+  var compare = helpers.productCompareAt(product, { userType: userType, qty: 1 });
+  var savePct = compare && compare > price ? Math.round((1 - price / compare) * 100) : 0;
+%>
+<article class="card">
+  <a href="<%= href %>" class="card-media">
+    <% if (savePct >= 5) { %><span class="card-badge">-<%= savePct %>%</span><% } %>
+    <img src="<%= img %>" alt="<%= name %>" loading="lazy" width="280" height="280" />
+  </a>
+  <div class="card-body">
+    <a href="<%= href %>" class="card-title"><%= name %></a>
+    <%
+      var cardAvg = Number(product.ratingAvg != null ? product.ratingAvg : product.averageRating) || 0;
+      var cardCount = Number(product.reviewCount != null ? product.reviewCount : product.totalReviews) || 0;
+    %>
+    <% if (cardAvg > 0 || cardCount > 0) { %>
+    <p class="card-rating">
+      <span aria-hidden="true">★</span>
+      <%= cardAvg.toFixed(1) %>
+      <% if (cardCount > 0) { %><span class="muted">(<%= cardCount %>)</span><% } %>
+    </p>
+    <% } %>
+    <div class="price">
+      <strong><%= helpers.money(price) %></strong>
+      <% if (compare) { %><s><%= helpers.money(compare) %></s><% } %>
+      <% if (savePct >= 5) { %><span class="save"><%= t('youSave') %> <%= savePct %>%</span><% } %>
+    </div>
+    <% if (pid) { %>
+    <form method="post" action="<%= basePath %>/<%= locale %>/cart/add" class="inline-add" data-ajax-cart>
+      <input type="hidden" name="productId" value="<%= pid %>" />
+      <input type="hidden" name="quantity" value="1" />
+      <input type="hidden" name="next" value="<%= basePath %>/<%= locale %>/cart" />
+      <button type="submit" class="btn btn-sm btn-primary"><%= t('addToCart') %></button>
+    </form>
+    <% } %>
+  </div>
+</article>

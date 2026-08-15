@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FiMail, FiBell, FiMessageCircle, FiCheck, FiX, FiUser } from "react-icons/fi";
+import { FiMail, FiBell, FiMessageCircle, FiUser } from "react-icons/fi";
 import { adminApi } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
 import { isRealUserId } from "../lib/deepLink";
@@ -18,13 +18,12 @@ function CustomerLink({ userId, onOpenCustomer, label }) {
   );
 }
 
-export default function EngagementPage({ onOpenCustomer }) {
+export default function EngagementPage({ onOpenCustomer, onOpenQa }) {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [newsletter, setNewsletter] = useState([]);
   const [stockAlerts, setStockAlerts] = useState([]);
-  const [qaPending, setQaPending] = useState([]);
-  const [answerDraft, setAnswerDraft] = useState({});
+  const [qaPendingCount, setQaPendingCount] = useState(0);
 
   async function load() {
     setLoading(true);
@@ -36,7 +35,7 @@ export default function EngagementPage({ onOpenCustomer }) {
       ]);
       setNewsletter(n?.items || []);
       setStockAlerts(s?.items || []);
-      setQaPending(q?.items || []);
+      setQaPendingCount(Array.isArray(q?.items) ? q.items.length : 0);
     } catch {
       toast.error("Failed to load engagement data");
     } finally {
@@ -48,16 +47,6 @@ export default function EngagementPage({ onOpenCustomer }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function moderateQa(id, approved) {
-    try {
-      await adminApi.moderateQa(id, { approved, answer: answerDraft[id] || null });
-      setQaPending((prev) => prev.filter((x) => x.id !== id));
-      toast.success(approved ? "Question approved" : "Question rejected");
-    } catch {
-      toast.error("Failed to update Q&A item");
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -85,44 +74,28 @@ export default function EngagementPage({ onOpenCustomer }) {
             </div>
             <div className="crm-card">
               <p className="text-crm-text-dim text-xs uppercase">Pending Q&A</p>
-              <p className="mt-1 text-2xl font-black text-crm-primary">{qaPending.length}</p>
+              <p className="mt-1 text-2xl font-black text-crm-primary">{qaPendingCount}</p>
             </div>
           </div>
 
           <div className="crm-card">
-            <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-crm-text-bright"><FiMessageCircle /> Pending Product Q&A</h3>
-            {qaPending.length === 0 ? (
-              <p className="text-sm text-crm-text-dim">No pending Q&A items.</p>
-            ) : (
-              <div className="space-y-3">
-                {qaPending.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-crm-border bg-crm-bg p-3">
-                    <p className="text-xs text-crm-text-dim">{item.product_title || item.product_id}</p>
-                    <p className="mt-1 text-sm font-semibold text-crm-text-bright">{item.question}</p>
-                    {(item.asker_name || item.asker_email) && (
-                      <p className="text-xs text-crm-text-dim mt-1">
-                        {item.asker_name || "Anonymous"}{item.asker_email ? ` · ${item.asker_email}` : ""}
-                      </p>
-                    )}
-                    <CustomerLink userId={item.user_id} onOpenCustomer={onOpenCustomer} label="View asker profile" />
-                    <textarea
-                      className="crm-input mt-2 min-h-[70px] w-full"
-                      value={answerDraft[item.id] || ""}
-                      onChange={(e) => setAnswerDraft((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                      placeholder="Optional answer shown on product page"
-                    />
-                    <div className="mt-2 flex items-center gap-2">
-                      <button className="crm-btn-primary flex items-center gap-1.5" onClick={() => moderateQa(item.id, true)}>
-                        <FiCheck /> Approve
-                      </button>
-                      <button className="crm-btn-secondary flex items-center gap-1.5" onClick={() => moderateQa(item.id, false)}>
-                        <FiX /> Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <h3 className="mb-2 flex items-center gap-2 text-lg font-bold text-crm-text-bright">
+              <FiMessageCircle /> Product Q&A
+            </h3>
+            <p className="text-sm text-crm-text-dim">
+              {qaPendingCount} question{qaPendingCount === 1 ? "" : "s"} awaiting approval.
+            </p>
+            <p className="mt-2 text-sm text-crm-text">
+              Full Q&A inbox is under Customers → Q&A
+              {onOpenQa && (
+                <>
+                  {" · "}
+                  <button type="button" className="text-crm-primary hover:underline font-semibold" onClick={onOpenQa}>
+                    Open Q&A inbox
+                  </button>
+                </>
+              )}
+            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

@@ -1,0 +1,38 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section info-page">
+  <nav class="info-policy-nav" aria-label="Policies">
+    <% policyOrder.forEach(function(key) {
+      var p = policies[key];
+      if (!p) return;
+      var href = basePath + '/' + locale + '/policies/' + key;
+      var active = (slug === key || slug === key + '-policy' || (key === 'terms' && slug === 'terms-and-conditions') || (key === 'privacy' && slug === 'privacy-policy') || (key === 'returns' && slug === 'return-policy'));
+    %>
+    <a class="<%= active ? 'active' : '' %>" href="<%= href %>"><%= p.title %></a>
+    <% }) %>
+  </nav>
+
+  <article class="info-article">
+    <h1><%= doc.title %></h1>
+    <% if (doc.lastUpdated) { %>
+    <p class="info-meta"><%= t('lastUpdated') %>: <%= doc.lastUpdated %></p>
+    <% } %>
+    <% if (doc.intro) { %><p class="info-intro"><%= doc.intro %></p><% } %>
+
+    <% (doc.sections || []).forEach(function(sec) { %>
+    <section class="info-section">
+      <h2><%= sec.heading %></h2>
+      <% if (sec.body) { %><p><%= sec.body %></p><% } %>
+      <% if (sec.highlight) { %><p class="info-highlight"><%= sec.highlight %></p><% } %>
+      <% if (sec.bullets && sec.bullets.length) { %>
+      <ul>
+        <% sec.bullets.forEach(function(b) { %><li><%= b %></li><% }) %>
+      </ul>
+      <% } %>
+    </section>
+    <% }) %>
+  </article>
+</section>
+
+<%- include('partials/footer') %>

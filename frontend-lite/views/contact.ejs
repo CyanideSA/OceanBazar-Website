@@ -1,0 +1,95 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var registeredAddress = (settings && (settings.registeredAddress || settings.contactAddress)) || '';
+  var legalName = (settings && settings.legalName) || 'Ocean Bazar';
+  var tradeLicenseNo = (settings && settings.tradeLicenseNo) || 'TRAD/NCC/0002285/2026';
+  var tinNumber = (settings && settings.tinNumber) || '790019137950';
+  var companyVision = (settings && settings.companyVision) || '';
+  var leadershipIntro = (settings && settings.leadershipIntro) || '';
+  var leadershipTeam = (settings && Array.isArray(settings.leadershipTeam)) ? settings.leadershipTeam : [];
+%>
+
+<section class="section info-page">
+  <% if (companyVision) { %>
+  <section class="info-block vision-block">
+    <p class="info-eyebrow"><%= copy.visionEyebrow || 'Our vision' %></p>
+    <h1><%= copy.visionTitle || 'Building Ocean Bazar' %></h1>
+    <p class="info-intro" style="white-space:pre-line;"><%= companyVision %></p>
+    <p><strong><%= legalName %></strong></p>
+  </section>
+  <% } %>
+
+  <% if (leadershipTeam.length) { %>
+  <section class="info-block">
+    <p class="info-eyebrow"><%= copy.leadershipEyebrow || 'Leadership' %></p>
+    <h2><%= copy.leadershipTitle || 'Our leadership team' %></h2>
+    <% if (leadershipIntro) { %><p class="info-intro"><%= leadershipIntro %></p><% } %>
+    <div class="info-card-grid leadership-grid">
+      <% leadershipTeam.forEach(function(member) { %>
+      <div class="info-card">
+        <strong><%= member.name %></strong>
+        <% if (member.title) { %><span class="leadership-title"><%= member.title %></span><% } %>
+        <% if (member.bio) { %><p style="margin-top:8px;"><%= member.bio %></p><% } %>
+        <% if (member.email) { %><p style="margin-top:8px;"><a href="mailto:<%= member.email %>"><%= member.email %></a></p><% } %>
+        <% if (member.phone) { %><p><a href="tel:<%= String(member.phone).replace(/\s/g, '') %>"><%= member.phone %></a></p><% } %>
+      </div>
+      <% }); %>
+    </div>
+  </section>
+  <% } %>
+
+  <p class="info-eyebrow"><%= copy.eyebrow %></p>
+  <h2><%= copy.title %></h2>
+  <p class="info-intro"><%= copy.intro %></p>
+
+  <section class="info-block">
+    <h2><%= copy.aboutTitle %></h2>
+    <p><strong><%= legalName %></strong></p>
+    <p><%= copy.aboutBody %></p>
+    <p><%= copy.aboutBody2 %></p>
+    <div class="info-card" style="margin-top:12px;">
+      <% if (registeredAddress) { %><p><strong><%= copy.addressLabel || 'Registered address' %>:</strong> <%= registeredAddress %></p><% } %>
+      <p><strong>Trade License:</strong> <%= tradeLicenseNo %></p>
+      <p><strong>TIN:</strong> <%= tinNumber %></p>
+    </div>
+  </section>
+
+  <section class="info-block">
+    <h2><%= copy.reachTitle %></h2>
+    <div class="info-card-grid">
+      <% if (settings && settings.supportEmail) { %>
+      <div class="info-card">
+        <strong><%= copy.contactEmailLabel %></strong>
+        <span><a href="mailto:<%= settings.supportEmail %>"><%= settings.supportEmail %></a></span>
+      </div>
+      <% } %>
+      <% if (settings && settings.supportPhone) { %>
+      <div class="info-card">
+        <strong><%= copy.phoneLabel %></strong>
+        <span><a href="tel:<%= settings.supportPhone %>"><%= settings.supportPhone %></a></span>
+      </div>
+      <% } %>
+      <% if (settings && (settings.businessInquiryEmail || settings.businessEmail)) { %>
+      <div class="info-card">
+        <strong><%= copy.businessEmailLabel %></strong>
+        <span><a href="mailto:<%= settings.businessInquiryEmail || settings.businessEmail %>"><%= settings.businessInquiryEmail || settings.businessEmail %></a></span>
+      </div>
+      <% } %>
+      <% if (registeredAddress) { %>
+      <div class="info-card">
+        <strong><%= copy.addressLabel || 'Address' %></strong>
+        <span><%= registeredAddress %></span>
+      </div>
+      <% } %>
+    </div>
+    <div class="info-cta-row">
+      <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/chat"><%= copy.chatCta || t('liveChat') %></a>
+      <a class="btn btn-outline" href="<%= basePath %>/<%= locale %>/business-inquiries"><%= copy.businessCta || t('businessInquiries') %></a>
+      <a class="btn btn-outline" href="<%= basePath %>/<%= locale %>/support"><%= copy.supportCta || t('supportCenter') %></a>
+    </div>
+  </section>
+</section>
+
+<%- include('partials/footer') %>

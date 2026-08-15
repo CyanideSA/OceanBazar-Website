@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
-import { getBalance, getUserTierInfo, redeemPoints, getLedger } from '../services/obPointsService';
+import { getUserTierInfo, getLedger } from '../services/obPointsService';
 import {
   TIER_THRESHOLDS,
   POINTS_EXPIRY_DAYS,
@@ -52,17 +52,34 @@ router.get('/ledger', async (req: Request, res: Response) => {
   res.json(data);
 });
 
-// POST /api/ob-points/redeem
+// POST /api/ob-points/redeem — disabled; redeem only via checkout (order place).
 router.post('/redeem', async (req: Request, res: Response) => {
-  const { points } = req.body as { points: number };
-  if (!points) { res.status(400).json({ error: 'points required' }); return; }
-  try {
-    const result = await redeemPoints(req.user!.userId, Number(points));
-    res.json(result);
-  } catch (e: unknown) {
-    const err = e as Error & { status?: number };
-    res.status(err.status || 500).json({ error: err.message });
+  // #region agent log
+  {
+    const payload = {
+      sessionId: '1eb282',
+      runId: 'avatar-ob',
+      hypothesisId: 'H-OB-REDEEM-GATE',
+      location: 'ob-points.ts:POST/redeem',
+      message: 'standalone redeem blocked',
+      data: { points: Number((req.body as { points?: number })?.points) || 0 },
+      timestamp: Date.now(),
+    };
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1eb282' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+    try {
+      const fs = require('fs') as typeof import('fs');
+      fs.appendFileSync('/tmp/ob-debug-1eb282.ndjson', `${JSON.stringify(payload)}\n`);
+    } catch { /* ignore */ }
   }
+  // #endregion
+  res.status(400).json({
+    error: 'OB Points can only be redeemed at checkout.',
+    code: 'REDEEM_CHECKOUT_ONLY',
+  });
 });
 
 export default router;

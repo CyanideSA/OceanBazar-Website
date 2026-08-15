@@ -106,7 +106,7 @@ export default function ExplorerContextMenu({ x, y, target, onClose, onAction })
         <>
           <CtxItem
             icon={<IconEdit size={13} />}
-            label="Open / Edit"
+            label="Edit Product"
             shortcut="Enter"
             onClick={() => act("open")}
           />

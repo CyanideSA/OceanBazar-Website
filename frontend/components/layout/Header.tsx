@@ -6,7 +6,6 @@ import { Bell, Menu, X, User, ChevronRight, LayoutGrid, TrendingUp, Package, Sta
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificationsStore } from '@/stores/notificationsStore';
 import { useUIStore } from '@/stores/uiStore';
-import { firebaseSignOut } from '@/lib/firebase';
 import LanguageSelect from '@/components/shared/LanguageSelect';
 import ThemeToggle from '@/components/theme/ThemeToggle';
 import SearchAutocomplete from '@/components/search/SearchAutocomplete';
@@ -16,10 +15,58 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useShopRouter } from '@/lib/shopNavigation';
 import { cn } from '@/lib/utils';
+import { getMediaUrl } from '@/lib/mediaUrl';
 import FlashSaleBanner from '@/components/flash-sale/FlashSaleBanner';
 import LiveChatLink from '@/components/chat/LiveChatLink';
+import type { FlashSaleMeta } from '@/lib/flashDeals';
 
-export default function Header() {
+function ProfileAvatar({
+  src,
+  name,
+  size = 'sm',
+}: {
+  src?: string | null;
+  name?: string | null;
+  size?: 'sm' | 'md';
+}) {
+  const url = src ? getMediaUrl(src) : '';
+  const dim = size === 'md' ? 'h-8 w-8' : 'h-6 w-6';
+  const icon = size === 'md' ? 'h-4 w-4' : 'h-3.5 w-3.5';
+  if (url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={url}
+        alt=""
+        width={size === 'md' ? 32 : 24}
+        height={size === 'md' ? 32 : 24}
+        className={cn(dim, 'rounded-full object-cover')}
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+  const initial = (name || '').trim().charAt(0).toUpperCase();
+  if (initial) {
+    return (
+      <span
+        className={cn(
+          dim,
+          'inline-flex items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary',
+        )}
+        aria-hidden
+      >
+        {initial}
+      </span>
+    );
+  }
+  return (
+    <span className={cn(dim, 'inline-flex items-center justify-center rounded-full bg-primary/10 text-primary')}>
+      <User className={icon} />
+    </span>
+  );
+}
+
+export default function Header({ initialFlashSale }: { initialFlashSale?: FlashSaleMeta | null }) {
   const t = useTranslations('nav');
   const tp = useTranslations('product');
   const locale = useLocale();
@@ -31,6 +78,26 @@ export default function Header() {
   const [megaOpen, setMegaOpen] = useState(false);
   const [megaMobile, setMegaMobile] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const avatarUrl = user?.profileImage || null;
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1eb282' },
+      body: JSON.stringify({
+        sessionId: '1eb282',
+        runId: 'avatar-ob',
+        hypothesisId: 'H-AVATAR-HEADER',
+        location: 'Header.tsx',
+        message: 'live header avatar state',
+        data: { hasAvatar: Boolean(avatarUrl), nameLen: (user?.name || '').length },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [isAuthenticated, avatarUrl, user?.name]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -55,7 +122,7 @@ export default function Header() {
   return (
     <>
       <div className="sticky top-0 z-50 w-full">
-        <FlashSaleBanner />
+        <FlashSaleBanner initialSale={initialFlashSale} />
         <header className={cn(
           'w-full border-b border-border/60 glass transition-shadow duration-300',
           scrolled ? 'shadow-md' : 'shadow-soft',
@@ -90,10 +157,10 @@ export default function Header() {
             {isAuthenticated ? (
               <Link
                 href={`/${locale}/account`}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-foreground"
+                className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg text-foreground"
                 aria-label="Account"
               >
-                <User className="h-5 w-5" />
+                <ProfileAvatar src={avatarUrl} name={user?.name} size="md" />
               </Link>
             ) : (
               <button
@@ -124,7 +191,7 @@ export default function Header() {
         </div>
 
         {/* ── Desktop Header ── */}
-        <div className="hidden w-full px-4 sm:px-6 lg:px-8 md:block">
+        <div className="hidden w-full px-4 sm:px-6 lg:px-[0.5in] md:block">
           {/* Row 1: Logo | Categories | Search | Right cluster */}
           <div className="flex w-full items-center gap-3 pt-3 pb-1">
             <Link href={`/${locale}`} className="header-logo-link flex shrink-0 items-center overflow-visible">
@@ -173,9 +240,7 @@ export default function Header() {
                     'transition-all hover:border-primary/30 hover:bg-accent',
                   )}
                 >
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <User className="h-3.5 w-3.5" />
-                  </div>
+                  <ProfileAvatar src={avatarUrl} name={user?.name} size="sm" />
                   <span className="hidden max-w-[7rem] truncate text-sm font-medium lg:inline">
                     {user?.name?.split(' ')[0]}
                   </span>
@@ -231,7 +296,8 @@ export default function Header() {
       {/* ── Mobile drawer overlay ── */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-[60] md:hidden"
+          style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
           aria-hidden
           onClick={closeAll}
         />
@@ -334,7 +400,9 @@ export default function Header() {
                   onClick={closeAll}
                   className="flex min-h-[48px] items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent active:scale-[0.98]"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-base">👤</span>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                    <ProfileAvatar src={avatarUrl} name={user?.name} size="md" />
+                  </span>
                   <span className="flex-1">{user?.name?.split(' ')[0] ?? t('account')}</span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
                 </Link>
@@ -360,7 +428,17 @@ export default function Header() {
                 </Link>
                 <button
                   type="button"
-                  onClick={async () => { await firebaseSignOut().catch(() => {}); logout(); closeAll(); router.push(`/${locale}`); }}
+                  onClick={async () => {
+                    try {
+                      const { firebaseSignOut } = await import('@/lib/firebase');
+                      await firebaseSignOut().catch(() => {});
+                    } catch {
+                      /* firebase optional on old clients */
+                    }
+                    logout();
+                    closeAll();
+                    router.push(`/${locale}`);
+                  }}
                   className="flex min-h-[48px] w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 active:scale-[0.98]"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10">

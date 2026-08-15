@@ -113,16 +113,18 @@
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 
+  /* Opaque sticky chrome — backdrop-filter blanks old iOS Safari when fixed overlays (cart) open. */
   .glass {
-    @apply bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60;
+    @apply bg-background;
   }
 
+  /* Solid chat surfaces — backdrop-blur paints blank on old iOS Safari (iPhone 7 / iOS 12–15). */
   .chat-surface {
-    @apply rounded-2xl border border-border/60 bg-background/85 shadow-lg backdrop-blur-xl;
+    @apply rounded-2xl border border-border/60 bg-card shadow-lg;
   }
 
   .chat-bubble-bot {
-    @apply rounded-2xl rounded-bl-sm glass px-3.5 py-2.5 text-sm shadow-sm;
+    @apply rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm text-foreground shadow-sm;
   }
 
   .chat-bubble-user {
@@ -134,7 +136,8 @@
   }
 
   .container-tight {
-    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+    /* Near-full width: no 1280px cap; 0.5in empty gutter each side on desktop */
+    @apply mx-auto w-full px-4 sm:px-6 lg:px-[0.5in];
   }
 
   /* Ensure minimum 44×44px touch targets on mobile */
@@ -166,9 +169,35 @@ html, body {
   max-width: 100vw;
 }
 
-/* Smooth momentum scrolling on iOS */
-* {
+/* Momentum scroll only on real scroll containers — NEVER on `*` (blanks old iOS Safari). */
+.overflow-y-auto,
+.overflow-auto,
+.overflow-x-auto {
   -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Touch WebKit safety net:
+ * - backdrop-filter + fixed overlays blank the compositor (white screen until reload)
+ * - opacity/transform page animations can stick invisible after cart opens
+ */
+@media (hover: none) and (pointer: coarse) {
+  *,
+  *::before,
+  *::after {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  main {
+    animation: none !important;
+  }
+
+  .animate-slide-in-right,
+  .animate-slide-up,
+  .animate-bounce-once {
+    animation: none !important;
+  }
 }
 
 /* ── Mobile typography fluid scale ── */
@@ -207,9 +236,32 @@ html, body {
   will-change: transform;
 }
 
-/* ── Slide-in-right animation (CartDrawer) ── */
+/* ── Slide-in-right animation (CartDrawer) — no opacity:0 (old iOS can stick invisible) ── */
 .animate-slide-in-right {
-  animation: slideInRight 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  animation: slideInRight 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Cart drawer: slide from cart-button edge (right) — transform only, no opacity:0 */
+.ob-cart-backdrop {
+  background-color: rgba(0, 0, 0, 0);
+  transition: background-color 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.ob-cart-backdrop.is-open {
+  background-color: rgba(0, 0, 0, 0.45);
+}
+.ob-cart-panel {
+  transform: translate3d(100%, 0, 0);
+  transition: transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: transform;
+}
+.ob-cart-panel.is-open {
+  transform: translate3d(0, 0, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-cart-backdrop,
+  .ob-cart-panel {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ── Slide-up animation (mobile sheet) ── */
@@ -234,8 +286,8 @@ html, body {
 }
 
 @keyframes slideInRight {
-  from { opacity: 0; transform: translateX(100%); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
 }
 
 @keyframes slideInUp {
@@ -393,11 +445,64 @@ html, body {
   }
 }
 
-/* ── Hide reCAPTCHA Enterprise badge (invisible v3) ────────────── */
-/* We use programmatic reCAPTCHA; the badge is hidden per Google's  */
-/* Terms: https://developers.google.com/recaptcha/docs/faq         */
+/* ── reCAPTCHA Enterprise badge ─────────────────────────────────── */
+/* Hidden on most pages; shown fully on register / password-reset /  */
+/* account password settings via html.ob-recaptcha-badge.            */
+/* Google defaults to right:-186px (collapsed); force fully on-screen*/
+/* https://developers.google.com/recaptcha/docs/faq                  */
 .grecaptcha-badge {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
+}
+html.ob-recaptcha-badge .grecaptcha-badge {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 2147483646 !important;
+  position: fixed !important;
+  bottom: 14px !important;
+  right: 14px !important;
+  left: auto !important;
+  transform: none !important;
+  width: 256px !important;
+  height: 60px !important;
+  overflow: visible !important;
+}
+
+/* Hero slide entrance animations (admin-selectable) */
+.ob-hero-anim-fade { animation: fadeIn 0.55s ease; }
+.ob-hero-anim-fade-up,
+.ob-hero-anim-slide-up { animation: slideInUp 0.55s ease; }
+.ob-hero-anim-fade-down,
+.ob-hero-anim-slide-down { animation: slideInDown 0.55s ease; }
+.ob-hero-anim-fade-left,
+.ob-hero-anim-slide-left { animation: slideInLeft 0.55s ease; }
+.ob-hero-anim-fade-right,
+.ob-hero-anim-slide-right { animation: slideInRight 0.55s ease; }
+.ob-hero-anim-zoom-in,
+.ob-hero-anim-zoom-out,
+.ob-hero-anim-scale-spring { animation: scaleIn 0.55s ease; }
+.ob-hero-anim-bounce { animation: bounceOnce 0.65s ease; }
+.ob-hero-anim-blur-in { animation: fadeIn 0.65s ease; }
+.ob-hero-anim-rotate-in,
+.ob-hero-anim-flip { animation: scaleIn 0.5s ease; }
+.ob-hero-anim-ken-burns .ob-hero-img {
+  animation: obHeroKenBurns 10s ease-in-out infinite alternate;
+}
+@keyframes obHeroKenBurns {
+  from { transform: scale(1); }
+  to { transform: scale(1.06); }
+}
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
 }

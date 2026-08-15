@@ -1,0 +1,86 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <div class="section-head">
+    <h1><%= t('search') %><% if (searchQuery) { %>: “<%= searchQuery %>”<% } %></h1>
+    <% if (products.length && pagination && pagination.total) { %>
+    <p class="muted small"><%= pagination.total %> <%= t('products') %></p>
+    <% } %>
+  </div>
+
+  <% if (!searchQuery) { %>
+  <form class="filters search-refine" method="get" action="<%= basePath %>/<%= locale %>/search" role="search">
+    <label class="search-refine-field">
+      <%= t('search') %>
+      <input type="search" name="q" placeholder="<%= t('searchPlaceholder') %>" value="" autocomplete="off" />
+    </label>
+    <button type="submit" class="btn btn-sm"><%= t('search') %></button>
+  </form>
+  <% } %>
+
+  <% if (typeof trending !== 'undefined' && trending && trending.length) { %>
+  <div class="search-discover">
+    <p class="search-discover-label"><%= t('trendingSearches') %></p>
+    <div class="chip-row">
+      <% trending.forEach(function(term) { %>
+      <a class="chip-text<%= searchQuery && String(searchQuery).toLowerCase() === String(term).toLowerCase() ? ' active' : '' %>" href="<%= basePath %>/<%= locale %>/search?q=<%= encodeURIComponent(term) %>"><%= term %></a>
+      <% }) %>
+    </div>
+  </div>
+  <% } %>
+
+  <div class="search-discover" data-recent-searches hidden>
+    <div class="search-discover-head">
+      <p class="search-discover-label"><%= t('recentSearches') %></p>
+      <button type="button" class="link-muted" data-clear-recent><%= t('clearRecent') %></button>
+    </div>
+    <div class="chip-row" data-recent-list></div>
+  </div>
+
+  <% if (typeof categories !== 'undefined' && categories && categories.length) { %>
+  <div class="chips" style="margin-bottom:14px">
+    <% categories.slice(0, 12).forEach(function(cat) {
+      var cid = cat.id || cat.slug;
+      var chipHref = basePath + '/' + locale + '/search?' +
+        (searchQuery ? ('q=' + encodeURIComponent(searchQuery) + '&') : '') +
+        'category=' + encodeURIComponent(cid) +
+        (sort && sort !== 'newest' ? ('&sort=' + encodeURIComponent(sort)) : '');
+    %>
+      <%- include('partials/category-chip', { cat: cat, categoryId: typeof categoryId !== 'undefined' ? categoryId : '', chipHref: chipHref }) %>
+    <% }) %>
+  </div>
+  <% } %>
+
+  <form class="filters" method="get" action="<%= basePath %>/<%= locale %>/search">
+    <% if (searchQuery) { %><input type="hidden" name="q" value="<%= searchQuery %>" /><% } %>
+    <% if (categoryId) { %><input type="hidden" name="category" value="<%= categoryId %>" /><% } %>
+    <label>
+      <%= t('sort') %>
+      <select name="sort" onchange="this.form.submit()">
+        <option value="newest" <%= sort === 'newest' ? 'selected' : '' %>><%= t('sortNewest') %></option>
+        <option value="price_asc" <%= sort === 'price_asc' ? 'selected' : '' %>><%= t('sortPriceAsc') %></option>
+        <option value="price_desc" <%= sort === 'price_desc' ? 'selected' : '' %>><%= t('sortPriceDesc') %></option>
+      </select>
+    </label>
+    <% if (categoryId) { %>
+    <a class="chip-text" href="<%= basePath %>/<%= locale %>/search<%= searchQuery ? ('?q=' + encodeURIComponent(searchQuery)) : '' %>"><%= t('clearFilters') %></a>
+    <% } %>
+  </form>
+
+  <% if (!products.length) { %>
+  <div class="empty-state">
+    <p class="empty"><%= searchQuery ? t('noSearchResults') : t('searchHint') %></p>
+    <a class="btn" href="<%= basePath %>/<%= locale %>/products"><%= t('browseAllProducts') %></a>
+  </div>
+  <% } else { %>
+  <div class="grid">
+    <% products.forEach(function(product) { %>
+      <%- include('partials/product-card', { product: product }) %>
+    <% }) %>
+  </div>
+  <%- include('partials/pagination') %>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import {
@@ -15,7 +15,9 @@ import { cn } from '@/lib/utils';
 import Logo from '@/components/shared/Logo';
 import type { User } from '@/types';
 import { normalizePhoneTarget } from '@/lib/phoneNormalize';
-import { signInWithFacebook, signInWithGoogle } from '@/lib/firebase';
+import { beginGooglePopup, finishGooglePopup } from '@/lib/firebase';
+import { loadRecaptchaScript, executeRecaptcha } from '@/lib/recaptcha';
+import { isLegacyStorefrontDevice } from '@/lib/legacyDevice';
 
 type Step = 'method' | 'otp';
 type Method = 'email' | 'phone' | 'password';
@@ -26,9 +28,15 @@ export default function LoginDialog() {
   const t = useTranslations('auth');
   const tc = useTranslations('common');
   const params = useParams();
+  const pathname = usePathname();
   const locale = (params.locale as string) || 'en';
   const { setUser } = useAuthStore();
   const { loginDialogOpen, setLoginDialogOpen } = useUIStore();
+  const registerNext = encodeURIComponent(pathname || `/${locale}/checkout`);
+  // Skip opacity:0 enter animations on low-end Safari — content must never blank.
+  const noMotion = isLegacyStorefrontDevice();
+  const enter = noMotion ? false : undefined;
+  const instant = noMotion ? { duration: 0 } : undefined;
 
   const [method, setMethod] = useState<Method>('email');
   const [step, setStep] = useState<Step>('method');
@@ -49,6 +57,7 @@ export default function LoginDialog() {
       setPassword('');
       setError('');
       setSocialLoading(null);
+      void loadRecaptchaScript().catch(() => {});
     }
   }, [loginDialogOpen]);
 
@@ -63,13 +72,26 @@ export default function LoginDialog() {
   }, [loginDialogOpen]);
 
   function extractError(e: unknown) {
-    const err = e as { response?: { data?: { error?: { message?: string }; message?: string; detail?: string } }; message?: string };
-    return err.response?.data?.error?.message
-      ?? err.response?.data?.detail
-      ?? err.response?.data?.message
-      ?? (err.response?.data as { error?: string })?.error
+    const err = e as {
+      response?: {
+        data?: {
+          error?: { message?: string } | string;
+          message?: string;
+          detail?: string;
+          reason?: string;
+        };
+      };
+      message?: string;
+    };
+    const data = err.response?.data;
+    const base =
+      (typeof data?.error === 'object' ? data.error?.message : data?.error)
+      ?? data?.detail
+      ?? data?.message
       ?? err.message
       ?? tc('error');
+    if (data?.reason) return `${base} (${data.reason}${data.detail ? `: ${data.detail}` : ''})`;
+    return base;
   }
 
   function onSuccess(data: { user: User; token?: string; access?: string }) {
@@ -84,6 +106,7 @@ export default function LoginDialog() {
   }
 
   async function handleSendOtp() {
+    if (method === 'phone') return;
     setLoading(true); setError('');
     try {
       await authApi.sendOtp(resolveTarget(target), 'login');
@@ -104,7 +127,12 @@ export default function LoginDialog() {
   async function handlePasswordLogin() {
     setLoading(true); setError('');
     try {
-      const { data } = await authApi.login(resolveTarget(target), password);
+      const recaptchaToken = await executeRecaptcha('login');
+      if (!recaptchaToken) {
+        setError('Security check failed to load. Disable blockers for Google reCAPTCHA and try again.');
+        return;
+      }
+      const { data } = await authApi.login(resolveTarget(target), password, recaptchaToken);
       if (data.requiresEmailOtp) {
         setTarget(data.verificationTarget);
         setMethod('email');
@@ -118,15 +146,38 @@ export default function LoginDialog() {
   }
 
   async function handleSocialLogin(provider: 'google' | 'facebook') {
+    if (provider === 'facebook') return;
+    // Open popup in the same user-gesture tick (before setState/await).
+    let popupPromise: ReturnType<typeof beginGooglePopup>;
+    try {
+      popupPromise = beginGooglePopup();
+    } catch (e: unknown) {
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'pre-fix',hypothesisId:'H3',location:'LoginDialog.tsx:beginGooglePopup',message:'google popup sync start failed',data:{err:String((e as Error)?.message||e)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      setError(extractError(e));
+      return;
+    }
     setSocialLoading(provider);
     setError('');
     try {
-      const idToken = provider === 'google' ? await signInWithGoogle() : await signInWithFacebook();
+      const idToken = await finishGooglePopup(popupPromise);
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'pre-fix',hypothesisId:'H3',location:'LoginDialog.tsx:finishGooglePopup',message:'google popup finished ok',data:{hasToken:!!idToken},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       const { data } = await authApi.firebaseLogin(idToken);
       onSuccess(data);
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'pre-fix',hypothesisId:'H3',location:'LoginDialog.tsx:googleCatch',message:'google popup/login error',data:{code:code||null,err:String((e as Error)?.message||e).slice(0,160)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setSocialLoading(null);
+        return;
+      }
+      if (code === 'auth/popup-blocked') {
+        setError('Popup blocked. Allow popups for oceanbazar.com.bd and try again.');
         setSocialLoading(null);
         return;
       }
@@ -143,18 +194,20 @@ export default function LoginDialog() {
       {loginDialogOpen && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={enter ?? { opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/50 backdrop-blur-md"
+            exit={noMotion ? undefined : { opacity: 0 }}
+            transition={instant}
+            className="absolute inset-0"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
             onClick={() => setLoginDialogOpen(false)}
           />
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.92, y: 20 }}
+            initial={enter ?? { opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.92, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+            exit={noMotion ? undefined : { opacity: 0, scale: 0.92, y: 20 }}
+            transition={noMotion ? instant : { type: 'spring', damping: 25, stiffness: 350 }}
             className="relative z-10 w-full max-w-[420px] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -168,9 +221,9 @@ export default function LoginDialog() {
 
             <div className="relative overflow-hidden border-b border-border bg-card px-6 pb-5 pt-7 text-center">
               <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
+                initial={enter ?? { scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.1 }}
+                transition={noMotion ? instant : { delay: 0.1 }}
                 className="relative flex flex-col items-center gap-2"
               >
                 <Logo width={156} height={72} interaction="brand" />
@@ -182,9 +235,10 @@ export default function LoginDialog() {
               <AnimatePresence mode="wait">
                 {error && (
                   <motion.div
-                    initial={{ opacity: 0, height: 0 }}
+                    initial={enter ?? { opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
+                    exit={noMotion ? undefined : { opacity: 0, height: 0 }}
+                    transition={instant}
                     className="mb-4 overflow-hidden rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
                   >
                     {error}
@@ -194,27 +248,45 @@ export default function LoginDialog() {
 
               {step === 'method' && (
                 <motion.div
-                  initial={{ opacity: 0, x: -10 }}
+                  initial={enter ?? { opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
+                  transition={instant}
                   className="space-y-4"
                 >
                   <div className="flex overflow-hidden rounded-xl border border-border">
                     {(['email', 'phone', 'password'] as Method[]).map((m) => {
                       const Icon = METHOD_ICONS[m];
+                      const phoneSoon = m === 'phone';
                       return (
                         <button
                           key={m}
                           type="button"
-                          onClick={() => setMethod(m)}
+                          onClick={() => {
+                            if (!phoneSoon) setMethod(m);
+                          }}
+                          disabled={phoneSoon}
+                          aria-disabled={phoneSoon}
+                          title={phoneSoon ? t('phoneComingSoon') : undefined}
                           className={cn(
                             'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-all',
-                            method === m
-                              ? 'bg-primary text-primary-foreground shadow-sm'
-                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                            phoneSoon
+                              ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-70'
+                              : method === m
+                                ? 'bg-primary text-primary-foreground shadow-sm'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                           )}
                         >
                           <Icon className="h-3.5 w-3.5" />
-                          {m === 'email' ? t('email').split(' ')[0] : m === 'phone' ? t('phone').split(' ')[0] : t('password')}
+                          {m === 'email'
+                            ? t('email').split(' ')[0]
+                            : m === 'phone'
+                              ? (
+                                <span className="flex flex-col items-center leading-none gap-0.5">
+                                  <span>{t('phone').split(' ')[0]}</span>
+                                  <span className="text-[9px] font-medium opacity-80">{t('comingSoon')}</span>
+                                </span>
+                              )
+                              : t('password')}
                         </button>
                       );
                     })}
@@ -230,14 +302,27 @@ export default function LoginDialog() {
 
                   {method === 'password' && (
                     <motion.input
-                      initial={{ opacity: 0, y: -5 }}
+                      initial={enter ?? { opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
+                      transition={instant}
                       type="password"
                       placeholder={t('password')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
+                  )}
+
+                  {method === 'password' && (
+                    <div className="flex justify-end -mt-2">
+                      <Link
+                        href={`/${locale}/auth/forgot-password`}
+                        onClick={() => setLoginDialogOpen(false)}
+                        className="text-xs font-semibold text-primary hover:underline"
+                      >
+                        {t('forgotPassword')}
+                      </Link>
+                    </div>
                   )}
 
                   <button
@@ -271,23 +356,20 @@ export default function LoginDialog() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleSocialLogin('facebook')}
-                      disabled={!!socialLoading}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-border py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                      disabled
+                      aria-disabled="true"
+                      title={t('facebookComingSoon')}
+                      className="relative flex cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/30 py-2.5 text-xs font-semibold text-muted-foreground opacity-70"
                     >
-                      {socialLoading === 'facebook' ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                      )}
-                      Facebook
+                      <svg className="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="#1877F2" aria-hidden><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                      <span className="leading-tight">{t('facebookComingSoon')}</span>
                     </button>
                   </div>
 
                   <p className="text-center text-xs text-muted-foreground">
                     {t('dontHaveAccount')}{' '}
                     <Link
-                      href={`/${locale}/auth/register`}
+                      href={`/${locale}/auth/register?next=${registerNext}`}
                       onClick={() => setLoginDialogOpen(false)}
                       className="font-semibold text-primary hover:underline"
                     >
@@ -299,8 +381,9 @@ export default function LoginDialog() {
 
               {step === 'otp' && (
                 <motion.div
-                  initial={{ opacity: 0, x: 10 }}
+                  initial={enter ?? { opacity: 0, x: 10 }}
                   animate={{ opacity: 1, x: 0 }}
+                  transition={instant}
                   className="space-y-4"
                 >
                   <p className="text-center text-sm text-muted-foreground">{t('otpSent')}</p>

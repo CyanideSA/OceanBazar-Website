@@ -1,0 +1,6 @@
+# Auto-generated hard Neon override — use with neon.yml to prevent postgres fallback
+services:
+  api:
+    environment:
+      DATABASE_URL: "postgresql://neondb_owner:npg_0Z1qOPKTzQWa@ep-small-sunset-aom3ownz-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+      DIRECT_URL: "postgresql://neondb_owner:npg_0Z1qOPKTzQWa@ep-small-sunset-aom3ownz.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"

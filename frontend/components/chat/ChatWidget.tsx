@@ -119,10 +119,16 @@ export default function ChatWidget() {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
+    let token = '';
+    try {
+      token = localStorage.getItem('ob_access_token') || '';
+    } catch {
+      token = '';
+    }
     const socket = io(BFF_URL, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
-      auth: { token: localStorage.getItem('ob_access_token') || '' },
+      transports: ['polling', 'websocket'],
+      auth: { token },
     });
     socketRef.current = socket;
 
@@ -260,7 +266,7 @@ export default function ChatWidget() {
     }
   }, [inputText, pendingFiles, sending, session?.id, isAuthenticated, visitorId]);
 
-  const runQuickAction = useCallback(async (action: string) => {
+  const runQuickAction = useCallback(async (action: string, payload?: Record<string, unknown>) => {
     const key = action.toLowerCase().replace(/\s+/g, '_');
     if (key === 'talk_to_human') {
       try {
@@ -270,22 +276,41 @@ export default function ChatWidget() {
       return;
     }
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'pre-fix',hypothesisId:'H9',location:'ChatWidget.tsx:runQuickAction',message:'widget chat action',data:{key,hasPayload:Boolean(payload&&Object.keys(payload).length),productId:payload?.productId?String(payload.productId).slice(0,12):null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       const { data } = await api.post('/chat/action', {
         sessionId: session?.id,
         action: key,
+        payload: payload || {},
         visitorId: isAuthenticated ? undefined : visitorId,
       });
       if (data?.session) setSession(data.session);
       else if (!session) {
         await api.post('/chat/start', { name: user?.name || 'Guest', issue: action, visitorId: isAuthenticated ? undefined : visitorId });
         loadSession();
+      } else {
+        loadSession();
       }
     } catch { /* ignore */ }
-  }, [session?.id, isAuthenticated, visitorId, user?.name, loadSession]);
+  }, [session?.id, isAuthenticated, visitorId, user?.name, loadSession, session]);
 
   const handleQuickReply = useCallback((text: string) => {
-    if (text.toLowerCase().includes('human')) {
+    const lower = text.toLowerCase();
+    if (lower.includes('human')) {
       void runQuickAction('Talk to Human');
+      return;
+    }
+    if (lower.includes('cart') || lower === 'my cart') {
+      void runQuickAction('My Cart');
+      return;
+    }
+    if (lower.includes('checkout') || lower.includes('proceed')) {
+      void runQuickAction('Proceed to checkout');
+      return;
+    }
+    if (lower.includes('browse')) {
+      void runQuickAction('Browse Products');
       return;
     }
     setInputText(text);
@@ -333,13 +358,13 @@ export default function ChatWidget() {
   const onFullPageChat = Boolean(pathname?.includes('/chat'));
   if (!LIVE_CHAT_ENABLED || !isAuthenticated || onFullPageChat) return null;
 
-  // Launcher button
+  // Desktop-only FAB — phones use the bottom-nav Live Chat tab instead.
   const Launcher = (
     <button
       type="button"
       onClick={() => setWidgetState('open')}
       className={cn(
-        'fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-xl ring-4 ring-primary/20 transition-transform hover:scale-105 active:scale-95'
+        'fixed bottom-6 right-6 z-50 hidden h-14 w-14 items-center justify-center rounded-full bg-primary shadow-xl ring-4 ring-primary/20 transition-transform hover:scale-105 active:scale-95 md:flex'
       )}
       aria-label="Open chat"
     >
@@ -356,21 +381,30 @@ export default function ChatWidget() {
 
   return (
     <>
+      {/* Solid tint only — backdrop-blur paints white on old iOS Safari */}
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] sm:hidden',
+          'fixed inset-0 z-40 sm:hidden',
           widgetState !== 'open' ? 'hidden' : ''
         )}
+        style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
         onClick={() => setWidgetState('minimised')}
+        aria-hidden
       />
       <div
         className={cn(
-          'fixed bottom-6 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-border/60 glass shadow-2xl transition-all sm:right-6 sm:w-[420px]',
-          widgetState === 'minimised' ? 'h-14' : 'h-[500px] max-h-[80vh]',
+          'fixed bottom-20 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-border shadow-2xl transition-all sm:bottom-6 sm:right-6 sm:w-[420px]',
+          widgetState === 'minimised' ? 'h-14' : 'h-[min(500px,70vh)] max-h-[70vh]',
         )}
+        style={{
+          backgroundColor: 'hsl(var(--background, 0 0% 100%))',
+          color: 'hsl(var(--foreground, 222 84% 5%))',
+          borderColor: 'hsl(var(--border, 214 32% 91%))',
+        }}
+        data-ob-chat-widget="1"
       >
         {/* Header */}
-        <div className="flex h-14 flex-none items-center justify-between gap-2 border-b border-border/60 bg-primary/95 px-4 backdrop-blur-md">
+        <div className="flex h-14 flex-none items-center justify-between gap-2 border-b border-border/60 bg-primary px-4">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
               <Bot className="h-4 w-4 text-primary-foreground" />
@@ -419,7 +453,7 @@ export default function ChatWidget() {
                       msg={msg}
                       userInitial={user?.name?.[0]?.toUpperCase() ?? 'G'}
                       onQuickReply={handleQuickReply}
-                      onAction={(action, payload) => void runQuickAction(action)}
+                      onAction={(action, payload) => void runQuickAction(action, payload)}
                     />
                   ))}
                   {agentTyping && (

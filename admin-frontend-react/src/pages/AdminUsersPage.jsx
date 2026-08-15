@@ -428,97 +428,219 @@ function PermissionMatrixView() {
   );
 }
 
-function TwoFactorPanel() {
+function Request2faResetModal({ member, onClose, onDone, requestToken }) {
   const toast = useToast();
-  const [status, setStatus] = useState({ enabled: false, loading: true });
-  const [setup, setSetup] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleConfirm() {
+    setSaving(true);
+    try {
+      const reauthToken = await requestToken();
+      await adminApi.requestMember2faReset(member.id, reauthToken);
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'admin-2fa-reset',hypothesisId:'H1',location:'AdminUsersPage.jsx:Request2faResetModal',message:'Request reset submitted',data:{memberId:member.id},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      toast.success("Authenticator reset requested. They must set up a new app on next sign-in.");
+      onDone?.();
+      onClose();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to request authenticator reset");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }} exit={{ opacity:0, scale:0.96 }}
+        className="bg-crm-bg-alt border border-crm-border rounded-2xl w-full max-w-md shadow-2xl p-8 space-y-6"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-crm-warning/20 text-crm-warning"><FiShield size={20}/></div>
+          <div>
+            <h3 className="text-lg font-bold text-crm-text-bright">Request Reset Authenticator</h3>
+            <p className="text-xs text-crm-text-dim">For: {member.name}</p>
+          </div>
+        </div>
+        <p className="text-sm text-crm-text-dim leading-relaxed">
+          You will verify your own authenticator first. Then this member’s current authenticator will be cleared.
+          On their next Microsoft 365 or Emergency Access sign-in they must enroll a new authenticator — without needing the old code.
+          All of their active CRM sessions will be revoked.
+        </p>
+        <div className="flex gap-3">
+          <button type="button" onClick={onClose} className="crm-btn flex-1">Cancel</button>
+          <button type="button" onClick={handleConfirm} disabled={saving}
+            className="crm-btn crm-btn-primary flex-1 flex items-center justify-center gap-2">
+            {saving ? <FiRefreshCw className="animate-spin"/> : <FiShield/>}
+            {saving ? "Requesting…" : "Verify & Request Reset"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function ResetOwnAuthenticatorModal({ onClose, onDone }) {
+  const toast = useToast();
+  const [phase, setPhase] = useState("verify"); // verify | setup
+  const [currentOtp, setCurrentOtp] = useState("");
   const [otp, setOtp] = useState("");
+  const [setup, setSetup] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const loadStatus = useCallback(async () => {
-    try {
-      const r = await adminApi.twoFaStatus();
-      setStatus({ enabled: !!r?.enabled, loading: false });
-    } catch {
-      setStatus({ enabled: false, loading: false });
+  async function startReset(e) {
+    e?.preventDefault?.();
+    if (currentOtp.length !== 6) {
+      toast.error("Enter your current 6-digit authenticator code");
+      return;
     }
-  }, []);
-
-  useEffect(() => { loadStatus(); }, [loadStatus]);
-
-  async function startSetup() {
     setBusy(true);
     try {
-      const r = await adminApi.twoFaSetup();
+      const r = await adminApi.twoFaSetup({ currentOtp });
       setSetup(r);
       setOtp("");
-    } catch {
-      toast.error("Failed to start 2FA setup");
+      setPhase("setup");
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'admin-2fa-reset',hypothesisId:'H2',location:'AdminUsersPage.jsx:ResetOwnAuthenticatorModal',message:'Self reset started after current OTP',data:{ok:true},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Could not start authenticator reset");
     } finally {
       setBusy(false);
     }
   }
 
-  async function enable2fa() {
+  async function enableNew(e) {
+    e?.preventDefault?.();
     if (!setup?.setupToken || otp.length !== 6) return;
     setBusy(true);
     try {
       await adminApi.twoFaEnable({ setupToken: setup.setupToken, otp });
-      toast.success("2FA enabled successfully");
-      setSetup(null);
-      setOtp("");
-      loadStatus();
+      toast.success("Authenticator updated. Use the new app codes from now on.");
+      onDone?.();
+      onClose();
     } catch (err) {
-      toast.error(err?.response?.data?.error || "Failed to enable 2FA");
+      toast.error(err?.response?.data?.error || "Failed to enable new authenticator");
     } finally {
       setBusy(false);
     }
   }
 
   return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }} exit={{ opacity:0, scale:0.96 }}
+        className="bg-crm-bg-alt border border-crm-border rounded-2xl w-full max-w-md shadow-2xl p-8 space-y-5"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-crm-primary/20 text-crm-primary"><FiKey size={20}/></div>
+          <div>
+            <h3 className="text-lg font-bold text-crm-text-bright">Reset Authenticator</h3>
+            <p className="text-xs text-crm-text-dim">
+              {phase === "verify"
+                ? "Verify your current authenticator, then enroll a new one"
+                : "Scan the new QR, then confirm with a new code"}
+            </p>
+          </div>
+        </div>
+
+        {phase === "verify" ? (
+          <form onSubmit={startReset} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-crm-text-dim uppercase">Current authenticator code</label>
+              <input
+                className="crm-input"
+                value={currentOtp}
+                onChange={(e) => setCurrentOtp(e.target.value.replace(/\D+/g, "").slice(0, 6))}
+                placeholder="6-digit code"
+                maxLength={6}
+                inputMode="numeric"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="crm-btn flex-1">Cancel</button>
+              <button type="submit" disabled={busy || currentOtp.length !== 6}
+                className="crm-btn crm-btn-primary flex-1 flex items-center justify-center gap-2">
+                {busy ? <FiRefreshCw className="animate-spin"/> : <FiShield/>}
+                Continue
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={enableNew} className="space-y-4">
+            <TwoFaSetupDisplay secret={setup?.secret} otpauthUrl={setup?.otpauthUrl}>
+              <input
+                className="crm-input"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D+/g, "").slice(0, 6))}
+                placeholder="New 6-digit code"
+                maxLength={6}
+                inputMode="numeric"
+              />
+            </TwoFaSetupDisplay>
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="crm-btn flex-1">Cancel</button>
+              <button type="submit" disabled={busy || otp.length !== 6}
+                className="crm-btn crm-btn-primary flex-1 flex items-center justify-center gap-2">
+                {busy ? <FiRefreshCw className="animate-spin"/> : <FiCheck/>}
+                Enable new authenticator
+              </button>
+            </div>
+          </form>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+function TwoFactorPanel({ onResetClick }) {
+  const [status, setStatus] = useState({ enabled: false, loading: true, mustResetTwoFa: false });
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const r = await adminApi.twoFaStatus();
+      setStatus({
+        enabled: !!r?.enabled,
+        mustResetTwoFa: !!r?.mustResetTwoFa,
+        loading: false,
+      });
+    } catch {
+      setStatus({ enabled: false, mustResetTwoFa: false, loading: false });
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  return (
     <div className="crm-card">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 className="text-sm font-bold text-crm-text-bright">Admin 2FA (TOTP)</h3>
-          <p className="text-xs text-crm-text-dim">Protect your admin account with authenticator-based verification.</p>
+          <h3 className="text-sm font-bold text-crm-text-bright">Your Authenticator</h3>
+          <p className="text-xs text-crm-text-dim">
+            Emergency Access requires authenticator verification. Microsoft 365 sign-in does not.
+            Authenticator cannot be reset from the login screen — use Reset Authenticator here, or ask a Super Admin if you are locked out.
+          </p>
         </div>
         <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${status.enabled ? "border-crm-success/40 text-crm-success" : "border-crm-border text-crm-text-dim"}`}>
           {status.loading ? "Checking..." : status.enabled ? "Enabled" : "Disabled"}
         </span>
       </div>
 
-      {!status.enabled && !setup && (
-        <div className="mt-4">
-          <button onClick={startSetup} disabled={busy} className="crm-btn crm-btn-primary">
-            {busy ? <FiRefreshCw className="animate-spin" /> : <FiShield />} Start 2FA Setup
+      {status.enabled && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={onResetClick} className="crm-btn crm-btn-primary flex items-center gap-2">
+            <FiRefreshCw size={14}/> Reset Authenticator
           </button>
         </div>
       )}
 
-      {setup && (
-        <div className="mt-4 rounded-lg border border-crm-border bg-crm-bg p-3">
-          <TwoFaSetupDisplay secret={setup.secret} otpauthUrl={setup.otpauthUrl}>
-            <input
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D+/g, "").slice(0, 6))}
-              className="crm-input"
-              placeholder="Enter 6-digit code"
-              maxLength={6}
-            />
-            <div className="flex gap-2">
-              <button onClick={enable2fa} disabled={busy || otp.length !== 6} className="crm-btn crm-btn-primary">
-                {busy ? <FiRefreshCw className="animate-spin" /> : <FiCheck />} Enable 2FA
-              </button>
-              <button onClick={() => { setSetup(null); setOtp(""); }} className="crm-btn">Cancel</button>
-            </div>
-          </TwoFaSetupDisplay>
-        </div>
-      )}
-
-      {status.enabled && !setup && (
-        <div className="mt-4 rounded-lg border border-crm-success/30 bg-crm-success/10 p-3">
-          <p className="text-xs text-crm-success font-semibold">
-            2FA is enabled and mandatory for all CRM accounts.
+      {!status.enabled && !status.loading && (
+        <div className="mt-4 rounded-lg border border-crm-warning/30 bg-crm-warning/10 p-3">
+          <p className="text-xs text-crm-warning font-semibold">
+            Authenticator is not enabled on this account. Sign out and complete setup on next login
+            {status.mustResetTwoFa ? " (reset was requested by a Super Admin)." : "."}
           </p>
         </div>
       )}
@@ -534,6 +656,7 @@ export default function AdminUsersPage({ liveTick = 0 }) {
 
   const canEdit   = hasPermission(myRole, "adminUsers", "edit");
   const canDelete = hasPermission(myRole, "adminUsers", "delete");
+  const isSuperAdmin = myRole === "SUPER_ADMIN";
 
   const [viewTab,       setViewTab]       = useState("members");
   const [items,         setItems]         = useState([]);
@@ -546,6 +669,8 @@ export default function AdminUsersPage({ liveTick = 0 }) {
   const [editTarget,    setEditTarget]    = useState(null);
   const [resetTarget,   setResetTarget]   = useState(null);
   const [deactivTarget, setDeactivTarget] = useState(null);
+  const [request2faTarget, setRequest2faTarget] = useState(null);
+  const [resetOwnOpen,  setResetOwnOpen]  = useState(false);
 
   const fetchMembers = useCallback(async () => {
     setLoading(true);
@@ -589,7 +714,7 @@ export default function AdminUsersPage({ liveTick = 0 }) {
         </div>
       </div>
 
-      <TwoFactorPanel />
+      <TwoFactorPanel onResetClick={() => setResetOwnOpen(true)} />
 
       {/* ── View tabs ── */}
       <div className="crm-card p-0 overflow-hidden border-b-0 rounded-b-none flex flex-wrap">
@@ -639,8 +764,12 @@ export default function AdminUsersPage({ liveTick = 0 }) {
                 onClick={() => openDetail(m.id)}>
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-3">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-lg border ${ROLE_MAP[m.role?.toUpperCase()]?.class || ROLE_MAP.STAFF.class}`}>
-                      {m.name?.charAt(0)?.toUpperCase()}
+                    <div className={`w-11 h-11 rounded-xl overflow-hidden flex items-center justify-center font-bold text-lg border ${ROLE_MAP[m.role?.toUpperCase()]?.class || ROLE_MAP.STAFF.class}`}>
+                      {m.profileImage ? (
+                        <img src={m.profileImage} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        m.name?.charAt(0)?.toUpperCase()
+                      )}
                     </div>
                     <div>
                       <h4 className="font-bold text-crm-text-bright group-hover:text-crm-primary transition-colors text-sm">{m.name}</h4>
@@ -658,25 +787,42 @@ export default function AdminUsersPage({ liveTick = 0 }) {
                       {ROLE_MAP[m.role?.toUpperCase()]?.label || "Staff"}
                     </span>
                     {!m.active && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border border-crm-danger/40 text-crm-danger">Inactive</span>}
-                  </div>
-                </div>
-                {canEdit && (
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity pt-1"
-                    onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setEditTarget(m)} className="crm-btn text-xs py-1 flex-1 flex items-center justify-center gap-1">
-                      <FiEdit2 size={11}/> Edit Role
-                    </button>
-                    <button onClick={() => setResetTarget(m)} className="crm-btn text-xs py-1 flex-1 flex items-center justify-center gap-1">
-                      <FiLock size={11}/> Reset PW
-                    </button>
-                    {canDelete && String(m.id) !== String(myId) && (
-                      <button onClick={() => setDeactivTarget(m)}
-                        className="crm-btn text-xs py-1 px-2.5 border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex items-center justify-center">
-                        <FiTrash2 size={11}/>
-                      </button>
+                    {m.mustResetTwoFa && (
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border border-crm-warning/40 text-crm-warning">
+                        Auth reset pending
+                      </span>
                     )}
                   </div>
-                )}
+                </div>
+                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity pt-1"
+                  onClick={e => e.stopPropagation()}>
+                    {String(m.id) === String(myId) && (
+                      <button onClick={() => setResetOwnOpen(true)} className="crm-btn text-xs py-1 flex-1 flex items-center justify-center gap-1">
+                        <FiRefreshCw size={11}/> Reset Auth
+                      </button>
+                    )}
+                    {isSuperAdmin && String(m.id) !== String(myId) && m.active && (
+                      <button onClick={() => setRequest2faTarget(m)} className="crm-btn text-xs py-1 flex-1 flex items-center justify-center gap-1">
+                        <FiShield size={11}/> Request Reset
+                      </button>
+                    )}
+                    {canEdit && (
+                      <>
+                        <button onClick={() => setEditTarget(m)} className="crm-btn text-xs py-1 flex-1 flex items-center justify-center gap-1">
+                          <FiEdit2 size={11}/> Edit Role
+                        </button>
+                        <button onClick={() => setResetTarget(m)} className="crm-btn text-xs py-1 flex-1 flex items-center justify-center gap-1">
+                          <FiLock size={11}/> Reset PW
+                        </button>
+                        {canDelete && String(m.id) !== String(myId) && (
+                          <button onClick={() => setDeactivTarget(m)}
+                            className="crm-btn text-xs py-1 px-2.5 border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex items-center justify-center">
+                            <FiTrash2 size={11}/>
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
               </div>
             ))}
           </div>
@@ -696,8 +842,12 @@ export default function AdminUsersPage({ liveTick = 0 }) {
                 {/* Panel header */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-2xl border ${ROLE_MAP[detail.role?.toUpperCase()]?.class || ROLE_MAP.STAFF.class}`}>
-                      {detail.name?.charAt(0)?.toUpperCase()}
+                    <div className={`w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center font-bold text-2xl border ${ROLE_MAP[detail.role?.toUpperCase()]?.class || ROLE_MAP.STAFF.class}`}>
+                      {detail.profileImage ? (
+                        <img src={detail.profileImage} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        detail.name?.charAt(0)?.toUpperCase()
+                      )}
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-crm-text-bright">{detail.name}</h3>
@@ -766,25 +916,44 @@ export default function AdminUsersPage({ liveTick = 0 }) {
                 </div>
 
                 {/* Actions */}
-                {canEdit && (
-                  <div className="space-y-2 pt-2 border-t border-crm-border">
-                    <p className="text-[10px] font-black text-crm-text-bright uppercase tracking-widest mb-3">Actions</p>
-                    <button onClick={() => setEditTarget(detail)}
+                <div className="space-y-2 pt-2 border-t border-crm-border">
+                  <p className="text-[10px] font-black text-crm-text-bright uppercase tracking-widest mb-3">Actions</p>
+                  {String(detail.id) === String(myId) && (
+                    <button onClick={() => setResetOwnOpen(true)}
                       className="crm-btn crm-btn-primary w-full py-2.5 flex items-center justify-center gap-2">
-                      <FiEdit2 size={14}/> Edit Role & Status
+                      <FiRefreshCw size={14}/> Reset Authenticator
                     </button>
-                    <button onClick={() => setResetTarget(detail)}
-                      className="crm-btn w-full py-2.5 flex items-center justify-center gap-2">
-                      <FiLock size={14}/> Reset Password
+                  )}
+                  {isSuperAdmin && String(detail.id) !== String(myId) && detail.active && (
+                    <button onClick={() => setRequest2faTarget(detail)}
+                      className="crm-btn w-full py-2.5 flex items-center justify-center gap-2 border-crm-warning/40 text-crm-warning">
+                      <FiShield size={14}/> Request Reset Authenticator
                     </button>
-                    {canDelete && String(detail.id) !== String(myId) && (
-                      <button onClick={() => setDeactivTarget(detail)}
-                        className="crm-btn w-full py-2.5 border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex items-center justify-center gap-2">
-                        <FiTrash2 size={14}/> {detail.active ? "Deactivate Account" : "Remove Account"}
+                  )}
+                  {detail.mustResetTwoFa && (
+                    <p className="text-[11px] text-crm-warning">
+                      Authenticator reset is pending — this member must enroll a new app on next sign-in.
+                    </p>
+                  )}
+                  {canEdit && (
+                    <>
+                      <button onClick={() => setEditTarget(detail)}
+                        className="crm-btn crm-btn-primary w-full py-2.5 flex items-center justify-center gap-2">
+                        <FiEdit2 size={14}/> Edit Role & Status
                       </button>
-                    )}
-                  </div>
-                )}
+                      <button onClick={() => setResetTarget(detail)}
+                        className="crm-btn w-full py-2.5 flex items-center justify-center gap-2">
+                        <FiLock size={14}/> Reset Password
+                      </button>
+                      {canDelete && String(detail.id) !== String(myId) && (
+                        <button onClick={() => setDeactivTarget(detail)}
+                          className="crm-btn w-full py-2.5 border-crm-danger/30 text-crm-danger hover:bg-crm-danger-dim flex items-center justify-center gap-2">
+                          <FiTrash2 size={14}/> {detail.active ? "Deactivate Account" : "Remove Account"}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </motion.div>
           </>
@@ -797,6 +966,20 @@ export default function AdminUsersPage({ liveTick = 0 }) {
         {editTarget    && <EditMemberModal      member={editTarget}    myRole={myRole} myId={myId} onClose={() => setEditTarget(null)}    onSaved={afterSave}/>}
         {resetTarget   && <ResetPasswordModal   member={resetTarget} requestToken={requestToken} onClose={() => setResetTarget(null)}/>}
         {deactivTarget && <DeactivateConfirmModal member={deactivTarget} requestToken={requestToken} onClose={() => setDeactivTarget(null)} onDeactivated={afterSave}/>}
+        {request2faTarget && (
+          <Request2faResetModal
+            member={request2faTarget}
+            requestToken={requestToken}
+            onClose={() => setRequest2faTarget(null)}
+            onDone={afterSave}
+          />
+        )}
+        {resetOwnOpen && (
+          <ResetOwnAuthenticatorModal
+            onClose={() => setResetOwnOpen(false)}
+            onDone={fetchMembers}
+          />
+        )}
       </AnimatePresence>
       {reauthModal}
     </div>

@@ -147,7 +147,7 @@ services:
       - key: SMTP_PASS
         value: <SMTP_PASS_OR_EMPTY>
       - key: EMAIL_FROM
-        value: Oceanbazar <noreply@oceanbazar.com>
+        value: OceanBazar System <no-reply@oceanbazar.com.bd>
       - key: API_BASE_URL
         value: https://<bff-service>.onrender.com
       - key: MS_TENANT_ID

@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, optionalAuth } from '../middleware/auth';
 import { generateEntityId } from '../utils/hexId';
 import { routeParam } from '../utils/params';
 import { ReviewListResponseSchema } from '../contracts/review.contract';
 import { parseContract } from '../lib/contractValidate';
+import { emitAdminEvent, emitBroadcast } from '../lib/adminEvents';
 const router = Router();
 
 function formatReview(r: {
@@ -18,7 +19,8 @@ function formatReview(r: {
   unhelpfulCount: number;
   verifiedPurchase: boolean;
   createdAt: Date;
-  user: { name: string };
+  status?: string;
+  user: { name: string; profileImage?: string | null };
 }) {
   return {
     id: r.id,
@@ -30,12 +32,15 @@ function formatReview(r: {
     unhelpfulCount: r.unhelpfulCount ?? 0,
     verifiedPurchase: r.verifiedPurchase ?? false,
     authorName: r.user.name,
+    authorAvatar: r.user.profileImage ?? null,
+    status: r.status || 'approved',
+    pending: r.status === 'pending',
     createdAt: r.createdAt.toISOString(),
   };
 }
 
-// GET /api/reviews/product/:productId — approved reviews (public)
-router.get('/product/:productId', async (req: Request, res: Response) => {
+// GET /api/reviews/product/:productId — approved reviews (public) + caller's pending
+router.get('/product/:productId', optionalAuth, async (req: Request, res: Response) => {
   const productId = routeParam(req.params.productId);
   const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
@@ -51,10 +56,10 @@ router.get('/product/:productId', async (req: Request, res: Response) => {
   const where: Record<string, unknown> = { productId, status: 'approved' };
   if (filterRating >= 1 && filterRating <= 5) where.rating = filterRating;
 
-  const [rows, total, ratingDist] = await Promise.all([
+  const [rows, total, ratingDist, myReviewRow] = await Promise.all([
     prisma.productReview.findMany({
       where,
-      include: { user: { select: { name: true } } },
+      include: { user: { select: { name: true, profileImage: true } } },
       orderBy,
       skip: (page - 1) * limit,
       take: limit,
@@ -65,18 +70,42 @@ router.get('/product/:productId', async (req: Request, res: Response) => {
       where: { productId, status: 'approved' },
       _count: { id: true },
     }),
+    req.user?.userId
+      ? prisma.productReview.findFirst({
+          where: { productId, userId: req.user.userId },
+          include: { user: { select: { name: true, profileImage: true } } },
+        })
+      : Promise.resolve(null),
   ]);
 
   // Build rating distribution { 5: 24, 4: 12, ... }
   const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   for (const r of ratingDist) { dist[r.rating] = r._count.id; }
 
+  const approved = rows.map((r) => formatReview(r as never));
+  const myReview = myReviewRow
+    ? formatReview({ ...(myReviewRow as object), status: myReviewRow.status } as never)
+    : null;
+  const seen = new Set(approved.map((r) => r.id));
+  const reviews =
+    myReview && myReview.status === 'pending' && !seen.has(myReview.id)
+      ? [myReview, ...approved]
+      : approved;
+
+  const avg =
+    total > 0
+      ? Object.entries(dist).reduce((sum, [star, count]) => sum + Number(star) * count, 0) / total
+      : 0;
+
   res.json(
     parseContract(
       ReviewListResponseSchema,
       {
-        reviews: rows.map((r) => formatReview(r as never)),
+        reviews,
+        myReview,
         ratingDistribution: dist,
+        averageRating: Math.round(avg * 10) / 10,
+        totalReviews: total,
         pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       },
       'reviews.product'
@@ -151,25 +180,145 @@ router.post('/', async (req: Request, res: Response) => {
   const existing = await prisma.productReview.findUnique({
     where: { userId_productId: { userId, productId } },
   });
-  if (existing) { res.status(409).json({ error: 'You already reviewed this product' }); return; }
 
-  const review = await prisma.productReview.create({
-    data: {
-      id: generateEntityId(),
-      userId,
-      productId,
-      orderId: orderId ?? null,
-      rating: r,
-      title: title ? String(title).slice(0, 255) : null,
-      body: body != null ? String(body).slice(0, 8000) : null,
-      // imageUrls and verifiedPurchase stored via JSON column (graceful if column doesn't exist)
-      ...(safeImageUrls.length > 0 ? { imageUrls: safeImageUrls } : {}),
-      ...(verifiedPurchase ? { verifiedPurchase: true } : {}),
-      status: 'pending',
-    } as any,
+  const titleVal = title ? String(title).slice(0, 255) : null;
+  const bodyVal = body != null ? String(body).slice(0, 8000) : null;
+  const imagePayload =
+    Array.isArray(imageUrls)
+      ? { imageUrls: safeImageUrls }
+      : {};
+
+  let review;
+  let edited = false;
+  if (existing) {
+    // One review per product — allow edits (e.g. after reorder). Re-enter moderation.
+    edited = true;
+    review = await prisma.productReview.update({
+      where: { id: existing.id },
+      data: {
+        rating: r,
+        title: titleVal,
+        body: bodyVal,
+        ...(orderId ? { orderId } : {}),
+        ...(verifiedPurchase ? { verifiedPurchase: true } : {}),
+        ...imagePayload,
+        status: 'pending',
+      } as any,
+    });
+  } else {
+    review = await prisma.productReview.create({
+      data: {
+        id: generateEntityId(),
+        userId,
+        productId,
+        orderId: orderId ?? null,
+        rating: r,
+        title: titleVal,
+        body: bodyVal,
+        ...(safeImageUrls.length > 0 ? { imageUrls: safeImageUrls } : {}),
+        ...(verifiedPurchase ? { verifiedPurchase: true } : {}),
+        status: 'pending',
+      } as any,
+    });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true, profileImage: true },
   });
+  const mainImage =
+    (await prisma.productAsset.findFirst({
+      where: { productId, assetType: 'image' },
+      orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+      select: { url: true },
+    }))?.url ?? null;
 
-  res.status(201).json({ review: { id: review.id, status: review.status } });
+  let bonus = { awarded: false, points: 0 };
+  try {
+    const { maybeAwardReviewBonus } = await import('../services/orderSurveyService');
+    // Edit after survey+delivered reorder still earns +5 once per order survey.
+    bonus = await maybeAwardReviewBonus(userId, orderId);
+  } catch { /* non-fatal */ }
+
+  // #region agent log
+  {
+    const payload = {
+      sessionId: '1eb282',
+      runId: 'review-edit',
+      hypothesisId: 'H-REVIEW-UPSERT',
+      location: 'reviews.ts:POST/',
+      message: edited ? 'review updated' : 'review created',
+      data: {
+        edited,
+        hasOrderId: Boolean(orderId),
+        bonusAwarded: bonus.awarded,
+        bonusPoints: bonus.points,
+        productId: String(productId).slice(0, 12),
+      },
+      timestamp: Date.now(),
+    };
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1eb282' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+    try {
+      const fs = require('fs') as typeof import('fs');
+      fs.appendFileSync('/tmp/ob-debug-1eb282.ndjson', `${JSON.stringify(payload)}\n`);
+    } catch { /* ignore */ }
+  }
+  // #endregion
+
+  const finalImageUrls =
+    safeImageUrls.length > 0
+      ? safeImageUrls
+      : ((review as any).imageUrls as string[] | undefined) ?? [];
+
+  const snapshot = {
+    id: review.id,
+    status: review.status,
+    rating: r,
+    title: review.title,
+    body: review.body,
+    imageUrls: finalImageUrls,
+    verifiedPurchase: Boolean((review as any).verifiedPurchase || verifiedPurchase),
+    edited,
+    createdAt: review.createdAt.toISOString(),
+    customer: {
+      id: userId,
+      name: user?.name ?? 'Customer',
+      email: user?.email ?? null,
+      avatar: user?.profileImage ?? null,
+    },
+    product: {
+      id: product.id,
+      titleEn: product.titleEn,
+      titleBn: product.titleBn,
+      sku: (product as any).sku ?? null,
+      imageUrl: mainImage,
+      ratingAvg: product.ratingAvg != null ? Number(product.ratingAvg) : null,
+      reviewCount: product.reviewCount ?? 0,
+    },
+  };
+  try { emitAdminEvent(edited ? 'admin:reviews:updated' : 'admin:reviews:new', snapshot); } catch { /* non-fatal */ }
+  try { emitBroadcast('storefront:reviews:updated', { productId }); } catch { /* non-fatal */ }
+
+  res.status(edited ? 200 : 201).json({
+    review: {
+      id: review.id,
+      status: review.status,
+      authorName: user?.name ?? 'You',
+      authorAvatar: user?.profileImage ?? null,
+      rating: r,
+      title: review.title,
+      body: review.body,
+      imageUrls: finalImageUrls,
+      pending: true,
+      edited,
+    },
+    snapshot,
+    obPointsBonus: bonus,
+  });
 });
 
 // POST /api/reviews/:id/helpful — vote helpful

@@ -22,6 +22,9 @@ export default function PwaInstallPrompt() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    // CMS AppDownloadBanner owns the top-of-header install UX; avoid a second banner.
+    if (document.querySelector('[data-ob-app-download-banner="1"]')) return;
+    if (localStorage.getItem('ob_app_download_dismissed')) return;
     // Don't show if already installed (standalone mode)
     if (window.matchMedia('(display-mode: standalone)').matches) return;
     // Don't show if dismissed within last 7 days

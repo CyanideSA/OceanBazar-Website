@@ -47,6 +47,7 @@ export default function CatalogExplorerPage() {
 
   const [contextMenu, setContextMenu] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [editProductId, setEditProductId] = useState(null);
 
   // ─── Resizable tree panel ────────────────────────────────────────────────
   const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT_WIDTH);
@@ -204,7 +205,10 @@ export default function CatalogExplorerPage() {
         if (!id) return;
         if (id.startsWith("prod_")) {
           const node = folderContents?.products?.find((p) => "prod_" + p.id === id);
-          if (node) openProduct(node.id);
+          if (node) {
+            setEditProductId(node.id);
+            closeProduct();
+          }
         }
         if (id.startsWith("cat_")) {
           const node = folderContents?.subfolders?.find((c) => "cat_" + c.id === id);
@@ -214,7 +218,7 @@ export default function CatalogExplorerPage() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [openModal, closeProduct, clearSearch, loadTree, loadContents, openProduct, setCurrentCategoryId, setExpanded]);
+  }, [openModal, closeProduct, clearSearch, loadTree, loadContents, setCurrentCategoryId, setExpanded]);
 
   // ─── Context menu ─────────────────────────────────────────────────────────
   const handleContextMenu = useCallback((e, target) => {
@@ -243,7 +247,10 @@ export default function CatalogExplorerPage() {
         openModal("manageBanners", target);
         break;
       case "open":
-        if (target?.type === "product") openProduct(target.node.id);
+        if (target?.type === "product") {
+          setEditProductId(target.node.id);
+          closeProduct();
+        }
         break;
       case "duplicate":
         if (target?.type === "product") {
@@ -260,7 +267,7 @@ export default function CatalogExplorerPage() {
         break;
       default: break;
     }
-  }, [openModal, currentCategoryId, openProduct, loadTree, loadContents, toast]);
+  }, [openModal, currentCategoryId, closeProduct, loadTree, loadContents, toast]);
 
   // ─── Navigation ──────────────────────────────────────────────────────────
   const handleOpenCategory = useCallback((id) => {
@@ -271,8 +278,10 @@ export default function CatalogExplorerPage() {
   }, [setCurrentCategoryId, setExpanded, closeProduct, clearSearch]);
 
   const handleOpenProduct = useCallback((id) => {
-    openProduct(id);
-  }, [openProduct]);
+    // Same full AddProductWizard as Products page → Edit
+    setEditProductId(id);
+    closeProduct();
+  }, [closeProduct]);
 
   const handleRefresh = useCallback(() => {
     loadTree();
@@ -318,6 +327,10 @@ export default function CatalogExplorerPage() {
           <ProductDetailPanel
             onClose={closeProduct}
             onProductUpdated={handleRefresh}
+            onOpenFullEditor={(id) => {
+              setEditProductId(id);
+              closeProduct();
+            }}
           />
         )}
 
@@ -343,9 +356,17 @@ export default function CatalogExplorerPage() {
         <CreateCategoryModal data={modal.data} onClose={closeModal} onSuccess={handleModalSuccess} />
       )}
       <AddProductWizard
-        open={modal?.type === "createProduct"}
-        onClose={closeModal}
-        onSuccess={handleModalSuccess}
+        open={modal?.type === "createProduct" || Boolean(editProductId)}
+        editProductId={editProductId}
+        onClose={() => {
+          closeModal();
+          setEditProductId(null);
+        }}
+        onSuccess={() => {
+          handleModalSuccess?.();
+          handleRefresh?.();
+          setEditProductId(null);
+        }}
         defaultCategoryId={modal?.data?.categoryId}
       />
       {modal?.type === "rename" && (

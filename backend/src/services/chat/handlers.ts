@@ -19,7 +19,12 @@ function toNum(v: unknown): number {
 }
 
 async function searchProducts(query: string, budget?: number, limit = 5): Promise<ProductCardContent[]> {
-  const terms = query.split(/\s+/).filter((t) => t.length > 2).slice(0, 5);
+  // Keep short tokens (incl. Bangla) — previously length>2 dropped many real queries.
+  const terms = query
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2)
+    .slice(0, 6);
   const where: Record<string, unknown> = { status: 'active', stock: { gt: 0 } };
   if (terms.length) {
     where.OR = terms.flatMap((t) => [
@@ -30,7 +35,7 @@ async function searchProducts(query: string, budget?: number, limit = 5): Promis
   }
   const products = await prisma.product.findMany({
     where,
-    take: limit,
+    take: Math.max(limit * 2, 8),
     orderBy: [{ isBestSeller: 'desc' }, { ratingAvg: 'desc' }],
     include: {
       pricing: { where: { customerType: 'retail' }, take: 1 },
@@ -43,7 +48,7 @@ async function searchProducts(query: string, budget?: number, limit = 5): Promis
     if (budget && price > budget) continue;
     cards.push({
       id: p.id,
-      name: p.titleEn,
+      name: p.titleEn || p.titleBn || p.id,
       price,
       rating: p.ratingAvg ? toNum(p.ratingAvg) : undefined,
       stock: p.stock,
@@ -51,6 +56,24 @@ async function searchProducts(query: string, budget?: number, limit = 5): Promis
       url: `/en/product/${p.id}`,
     });
   }
+  // #region agent log
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    fs.appendFileSync(
+      path.resolve(__dirname, '../../../../debug-1eb282.log'),
+      `${JSON.stringify({
+        sessionId: '1eb282',
+        runId: 'pre-fix',
+        hypothesisId: 'H7',
+        location: 'handlers.ts:searchProducts',
+        message: 'product search result',
+        data: { query: query.slice(0, 80), termCount: terms.length, cardCount: cards.length },
+        timestamp: Date.now(),
+      })}\n`,
+    );
+  } catch { /* ignore */ }
+  // #endregion
   return cards.slice(0, limit);
 }
 
@@ -89,7 +112,49 @@ async function addToCart(userId: string, productId: string, quantity = 1): Promi
       data: { cartId: cart.id, productId, quantity, unitPrice: price, customerType: 'retail' },
     });
   }
-  return { ok: true, message: `Added ${product.titleEn} to your cart.` };
+  return { ok: true, message: `Added ${product.titleEn || product.titleBn || 'item'} to your cart.` };
+}
+
+function formatCartLines(summary: NonNullable<Awaited<ReturnType<typeof getCartSummary>>>): string {
+  const lines = summary.lines
+    .slice(0, 12)
+    .map((l, i) => `${i + 1}. ${l.title} × ${l.quantity} — ৳${(l.unitPrice * l.quantity).toFixed(0)}`)
+    .join('\n');
+  return `Your cart (**${summary.itemCount}** item${summary.itemCount === 1 ? '' : 's'}) — total **৳${summary.total.toFixed(0)}**:\n${lines}`;
+}
+
+function cartCheckoutResult(
+  summary: NonNullable<Awaited<ReturnType<typeof getCartSummary>>>,
+  intro?: string,
+): EngineResult {
+  const body = `${intro ? `${intro}\n\n` : ''}${formatCartLines(summary)}\n\nReady when you are — confirm below to finish checkout.`;
+  return {
+    messages: [
+      buildTypedMessage(
+        body,
+        'system_action',
+        { action: 'checkout', label: 'Proceed to checkout', url: '/en/checkout', payload: { total: summary.total, itemCount: summary.itemCount } },
+        { quickReplies: ['Browse Products', 'My Cart', 'Proceed to checkout'] },
+      ),
+    ],
+    contextPatch: { flow: 'cart', step: 0, slots: {} },
+    escalate: false,
+  };
+}
+
+function loginForCheckoutResult(): EngineResult {
+  return {
+    messages: [
+      buildTypedMessage(
+        'Please sign in to manage your cart and checkout. After login you can continue shopping or finish checkout.',
+        'system_action',
+        { action: 'account_login', label: 'Sign in to continue', url: '/en/auth/login?next=/en/checkout' },
+        { quickReplies: ['Browse Products', 'Talk to Human'] },
+      ),
+    ],
+    contextPatch: { flow: 'account', step: 0, slots: {} },
+    escalate: false,
+  };
 }
 
 function orderTimeline(status: string) {
@@ -277,26 +342,28 @@ export async function runIntentHandler(opts: {
     return {
       messages: [
         buildTypedMessage(
-          acknowledge(userName) + ` Found ${cards.length} product(s) for you:`,
+          acknowledge(userName) + ` Found ${cards.length} product(s) for you. Tap **Add** on any item — you can add several, then view cart or checkout.`,
           'product_card',
           cards,
-          { quickReplies: ['Add to cart', 'View details', 'Compare'] },
+          { quickReplies: ['My Cart', 'Browse Products', 'Proceed to checkout'] },
         ),
       ],
-      contextPatch: { flow: null, step: 0, slots: { productQuery: query, budget: budget ?? null } },
+      contextPatch: {
+        flow: null,
+        step: 0,
+        slots: {
+          productQuery: query,
+          budget: budget ?? null,
+          lastProductIds: cards.map((c) => c.id).join(','),
+        },
+      },
       escalate: false,
       clearFlow: true,
     };
   }
 
   if (intent === 'cart_management') {
-    if (!isAuthenticated) {
-      return {
-        messages: [buildTextMessage('Log in to view and manage your cart.', { quickReplies: ['Login help', 'Signup'] })],
-        contextPatch: { flow: 'cart', step: 0, slots: {} },
-        escalate: false,
-      };
-    }
+    if (!isAuthenticated) return loginForCheckoutResult();
     const summary = await getCartSummary(userId);
     if (!summary) {
       return {
@@ -305,40 +372,32 @@ export async function runIntentHandler(opts: {
         escalate: false,
       };
     }
-    return {
-      messages: [
-        buildTypedMessage(
-          `Your cart has **${summary.itemCount}** item(s) — total **৳${summary.total.toFixed(0)}**.`,
-          'system_action',
-          { action: 'view_cart', label: 'View cart', url: '/en/cart', payload: { lines: summary.lines, total: summary.total } },
-          { quickReplies: ['Proceed to checkout', 'Browse Products'] },
-        ),
-      ],
-      contextPatch: { flow: 'cart', step: 0, slots: {} },
-      escalate: false,
-    };
+    return cartCheckoutResult(summary);
   }
 
   if (intent === 'checkout_flow') {
-    if (!isAuthenticated) {
-      return { messages: [buildTextMessage('Please log in to checkout.', { quickReplies: ['Login help'] })], contextPatch: { flow: 'checkout', step: 0, slots: {} }, escalate: false };
-    }
-    const steps = ['Confirm shipping address', 'Choose shipping method', 'Select payment (bKash, Nagad, COD, Card)', 'Review and place order'];
-    const step = Math.min(ctx.step, steps.length - 1);
-    if (step >= steps.length - 1) {
+    if (!isAuthenticated) return loginForCheckoutResult();
+    const summary = await getCartSummary(userId);
+    if (!summary) {
       return {
-        messages: [
-          buildTypedMessage('Ready to place your order?', 'system_action', { action: 'checkout', label: 'Go to checkout', url: '/en/checkout' }),
-        ],
+        messages: [buildTextMessage('Your cart is empty. Add products first, then checkout.', { quickReplies: ['Browse Products', 'My Cart'] })],
         contextPatch: { flow: null, step: 0, slots: {} },
         escalate: false,
         clearFlow: true,
       };
     }
     return {
-      messages: [buildTextMessage(`Checkout step ${step + 1}: ${steps[step]}`, { quickReplies: ['Continue', 'Talk to Human'] })],
-      contextPatch: { flow: 'checkout', step: step + 1, slots: ctx.slots },
+      messages: [
+        buildTypedMessage(
+          `${formatCartLines(summary)}\n\nConfirm your cart and finish payment on the checkout page.`,
+          'system_action',
+          { action: 'checkout', label: 'Go to checkout', url: '/en/checkout', payload: { total: summary.total, itemCount: summary.itemCount } },
+          { quickReplies: ['My Cart', 'Browse Products', 'Talk to Human'] },
+        ),
+      ],
+      contextPatch: { flow: null, step: 0, slots: {} },
       escalate: false,
+      clearFlow: true,
     };
   }
 
@@ -444,8 +503,11 @@ export async function runIntentHandler(opts: {
   if (intent === 'faq_handling') {
     const faqReplies: Record<string, string> = {
       shipping: 'Standard delivery: Dhaka 1-3 days, outside Dhaka 3-5 days. Free shipping over ৳1,500.',
-      payment: 'We accept bKash, Nagad, cards via SSLCommerz, and Cash on Delivery.',
-      cod: 'COD is available for orders under ৳5,000.',
+      payment: 'We accept bKash, Nagad, cards via SSLCommerz, and Cash on Delivery. Need help paying for an order? Share your order number or say "Talk to Human".',
+      pay: 'We accept bKash, Nagad, cards via SSLCommerz, and Cash on Delivery.',
+      bkash: 'bKash is available at checkout. Use your order total as the amount and keep the TrxID for verification.',
+      nagad: 'Nagad is available at checkout. Keep your TrxID after payment for verification.',
+      cod: 'Cash on Delivery / COD is available for eligible orders (typically under ৳5,000).',
       coupon: 'Apply coupon codes at checkout in the promo box.',
     };
     const n = text.toLowerCase();
@@ -486,12 +548,35 @@ export async function runActionHandler(opts: {
   }
 
   if (action === 'add_to_cart' && payload?.productId) {
-    if (!isAuthenticated) {
-      return { messages: [buildTextMessage('Log in to add items to your cart.')], contextPatch: {}, escalate: false };
-    }
+    if (!isAuthenticated) return loginForCheckoutResult();
     const qty = Number(payload.quantity || 1);
     const result = await addToCart(userId, String(payload.productId), qty);
-    return { messages: [buildTextMessage(result.message, { quickReplies: ['My Cart', 'Checkout'] })], contextPatch: {}, escalate: false };
+    // #region agent log
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      fs.appendFileSync(
+        path.resolve(__dirname, '../../../../debug-1eb282.log'),
+        `${JSON.stringify({
+          sessionId: '1eb282',
+          runId: 'pre-fix',
+          hypothesisId: 'H9',
+          location: 'handlers.ts:add_to_cart',
+          message: 'chat add_to_cart',
+          data: { ok: result.ok, productId: String(payload.productId).slice(0, 12), qty },
+          timestamp: Date.now(),
+        })}\n`,
+      );
+    } catch { /* ignore */ }
+    // #endregion
+    if (!result.ok) {
+      return { messages: [buildTextMessage(result.message, { quickReplies: ['Browse Products', 'Talk to Human'] })], contextPatch: {}, escalate: false };
+    }
+    const summary = await getCartSummary(userId);
+    if (!summary) {
+      return { messages: [buildTextMessage(result.message, { quickReplies: ['Browse Products'] })], contextPatch: {}, escalate: false };
+    }
+    return cartCheckoutResult(summary, result.message);
   }
 
   if (action === 'track_order') {
@@ -511,8 +596,8 @@ export async function runActionHandler(opts: {
       };
     }
     return {
-      messages: [buildTypedMessage('Popular picks for you:', 'product_card', cards, { quickReplies: ['Add to cart'] })],
-      contextPatch: {},
+      messages: [buildTypedMessage('Popular picks for you — tap Add on each product you want:', 'product_card', cards, { quickReplies: ['My Cart', 'Proceed to checkout'] })],
+      contextPatch: { slots: { lastProductIds: cards.map((c) => c.id).join(',') } },
       escalate: false,
     };
   }
@@ -533,13 +618,22 @@ export async function runActionHandler(opts: {
     });
   }
 
-  if (action === 'payment_help') {
-    return runIntentHandler({ intent: 'faq_handling', text: 'payment methods', entities: {}, ctx: { memory: [], flow: null, step: 0, slots: {} }, userId, isAuthenticated, userName });
+  if (action === 'payment_help' || action === 'payment') {
+    return runIntentHandler({ intent: 'faq_handling', text: 'payment methods bkash nagad cod', entities: {}, ctx: { memory: [], flow: null, step: 0, slots: {} }, userId, isAuthenticated, userName });
   }
 
-  return {
-    messages: [buildTextMessage('Action received. How else can I help?', { quickReplies: DEFAULT_QUICK_REPLIES })],
-    contextPatch: {},
-    escalate: false,
-  };
+  if (action === 'proceed_to_checkout' || action === 'checkout') {
+    return runIntentHandler({ intent: 'checkout_flow', text: 'checkout', entities: {}, ctx: { memory: [], flow: 'checkout', step: 0, slots: {} }, userId, isAuthenticated, userName });
+  }
+
+  // Unknown quick-reply text: treat as a normal user message intent.
+  return runIntentHandler({
+    intent: 'faq_handling',
+    text: action.replace(/_/g, ' '),
+    entities: {},
+    ctx: { memory: [], flow: null, step: 0, slots: {} },
+    userId,
+    isAuthenticated,
+    userName,
+  });
 }

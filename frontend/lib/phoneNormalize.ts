@@ -13,3 +13,9 @@ export function normalizePhoneTarget(target: string): string {
 
   return `${BD_DEFAULT}${digits}`;
 }
+
+/** Bangladesh mobile in E.164: +8801XXXXXXXXX (11 local digits starting with 01). */
+export function isValidBdMobile(target: string): boolean {
+  const normalized = normalizePhoneTarget(target);
+  return /^\+8801\d{9}$/.test(normalized);
+}

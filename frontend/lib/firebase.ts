@@ -83,12 +83,30 @@ const missingConfigMessage =
   'Firebase is not configured. Add NEXT_PUBLIC_FIREBASE_* to frontend/.env.local (see .env.example).';
 
 /**
- * Sign in with Google via Firebase popup and return the Firebase ID token.
+ * Start Google popup synchronously (must run in the click handler before any await/setState).
+ * Browsers block popups if signInWithPopup is deferred after a microtask.
  */
-export async function signInWithGoogle(): Promise<string> {
+export function beginGooglePopup() {
   const auth = getFirebaseAuth();
   if (!auth) throw new Error(missingConfigMessage);
-  const result = await signInWithPopup(auth, googleProvider);
+  // #region agent log
+  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'pre-fix',hypothesisId:'H3',location:'firebase.ts:beginGooglePopup',message:'google popup started in gesture tick',data:{hasAuth:!!auth},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  return signInWithPopup(auth, googleProvider);
+}
+
+/**
+ * Sign in with Google via Firebase popup and return the Firebase ID token.
+ * Prefer beginGooglePopup() + finishGooglePopup() in UI click handlers.
+ */
+export async function signInWithGoogle(): Promise<string> {
+  return finishGooglePopup(beginGooglePopup());
+}
+
+export async function finishGooglePopup(
+  popupPromise: ReturnType<typeof signInWithPopup>,
+): Promise<string> {
+  const result = await popupPromise;
   const idToken = await result.user.getIdToken();
   return idToken;
 }

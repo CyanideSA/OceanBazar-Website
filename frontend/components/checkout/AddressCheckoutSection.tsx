@@ -7,6 +7,10 @@ import { MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
 import { profileApi } from '@/lib/api';
 import type { SavedAddress } from '@/types';
 import { cn } from '@/lib/utils';
+import PathaoAddressFields, {
+  emptyPathaoAddressForm,
+  type PathaoAddressForm,
+} from '@/components/address/PathaoAddressFields';
 
 interface Props {
   addresses: SavedAddress[];
@@ -14,32 +18,23 @@ interface Props {
   onSelect: (id: number) => void;
 }
 
-const emptyForm = {
-  label: '',
-  line1: '',
-  line2: '',
-  city: '',
-  district: '',
-  postalCode: '',
-  isDefault: false,
-};
-
 export default function AddressCheckoutSection({ addresses, selectedId, onSelect }: Props) {
   const t = useTranslations('checkout');
   const tc = useTranslations('common');
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
   const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<PathaoAddressForm>(emptyPathaoAddressForm());
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['addresses'] });
 
   const createMut = useMutation({
     mutationFn: async () => (await profileApi.addAddress(form)).data,
-    onSuccess: () => {
+    onSuccess: (data: { address?: SavedAddress }) => {
       invalidate();
       setMode('list');
-      setForm(emptyForm);
+      setForm(emptyPathaoAddressForm());
+      if (data?.address?.id) onSelect(data.address.id);
     },
   });
 
@@ -49,7 +44,7 @@ export default function AddressCheckoutSection({ addresses, selectedId, onSelect
       invalidate();
       setMode('list');
       setEditId(null);
-      setForm(emptyForm);
+      setForm(emptyPathaoAddressForm());
     },
   });
 
@@ -59,7 +54,7 @@ export default function AddressCheckoutSection({ addresses, selectedId, onSelect
   });
 
   function startAdd() {
-    setForm(emptyForm);
+    setForm(emptyPathaoAddressForm());
     setEditId(null);
     setMode('add');
   }
@@ -74,14 +69,27 @@ export default function AddressCheckoutSection({ addresses, selectedId, onSelect
       district: addr.district,
       postalCode: addr.postalCode ?? '',
       isDefault: addr.isDefault,
+      pathaoCityId: addr.pathaoCityId ?? null,
+      pathaoZoneId: addr.pathaoZoneId ?? null,
+      pathaoAreaId: addr.pathaoAreaId ?? null,
+      pathaoCityName: addr.pathaoCityName ?? addr.city,
+      pathaoZoneName: addr.pathaoZoneName ?? addr.district,
+      pathaoAreaName: addr.pathaoAreaName ?? '',
     });
     setMode('edit');
   }
+
+  const canSave = Boolean(
+    form.label && form.line1 && form.pathaoCityId && form.pathaoZoneId && form.city && form.district,
+  );
 
   if (mode === 'add' || mode === 'edit') {
     return (
       <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-foreground">{mode === 'add' ? t('addAddress') : t('editAddress')}</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Choose Pathao city and zone so delivery charge matches the courier network.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="sm:col-span-2">
             <span className="text-xs font-medium text-muted-foreground">{t('addrLabel')}</span>
@@ -107,22 +115,7 @@ export default function AddressCheckoutSection({ addresses, selectedId, onSelect
               onChange={(e) => setForm((f) => ({ ...f, line2: e.target.value }))}
             />
           </label>
-          <label>
-            <span className="text-xs font-medium text-muted-foreground">{t('addrCity')}</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              value={form.city}
-              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-            />
-          </label>
-          <label>
-            <span className="text-xs font-medium text-muted-foreground">{t('addrDistrict')}</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              value={form.district}
-              onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
-            />
-          </label>
+          <PathaoAddressFields form={form} onChange={setForm} />
           <label>
             <span className="text-xs font-medium text-muted-foreground">{t('addrPostal')}</span>
             <input
@@ -153,7 +146,7 @@ export default function AddressCheckoutSection({ addresses, selectedId, onSelect
           </button>
           <button
             type="button"
-            disabled={!form.label || !form.line1 || !form.city || !form.district || createMut.isPending || updateMut.isPending}
+            disabled={!canSave || createMut.isPending || updateMut.isPending}
             onClick={() => (mode === 'add' ? createMut.mutate() : updateMut.mutate())}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
@@ -187,52 +180,61 @@ export default function AddressCheckoutSection({ addresses, selectedId, onSelect
         </p>
       ) : (
         <ul className="space-y-2">
-          {addresses.map((addr) => (
-            <li key={addr.id}>
-              <div
-                className={cn(
-                  'flex gap-3 rounded-xl border-2 p-4 transition-colors',
-                  selectedId === addr.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'
-                )}
-              >
-                <input
-                  type="radio"
-                  name="ship-addr"
-                  checked={selectedId === addr.id}
-                  onChange={() => onSelect(addr.id)}
-                  className="mt-1"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-foreground">{addr.label}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {addr.line1}
-                    {addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.district}
-                    {addr.postalCode ? ` — ${addr.postalCode}` : ''}
-                  </p>
+          {addresses.map((addr) => {
+            const synced = Boolean(addr.pathaoCityId && addr.pathaoZoneId);
+            return (
+              <li key={addr.id}>
+                <div
+                  className={cn(
+                    'flex gap-3 rounded-xl border-2 p-4 transition-colors',
+                    selectedId === addr.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30',
+                    !synced ? 'opacity-80' : '',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="ship-addr"
+                    checked={selectedId === addr.id}
+                    disabled={!synced}
+                    onChange={() => onSelect(addr.id)}
+                    className="mt-1"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground">{addr.label}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {addr.line1}
+                      {addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.district}
+                      {addr.pathaoAreaName ? `, ${addr.pathaoAreaName}` : ''}
+                      {addr.postalCode ? ` — ${addr.postalCode}` : ''}
+                    </p>
+                    {!synced ? (
+                      <p className="mt-1 text-xs text-amber-600">Edit and select Pathao city/zone before checkout.</p>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(addr)}
+                      className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== 'undefined' && window.confirm(tc('confirmDelete'))) deleteMut.mutate(addr.id);
+                      }}
+                      className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => startEdit(addr)}
-                    className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Edit"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (typeof window !== 'undefined' && window.confirm(tc('confirmDelete'))) deleteMut.mutate(addr.id);
-                    }}
-                    className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

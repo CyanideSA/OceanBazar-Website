@@ -1,0 +1,80 @@
+<%
+  var track = typeof trackingData !== 'undefined' ? trackingData : null;
+  if (!track) track = {};
+  var status = String(track.status || track.orderStatus || (track.order && track.order.status) || '').toLowerCase();
+  var shipments = Array.isArray(track.shipments) ? track.shipments : [];
+  var timeline = Array.isArray(track.timeline) ? track.timeline : [];
+  var cancelled = status === 'cancelled' || status === 'refunded';
+  var stepIdx = -1;
+  if (!cancelled) {
+    if (status === 'delivered') stepIdx = 4;
+    else if (status === 'out_for_delivery' || status === 'in_transit') stepIdx = 3;
+    else if (status === 'shipped') stepIdx = 2;
+    else if (status === 'processing' || status === 'confirmed') stepIdx = 1;
+    else stepIdx = 0;
+  }
+  var steps = [
+    { key: 'placed', label: t('trackStepPlaced') },
+    { key: 'processing', label: t('trackStepProcessing') },
+    { key: 'shipped', label: t('trackStepShipped') },
+    { key: 'out', label: t('trackStepOutForDelivery') },
+    { key: 'delivered', label: t('trackStepDelivered') }
+  ];
+  var orderNumber = track.orderNumber || (track.order && track.order.orderNumber) || '';
+  var total = track.total != null ? track.total : (track.order && track.order.total);
+%>
+<div class="track-panel">
+  <% if (orderNumber || status) { %>
+  <div class="track-summary">
+    <% if (orderNumber) { %><p><strong>#<%= orderNumber %></strong></p><% } %>
+    <% if (status) { %><span class="pill<%= cancelled ? ' pill-warn' : '' %>"><%= status.replace(/_/g, ' ') %></span><% } %>
+    <% if (total != null && total !== '') { %><span class="muted"><%= helpers.money(total) %></span><% } %>
+  </div>
+  <% } %>
+
+  <ol class="track-steps" aria-label="<%= t('orderTracking') %>">
+    <% steps.forEach(function (step, i) {
+      var done = !cancelled && i <= stepIdx;
+      var current = !cancelled && i === stepIdx;
+    %>
+    <li class="track-step<%= done ? ' is-done' : '' %><%= current ? ' is-current' : '' %><%= cancelled ? ' is-cancelled' : '' %>">
+      <span class="track-dot" aria-hidden="true"></span>
+      <div class="track-step-body">
+        <span class="track-step-label"><%= step.label %></span>
+        <% if (current && !cancelled) { %><span class="track-step-now"><%= t('trackInProgress') %></span><% } %>
+      </div>
+    </li>
+    <% }) %>
+  </ol>
+
+  <% if (shipments.length) { %>
+  <div class="track-shipments">
+    <h3><%= t('shipments') || 'Shipments' %></h3>
+    <% shipments.forEach(function (s) { %>
+    <div class="track-ship-row">
+      <p>
+        <strong><%= s.carrier || s.courier || s.provider || 'Courier' %></strong>
+        <% if (s.status) { %> · <%= String(s.status).replace(/_/g, ' ') %><% } %>
+      </p>
+      <% if (s.trackingNumber || s.tracking_number) { %>
+      <p class="muted"><%= t('trackingNumber') || 'Tracking' %>: <code><%= s.trackingNumber || s.tracking_number %></code></p>
+      <% } %>
+    </div>
+    <% }) %>
+  </div>
+  <% } %>
+
+  <% if (timeline.length) { %>
+  <ul class="track-events">
+    <% timeline.slice(0, 12).forEach(function (ev) {
+      var note = ev.note || ev.message || ev.status || '';
+      var when = ev.createdAt || ev.created_at || ev.at || ev.timestamp;
+    %>
+    <li>
+      <% if (when) { %><time class="muted"><%= new Date(when).toLocaleString(locale === 'bn' ? 'bn-BD' : 'en-GB') %></time><% } %>
+      <span><%= note %></span>
+    </li>
+    <% }) %>
+  </ul>
+  <% } %>
+</div>

@@ -1,0 +1,105 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section info-page">
+  <div class="info-hero">
+    <p class="info-eyebrow">OceanBazar</p>
+    <h1><%= copy.title %></h1>
+    <p class="info-intro"><%= copy.subtitle %></p>
+    <div class="info-cta-row">
+      <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/tickets"><%= copy.openTicket %></a>
+      <a class="btn btn-outline" href="<%= basePath %>/<%= locale %>/returns"><%= copy.startReturn %></a>
+    </div>
+  </div>
+
+  <section class="info-block">
+    <h2><%= copy.helpTitle %></h2>
+    <div class="info-card-grid">
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/tickets"><strong><%= copy.orderIssues %></strong><span><%= copy.orderIssuesSub %></span></a>
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/returns"><strong><%= copy.returnsRefunds %></strong><span><%= copy.returnsRefundsSub %></span></a>
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/tickets"><strong><%= copy.paymentProblems %></strong><span><%= copy.paymentProblemsSub %></span></a>
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/track"><strong><%= copy.deliveryTracking %></strong><span><%= copy.deliveryTrackingSub %></span></a>
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/account/points"><strong><%= copy.accountPoints %></strong><span><%= copy.accountPointsSub %></span></a>
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/tickets"><strong><%= copy.warrantyClaims %></strong><span><%= copy.warrantyClaimsSub %></span></a>
+    </div>
+  </section>
+
+  <section class="info-block">
+    <div class="info-two-col">
+      <div>
+        <h2><%= copy.disputeProcess %></h2>
+        <p class="muted"><%= copy.disputeProcessSub %></p>
+        <ol class="info-steps">
+          <li><strong><%= copy.disputeStep1Title %></strong> — <%= copy.disputeStep1Sub %></li>
+          <li><strong><%= copy.disputeStep2Title %></strong> — <%= copy.disputeStep2Sub %></li>
+          <li><strong><%= copy.disputeStep3Title %></strong> — <%= copy.disputeStep3Sub %></li>
+          <li><strong><%= copy.disputeStep4Title %></strong> — <%= copy.disputeStep4Sub %></li>
+        </ol>
+      </div>
+      <div>
+        <h2><%= copy.returnProcess %></h2>
+        <p class="muted"><%= copy.returnProcessSub %></p>
+        <ol class="info-steps">
+          <li><strong><%= copy.returnStep1Title %></strong> — <%= copy.returnStep1Sub %></li>
+          <li><strong><%= copy.returnStep2Title %></strong> — <%= copy.returnStep2Sub %></li>
+          <li><strong><%= copy.returnStep3Title %></strong> — <%= copy.returnStep3Sub %></li>
+          <li><strong><%= copy.returnStep4Title %></strong> — <%= copy.returnStep4Sub %></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="info-block">
+    <h2><%= copy.timelinesTitle %></h2>
+    <div class="info-table-wrap">
+      <table class="info-table">
+        <thead>
+          <tr>
+            <th><%= copy.colRequestType %></th>
+            <th><%= copy.colInitialResponse %></th>
+            <th><%= copy.colResolution %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (var i = 1; i <= 7; i++) { %>
+          <tr>
+            <td><%= copy['row' + i + 'Type'] %></td>
+            <td><%= copy['row' + i + 'Response'] %></td>
+            <td><%= copy['row' + i + 'Resolution'] %></td>
+          </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="info-block">
+    <h2><%= copy.faqTitle %></h2>
+    <% for (var q = 1; q <= 8; q++) { %>
+    <details class="info-faq">
+      <summary><%= copy['faq' + q + 'q'] %></summary>
+      <p><%= copy['faq' + q + 'a'] %></p>
+    </details>
+    <% } %>
+  </section>
+
+  <section class="info-block info-cta-block">
+    <h2><%= copy.stillNeedHelp %></h2>
+    <div class="info-card-grid">
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/chat">
+        <strong><%= t('liveChat') %></strong>
+        <span><%= t('chatIntro') %></span>
+      </a>
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/tickets">
+        <strong><%= copy.supportTicketsTitle %></strong>
+        <span><%= copy.supportTicketsDesc %></span>
+      </a>
+      <a class="info-card" href="<%= basePath %>/<%= locale %>/policies">
+        <strong><%= copy.policyDocsTitle %></strong>
+        <span><%= copy.policyDocsDesc %></span>
+      </a>
+    </div>
+  </section>
+</section>
+
+<%- include('partials/footer') %>

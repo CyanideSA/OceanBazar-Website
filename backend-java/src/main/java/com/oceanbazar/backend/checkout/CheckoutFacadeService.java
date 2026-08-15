@@ -11,12 +11,15 @@ import com.oceanbazar.backend.entity.enums.CustomerType;
 import com.oceanbazar.backend.entity.enums.OrderStatus;
 import com.oceanbazar.backend.repository.CartRepository;
 import com.oceanbazar.backend.repository.ProductRepository;
+import com.oceanbazar.backend.repository.ProductVariantRepository;
 import com.oceanbazar.backend.repository.CouponRepository;
 import com.oceanbazar.backend.repository.OrderRepository;
 import com.oceanbazar.backend.repository.SavedAddressRepository;
 import com.oceanbazar.backend.repository.UserRepository;
 import com.oceanbazar.backend.service.CheckoutValidationService;
 import com.oceanbazar.backend.service.PricingService;
+import com.oceanbazar.backend.entity.ProductVariantEntity;
+import com.oceanbazar.backend.utils.VariantLabelUtil;
 import com.oceanbazar.backend.utils.WholesalePricingUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,6 +40,7 @@ public class CheckoutFacadeService {
 
     private final CartRepository cartRepository;
     private final ProductRepository productRepository;
+    private final ProductVariantRepository productVariantRepository;
     private final UserRepository userRepository;
     private final SavedAddressRepository savedAddressRepository;
     private final CouponRepository couponRepository;
@@ -88,7 +92,14 @@ public class CheckoutFacadeService {
             CheckoutValidationService.CheckoutLineItem line = new CheckoutValidationService.CheckoutLineItem();
             line.productId = item.getProductId();
             line.variantId = item.getVariantId();
-            line.productTitle = product.getTitleEn() != null ? product.getTitleEn() : product.getId();
+            ProductVariantEntity variant = null;
+            if (item.getVariantId() != null && !item.getVariantId().isBlank()) {
+                variant = productVariantRepository.findById(item.getVariantId()).orElse(null);
+            }
+            line.productTitle = VariantLabelUtil.titledProduct(
+                    product.getTitleEn() != null ? product.getTitleEn() : product.getId(),
+                    variant
+            );
             line.quantity = item.getQuantity() != null ? item.getQuantity() : 0;
             line.stock = product.getStock() != null ? product.getStock() : 0;
             line.moq = product.getMoq() != null ? product.getMoq() : 1;

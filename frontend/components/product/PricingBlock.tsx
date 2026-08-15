@@ -14,6 +14,8 @@ interface Props {
   product: Product;
   variantPriceOverride?: number | null;
   effectiveStock: number;
+  /** When true, ATC stays available but parent must validate option pick (do not show OOS). */
+  selectionRequired?: boolean;
   variantId?: string | null;
   onAddToCart?: (qty: number, variantId?: string | null) => void;
   onBuyNow?: (qty: number, variantId?: string | null) => void;
@@ -75,6 +77,7 @@ function ActivePricingPanel({
   tc,
   td,
   tp,
+  numberLocale,
 }: {
   mode: 'retail' | 'wholesale';
   pricingResult: ReturnType<typeof calculatePrice>;
@@ -83,9 +86,11 @@ function ActivePricingPanel({
   tc: (k: string) => string;
   td: (k: string) => string;
   tp: (k: string) => string;
+  numberLocale: string;
 }) {
   const base = Number(pricing?.price ?? 0);
   const compareAt = pricing?.compareAt != null ? Number(pricing.compareAt) : null;
+  const fmt = (n: number) => n.toLocaleString(numberLocale);
 
   const previousPrice = compareAt && compareAt > pricingResult.unitPrice
     ? compareAt
@@ -140,12 +145,12 @@ function ActivePricingPanel({
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-3xl font-extrabold text-foreground">
           {tc('taka')}
-          {pricingResult.unitPrice.toLocaleString('bn-BD')}
+          {fmt(pricingResult.unitPrice)}
         </span>
         {previousPrice != null && (
           <span className="text-base text-muted-foreground line-through">
             {tc('taka')}
-            {previousPrice.toLocaleString('bn-BD')}
+            {fmt(previousPrice)}
           </span>
         )}
       </div>
@@ -159,17 +164,17 @@ function ActivePricingPanel({
           </span>
           <div className="text-right">
             <div className="text-xl font-extrabold text-foreground">
-              {tc('taka')}{currentTotal.toLocaleString('bn-BD')}
+              {tc('taka')}{fmt(currentTotal)}
             </div>
           </div>
         </div>
         {savings > 0 && previousTotal != null && previousTotal > currentTotal && (
           <div className="mt-2 flex items-center justify-between gap-3 text-sm">
             <p className="font-semibold text-emerald-600 dark:text-emerald-400">
-              {td('youSave')} {tc('taka')}{savings.toLocaleString('bn-BD')}
+              {td('youSave')} {tc('taka')}{fmt(savings)}
             </p>
             <div className="text-xs text-muted-foreground line-through">
-              {tc('taka')}{previousTotal.toLocaleString('bn-BD')}
+              {tc('taka')}{fmt(previousTotal)}
             </div>
           </div>
         )}
@@ -199,7 +204,7 @@ function ActivePricingPanel({
                 </td>
                 <td className="px-2 py-1.5 text-muted-foreground">—</td>
                 <td className="px-2 py-1.5 text-right font-medium text-foreground">
-                  {tc('taka')}{base.toLocaleString()}
+                  {tc('taka')}{fmt(base)}
                 </td>
               </tr>
               {tiers.map((tier, i) => (
@@ -233,6 +238,7 @@ export default function PricingBlock({
   product,
   variantPriceOverride,
   effectiveStock,
+  selectionRequired = false,
   variantId,
   onAddToCart,
   onBuyNow,
@@ -242,6 +248,7 @@ export default function PricingBlock({
   const tp = useTranslations('product');
   const tpr = useTranslations('pricing');
   const locale = useLocale();
+  const numberLocale = locale === 'bn' ? 'bn-BD' : 'en-BD';
   const router = useShopRouter();
   const [qty, setQty] = useState(1);
   const priceVariant = useAbVariant(AB_TESTS.PRODUCT_PRICE_DISPLAY);
@@ -265,6 +272,25 @@ export default function PricingBlock({
 
   const activePricingData = isWholesale ? product.pricing.wholesale : product.pricing.retail;
   const activeResult = calculatePrice(activeMode, product.pricing, qty, moq, variantPriceOverride);
+  const outOfStock = !selectionRequired && effectiveStock === 0;
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e24651' },
+      body: JSON.stringify({
+        sessionId: 'e24651',
+        runId: 'price-locale',
+        hypothesisId: 'D',
+        location: 'PricingBlock.tsx',
+        message: 'price locale + stock CTA',
+        data: { locale, numberLocale, selectionRequired, effectiveStock, outOfStock, unit: activeResult.unitPrice },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [locale, numberLocale, selectionRequired, effectiveStock, outOfStock, activeResult.unitPrice]);
+  // #endregion
 
   useEffect(() => {
     if (qty > maxQty && maxQty > 0) setQty(maxQty);
@@ -318,6 +344,7 @@ export default function PricingBlock({
         tc={tc}
         td={td}
         tp={tpr}
+        numberLocale={numberLocale}
       />
       {priceVariant === 'B' && activeResult.discountPct > 0 && (
         <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
@@ -341,7 +368,7 @@ export default function PricingBlock({
       {/* Free shipping notice */}
       {activeResult.lineTotal >= FREE_FEES_THRESHOLD && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-          Free shipping + no service charge on this order (subtotal above {FREE_FEES_THRESHOLD.toLocaleString()} BDT)
+          Free shipping + no service charge on this order (subtotal above {FREE_FEES_THRESHOLD.toLocaleString(numberLocale)} BDT)
         </div>
       )}
 
@@ -368,21 +395,21 @@ export default function PricingBlock({
               metadata: { productId: product.id, quantity: qty, mode: activeMode },
             });
           }}
-          disabled={effectiveStock === 0}
+          disabled={outOfStock}
           className="flex-1 rounded-lg bg-primary py-3.5 font-semibold text-primary-foreground shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground min-h-[48px]"
         >
-          {effectiveStock === 0 ? tp('outOfStock') : tp('addToCart')}
+          {outOfStock ? tp('outOfStock') : tp('addToCart')}
         </button>
         <button
           type="button"
-          disabled={effectiveStock === 0}
+          disabled={outOfStock}
           onClick={() => {
             if (onBuyNow) onBuyNow(qty, variantId ?? null);
             else router.push(`/${locale}/checkout`);
           }}
           className={cn(
             'rounded-lg border-2 border-primary px-6 py-3.5 font-semibold text-primary transition-all hover:bg-primary/10 active:scale-[0.98] min-h-[48px]',
-            effectiveStock === 0 && 'cursor-not-allowed border-muted text-muted-foreground hover:bg-transparent',
+            outOfStock && 'cursor-not-allowed border-muted text-muted-foreground hover:bg-transparent',
           )}
         >
           {tp('buyNow')}

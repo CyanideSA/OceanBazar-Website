@@ -1,0 +1,69 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var sent = String(typeof applyStatus !== 'undefined' ? applyStatus : '') === 'ok';
+  var err = String(typeof formError !== 'undefined' ? formError : '');
+  var loggedIn = !!(typeof user !== 'undefined' && user);
+%>
+
+<section class="section info-page">
+  <p class="info-eyebrow">OceanBazar</p>
+  <h1><%= t('wholesaleHub') %></h1>
+  <p class="info-intro"><%= t('wholesaleHubIntro') %></p>
+
+  <section class="info-block">
+    <ul>
+      <li><%= t('wholesaleBenefit1') %></li>
+      <li><%= t('wholesaleBenefit2') %></li>
+      <li><%= t('wholesaleBenefit3') %></li>
+    </ul>
+  </section>
+
+  <% if (sent) { %>
+  <div class="banner ok" role="status"><%= t('wholesaleApplySuccess') %></div>
+  <% } else if (err) { %>
+  <div class="banner err" role="alert"><%= err %></div>
+  <% } %>
+
+  <% if (!loggedIn) { %>
+  <p class="muted">
+    <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/auth/login?next=<%= encodeURIComponent(basePath + '/' + locale + '/wholesale') %>"><%= t('loginToApplyWholesale') %></a>
+  </p>
+  <% } else if (!sent) { %>
+  <form method="post" action="<%= basePath %>/<%= locale %>/wholesale" class="auth-form stack" style="max-width:520px;">
+    <h2><%= t('applyWholesale') %></h2>
+    <label class="field">
+      <span><%= t('companyName') %></span>
+      <input name="businessName" required autocomplete="organization" value="<%= (user && user.companyName) || '' %>" />
+    </label>
+    <label class="field">
+      <span><%= t('tradeLicense') %></span>
+      <input name="tradeLicense" required autocomplete="off" value="<%= (user && user.taxId) || '' %>" />
+    </label>
+    <label class="field">
+      <span><%= t('businessAddress') %></span>
+      <textarea name="address" rows="3" required></textarea>
+    </label>
+    <label class="field">
+      <span><%= t('contactPerson') %></span>
+      <input name="contactPerson" autocomplete="name" value="<%= (user && user.name) || '' %>" />
+    </label>
+    <label class="field">
+      <span><%= t('email') %></span>
+      <input type="email" name="email" autocomplete="email" value="<%= (user && user.email) || '' %>" />
+    </label>
+    <label class="field">
+      <span><%= t('phone') %></span>
+      <input name="phone" inputmode="tel" autocomplete="tel" value="<%= (user && user.phone) || '' %>" />
+    </label>
+    <label class="field">
+      <span><%= t('notes') %></span>
+      <textarea name="notes" rows="4" placeholder="<%= t('wholesaleNotesHint') %>"></textarea>
+    </label>
+    <button type="submit" class="btn btn-primary"><%= t('submitApplication') %></button>
+  </form>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

@@ -17,6 +17,8 @@ BASE="${PROD_BASE:-https://oceanbazar.com.bd}"
 API="${PROD_API:-https://api.oceanbazar.com.bd}"
 ADMIN="${PROD_ADMIN:-https://admin.oceanbazar.com.bd}"
 CONTENTID="${PROD_CONTENTID:-https://contentid.oceanbazar.com.bd}"
+# Path-based Lite on apex (reachable without lite.* DNS/TLS)
+LITE="${PROD_LITE:-https://oceanbazar.com.bd/lite}"
 
 setkv CLIENT_URL "$BASE"
 setkv ADMIN_URL "$ADMIN"
@@ -29,13 +31,19 @@ setkv PUBLIC_BASE_URL "$API"
 # Include every hostname nginx serves (www + .com variants) — any origin missing
 # here gets CORS-blocked in the browser (page loads but all API calls fail).
 WWW_BASE="${BASE/https:\/\//https://www.}"
-COM_ORIGINS="https://oceanbazar.com,https://www.oceanbazar.com,https://admin.oceanbazar.com,https://contentid.oceanbazar.com"
-setkv CORS_ALLOWED_ORIGINS "${BASE},${WWW_BASE},${ADMIN},${CONTENTID},${COM_ORIGINS}"
+COM_ORIGINS="https://oceanbazar.com,https://www.oceanbazar.com,https://admin.oceanbazar.com,https://contentid.oceanbazar.com,https://lite.oceanbazar.com"
+# SSLCommerz browser POSTs success/fail/cancel with their Origin — must be allowed
+# or CORS rejects before the payment handler marks the order paid.
+SSL_ORIGINS="https://sandbox.sslcommerz.com,https://securepay.sslcommerz.com"
+setkv CORS_ALLOWED_ORIGINS "${BASE},${WWW_BASE},${ADMIN},${CONTENTID},${LITE},${COM_ORIGINS},${SSL_ORIGINS}"
 setkv TRUST_PROXY 1
 
 setkv NEXT_PUBLIC_SITE_URL "$BASE"
 setkv NEXT_PUBLIC_API_URL "$API"
 setkv NEXT_PUBLIC_ADMIN_CRM_URL "$ADMIN"
+setkv NEXT_PUBLIC_LIVE_CHAT_ENABLED "true"
+setkv NEXT_PUBLIC_LITE_SITE_URL "$LITE"
+setkv LITE_SITE_URL "$LITE"
 
 setkv VITE_ADMIN_API_URL "$ADMIN"
 setkv VITE_MAINTENANCE_PAGE_URL "${BASE}/en/maintenance"
@@ -54,6 +62,7 @@ setkv MAINTENANCE_COOKIE_DOMAIN .oceanbazar.com.bd
 
 echo "production URLs written to .env"
 echo "  storefront: $BASE"
+echo "  lite:       $LITE"
 echo "  admin:      $ADMIN"
 echo "  api:        $API"
 echo "  contentid:  $CONTENTID"

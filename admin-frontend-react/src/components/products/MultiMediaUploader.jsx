@@ -33,14 +33,24 @@ export default function MultiMediaUploader({
     for (const file of batch) {
       try {
         const r = await adminApi.uploadMedia(file, folder);
+        const url = r.secureUrl || r.url;
+        if (!url) throw new Error("Upload returned no URL");
         next.push({
-          url: r.secureUrl || r.url,
+          url,
           publicId: r.publicId,
           resourceType: r.resourceType || (file.type?.startsWith("video/") ? "video" : "image"),
+          assetType: file.type?.startsWith("video/") ? "video" : "image",
           _localName: file.name,
         });
-      } catch {
-        toast.error(`Failed to upload ${file.name}`);
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'media-e2e',hypothesisId:'H1-H4',location:'MultiMediaUploader.jsx:upload',message:'media upload ok',data:{folder,name:file.name,mime:file.type,size:file.size,resourceType:r.resourceType,url:String(url).slice(0,80)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      } catch (err) {
+        const detail = err?.response?.data?.error || err?.message || "Upload failed";
+        toast.error(`Failed to upload ${file.name}`, detail);
+        // #region agent log
+        fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'media-e2e',hypothesisId:'H1-H4',location:'MultiMediaUploader.jsx:upload',message:'media upload failed',data:{folder,name:file.name,mime:file.type,size:file.size,detail:String(detail)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       }
     }
     onChange(next);

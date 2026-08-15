@@ -1,0 +1,81 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var bizMail = (settings && (settings.businessInquiryEmail || settings.businessEmail))
+    ? (settings.businessInquiryEmail || settings.businessEmail)
+    : 'business@oceanbazar.com.bd';
+  var sent = String(typeof inquiryStatus !== 'undefined' ? inquiryStatus : '') === 'ok';
+  var bizTypes = ['retailer', 'corporate', 'brand', 'wholesale', 'other'];
+%>
+
+<section class="section info-page">
+  <p class="info-eyebrow"><%= copy.heroTag %></p>
+  <h1><%= copy.title %></h1>
+  <p class="info-intro"><%= copy.subtitle %></p>
+
+  <section class="info-block">
+    <h2><%= copy.whyTitle %></h2>
+    <p class="muted"><%= copy.whySub %></p>
+    <div class="info-card-grid">
+      <div class="info-card"><strong><%= copy.feat1Title %></strong><span><%= copy.feat1Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat2Title %></strong><span><%= copy.feat2Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat3Title %></strong><span><%= copy.feat3Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat4Title %></strong><span><%= copy.feat4Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat5Title %></strong><span><%= copy.feat5Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat6Title %></strong><span><%= copy.feat6Body %></span></div>
+    </div>
+  </section>
+
+  <section class="info-block info-cta-block">
+    <h2><%= copy.ctaTitle %></h2>
+    <p><%= copy.ctaSub %></p>
+    <p><strong><%= copy.inquiryEmailLabel %></strong><br />
+      <a href="mailto:<%= bizMail %>"><%= bizMail %></a>
+    </p>
+
+    <% if (sent) { %>
+    <div class="banner ok" role="status"><%= copy.success %></div>
+    <% } else { %>
+    <form method="post" action="<%= basePath %>/<%= locale %>/business-inquiries" class="auth-form stack" style="margin-top:16px;max-width:520px;">
+      <h3><%= copy.formTitle %></h3>
+      <label class="field">
+        <span><%= copy.name %></span>
+        <input name="name" required autocomplete="name" />
+      </label>
+      <label class="field">
+        <span><%= copy.email %></span>
+        <input type="email" name="email" required autocomplete="email" />
+      </label>
+      <label class="field">
+        <span><%= copy.company %></span>
+        <input name="company" autocomplete="organization" />
+      </label>
+      <label class="field">
+        <span><%= copy.phone %></span>
+        <input name="phone" inputmode="tel" autocomplete="tel" />
+      </label>
+      <label class="field">
+        <span><%= copy.businessType %></span>
+        <select name="businessType">
+          <% bizTypes.forEach(function (bt) { %>
+          <option value="<%= bt %>"><%= (copy.businessTypes && copy.businessTypes[bt]) || bt %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label class="field">
+        <span><%= copy.message %></span>
+        <textarea name="message" rows="4" required placeholder="<%= copy.messagePlaceholder %>"></textarea>
+      </label>
+      <button type="submit" class="btn btn-primary"><%= copy.submit %></button>
+    </form>
+    <% } %>
+
+    <div class="info-cta-row" style="margin-top:18px;">
+      <a class="btn btn-outline" href="<%= basePath %>/<%= locale %>/contact"><%= copy.contactPageCta || t('contactUs') %></a>
+      <a class="btn btn-primary" href="<%= basePath %>/prefer?view=full&amp;ttl=4h&amp;next=<%= encodeURIComponent('/' + locale + '/business-inquiries') %>"><%= t('openOnFullSite') %></a>
+    </div>
+  </section>
+</section>
+
+<%- include('partials/footer') %>

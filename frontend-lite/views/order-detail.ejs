@@ -1,0 +1,169 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var items = order.items || order.orderItems || [];
+  var paid = String(order.paymentStatus || '').toLowerCase() === 'paid';
+  var created = order.createdAt || order.created_at;
+  var addr = order.shippingAddress || order.address || null;
+  var num = function (v) { return Number(v || 0); };
+%>
+
+<section class="section order-detail" id="obOrder">
+  <p class="crumb no-print"><a href="<%= basePath %>/<%= locale %>/account/orders">&larr; <%= t('orders') %></a></p>
+
+  <div class="order-detail-head">
+    <div>
+      <h1>#<%= order.orderNumber || order.id %></h1>
+      <% if (created) { %>
+      <p class="muted"><%= t('orderDate') %>: <%= new Date(created).toLocaleDateString(locale === 'bn' ? 'bn-BD' : 'en-GB', { year: 'numeric', month: 'long', day: 'numeric' }) %></p>
+      <% } %>
+    </div>
+    <div class="order-detail-badges">
+      <span class="pill"><%= order.status || '' %></span>
+      <span class="pill <%= paid ? 'pill-ok' : 'pill-warn' %>"><%= paid ? t('paid') : t('pendingPayment') %></span>
+    </div>
+  </div>
+
+  <%
+    var payStatus = String(order.paymentStatus || '').toLowerCase();
+    var payMethod = String(order.paymentMethod || '').toLowerCase();
+    var canPayAgain = ['unpaid', 'under_verification', 'failed'].indexOf(payStatus) >= 0
+      && ['cancelled', 'returned'].indexOf(String(order.status || '').toLowerCase()) < 0
+      && (payMethod === 'cod' || payMethod === 'sslcommerz' || payMethod === 'bkash' || payMethod === 'nagad' || payMethod === 'rocket' || payMethod === 'upay');
+    var retryPurpose = payMethod === 'cod' ? 'delivery_fee' : 'order_total';
+  %>
+  <div class="order-detail-actions no-print">
+    <a class="btn btn-outline btn-sm" href="<%= basePath %>/<%= locale %>/account/orders/<%= order.id %>/invoice"><%= t('printInvoice') %></a>
+    <% if (canPayAgain) { %>
+    <form method="post" action="<%= basePath %>/<%= locale %>/checkout/retry-pay" style="display:inline">
+      <input type="hidden" name="orderId" value="<%= order.id %>" />
+      <input type="hidden" name="purpose" value="<%= retryPurpose %>" />
+      <button type="submit" class="btn btn-primary btn-sm"><%= t('payNow') || 'Pay now' %></button>
+    </form>
+    <% } %>
+  </div>
+
+  <%
+    var isDelivered = String(order.status || '').toLowerCase() === 'delivered' || String(order.status || '').toLowerCase() === 'returned';
+    var surveyState = typeof survey !== 'undefined' ? survey : null;
+    var showSurvey = isDelivered;
+    var surveyOpen = String(typeof openSurvey !== 'undefined' ? openSurvey : false) === 'true' || String(typeof openSurvey !== 'undefined' ? openSurvey : '') === '1';
+    var isCod = String(order.paymentMethod || '').toLowerCase() === 'cod';
+  %>
+  <% if (showSurvey) { %>
+  <div class="survey-banner no-print">
+    <strong><%= t('orderSurveyTitle') %></strong>
+    <p class="muted"><%= t('orderSurveyIntro') %></p>
+    <p class="muted"><%= t('earnFivePoints') %></p>
+    <% if (typeof surveyError !== 'undefined' && surveyError) { %><p class="banner err"><%= surveyError %></p><% } %>
+    <% if (typeof surveyNotice !== 'undefined' && surveyNotice) { %><p class="banner ok"><%= surveyNotice %></p><% } %>
+    <% if (!surveyState || !surveyState.surveyCompleted) { %>
+    <details <%= surveyOpen ? 'open' : '' %>>
+      <summary class="btn btn-primary btn-sm" style="display:inline-block;cursor:pointer;"><%= t('surveyOpen') %></summary>
+      <form method="post" action="<%= basePath %>/<%= locale %>/account/orders/<%= order.id %>/survey" class="stack" style="margin-top:12px;max-width:480px;">
+        <label class="field"><span><%= t('surveyProduct') %></span>
+          <select name="productSatisfaction" required><option value="">—</option><% for (var s=5;s>=1;s--) { %><option value="<%= s %>"><%= '★'.repeat(s) %></option><% } %></select>
+        </label>
+        <label class="field"><span><%= t('surveyService') %></span>
+          <select name="serviceSatisfaction" required><option value="">—</option><% for (var s2=5;s2>=1;s2--) { %><option value="<%= s2 %>"><%= '★'.repeat(s2) %></option><% } %></select>
+        </label>
+        <label class="field"><span><%= t('surveyPayment') %></span>
+          <select name="paymentConvenience" required><option value="">—</option><% for (var s3=5;s3>=1;s3--) { %><option value="<%= s3 %>"><%= '★'.repeat(s3) %></option><% } %></select>
+        </label>
+        <% if (isCod) { %>
+        <label class="field"><span><%= t('surveyCod') %></span>
+          <select name="codExperience" required><option value="">—</option><% for (var s4=5;s4>=1;s4--) { %><option value="<%= s4 %>"><%= '★'.repeat(s4) %></option><% } %></select>
+        </label>
+        <% } %>
+        <label class="field"><span><%= t('surveyDelivery') %></span>
+          <select name="deliveryExperience" required><option value="">—</option><% for (var s5=5;s5>=1;s5--) { %><option value="<%= s5 %>"><%= '★'.repeat(s5) %></option><% } %></select>
+        </label>
+        <label class="field"><span><%= t('surveyComments') %></span>
+          <textarea name="comments" rows="3"></textarea>
+        </label>
+        <button type="submit" class="btn btn-primary"><%= t('surveyContinue') %></button>
+      </form>
+    </details>
+    <% } else { %>
+    <p class="banner ok"><%= t('surveyThanks') %></p>
+    <% if (surveyState.items && surveyState.items.length) { %>
+    <ul class="stack" style="margin-top:10px;">
+      <% surveyState.items.forEach(function(it) { %>
+      <li>
+        <%= it.productTitle %>
+        <% if (it.updatedForThisOrder) { %>
+          <span class="pill pill-ok"><%= t('reviews') %></span>
+        <% } %>
+        <a class="btn btn-sm btn-primary" href="<%= basePath %>/<%= locale %>/product/<%= encodeURIComponent(it.productId) %>?orderId=<%= encodeURIComponent(order.id) %>#reviews">
+          <%= it.reviewed ? t('editReview') : t('writeReview') %>
+        </a>
+      </li>
+      <% }) %>
+    </ul>
+    <% } %>
+    <% } %>
+  </div>
+  <% } %>
+
+  <% if (items.length) { %>
+  <div class="card-block">
+    <h2><%= t('orderSummary') %></h2>
+    <ul class="line-items">
+      <% items.forEach(function(it) {
+        var img = it.image || it.imageUrl || it.productImage || (it.product && (it.product.imageUrl || it.product.image)) || '';
+        var nm = it.productTitle || it.productName || it.name || it.productId;
+        var qty = num(it.quantity || 1);
+        var line = num(it.lineTotal != null ? it.lineTotal : (it.unitPrice || it.price) * qty);
+      %>
+      <li class="line-item">
+        <% if (img) { %><img class="line-thumb" src="<%= img %>" alt="" width="48" height="48" loading="lazy" /><% } %>
+        <div class="line-info">
+          <span class="line-name"><%= nm %></span>
+          <span class="line-qty">× <%= qty %></span>
+        </div>
+        <span class="line-total"><%= helpers.money(line) %></span>
+      </li>
+      <% }) %>
+    </ul>
+
+    <dl class="totals">
+      <div><dt><%= t('subtotal') %></dt><dd><%= helpers.money(order.subtotal || 0) %></dd></div>
+      <% if (num(order.discount) > 0) { %><div class="totals-save"><dt><%= t('discount') %></dt><dd>-<%= helpers.money(order.discount) %></dd></div><% } %>
+      <div><dt><%= t('shipping') %></dt><dd><%= num(order.shippingFee) === 0 ? t('trustShip') : helpers.money(order.shippingFee) %></dd></div>
+      <% if (num(order.gst) > 0) { %><div><dt><%= t('vat') %></dt><dd><%= helpers.money(order.gst) %></dd></div><% } %>
+      <% if (num(order.serviceFee) > 0) { %><div><dt><%= t('serviceFee') %></dt><dd><%= helpers.money(order.serviceFee) %></dd></div><% } %>
+      <div class="totals-grand"><dt><%= t('total') %></dt><dd><%= helpers.money(order.total || order.grandTotal || 0) %></dd></div>
+    </dl>
+  </div>
+  <% } %>
+
+  <div class="order-detail-cols">
+    <div class="card-block">
+      <h2><%= t('paymentMethod') %></h2>
+      <p><%= order.paymentMethod || '' %></p>
+      <p class="muted"><%= t('paymentStatus') %>: <%= paid ? t('paid') : t('pendingPayment') %></p>
+    </div>
+
+    <% if (addr) { %>
+    <div class="card-block">
+      <h2><%= t('shippingAddress') %></h2>
+      <p>
+        <strong><%= addr.name || '' %></strong><br />
+        <%= addr.addressLine1 || addr.addressLine || '' %><br />
+        <% if (addr.area) { %><%= addr.area %>, <% } %><%= addr.city || '' %><% if (addr.district) { %>, <%= addr.district %><% } %><br />
+        <% if (addr.phone) { %><%= addr.phone %><% } %>
+      </p>
+    </div>
+    <% } %>
+  </div>
+
+  <% if (tracking) { %>
+  <div class="card-block no-print">
+    <h2><%= t('orderTracking') %></h2>
+    <%- include('partials/tracking-timeline', { trackingData: tracking }) %>
+  </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

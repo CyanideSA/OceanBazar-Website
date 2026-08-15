@@ -5,14 +5,19 @@ import {
   Star, Package, HeadphonesIcon, RefreshCcw, BadgePercent,
   CheckCircle2, Globe, Lock, Clock, TrendingUp,
 } from 'lucide-react';
+import { fetchStorefrontSettings } from '@/lib/fetchStorefrontCatalog';
+import { getMessageOverrides, tx } from '@/lib/pageContent';
 
 export default async function MarketingPage(props: { params: Promise<{ locale: string }> }) {
   const params = await props.params;
   const { locale } = params;
-  const t = await getTranslations({ locale, namespace: 'marketing' });
+  const tRaw = await getTranslations({ locale, namespace: 'marketing' });
+  const settings = await fetchStorefrontSettings();
+  const ov = getMessageOverrides(settings.pageContent, 'marketing', locale);
+  const t = ((key: string) => tx(ov, key, tRaw(key as Parameters<typeof tRaw>[0]))) as typeof tRaw;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="container-tight py-10">
 
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <div className="mb-12 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/90 to-primary px-8 py-14 text-primary-foreground shadow-soft md:px-14">

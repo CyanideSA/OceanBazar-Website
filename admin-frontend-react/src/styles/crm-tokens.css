@@ -88,6 +88,8 @@
   --crm-sidebar-width: 260px;
   --crm-sidebar-collapsed: 64px;
   --crm-topbar-height: 64px;
+  /* Mobile bottom dock (~88px measured) + iOS home-indicator safe area */
+  --crm-bottom-nav-offset: calc(5.5rem + env(safe-area-inset-bottom, 0px));
   --crm-radius-sm: 4px;
   --crm-radius-md: 6px;
   --crm-radius-lg: 8px;

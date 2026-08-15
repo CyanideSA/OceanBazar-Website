@@ -172,31 +172,30 @@ export default function ProductZoomGallery({ images, title, activeIndex, onSelec
           </>
         )}
 
-        {/* Mobile prev/next arrows */}
+        {/* Prev/next for images & videos (all breakpoints) */}
         {images.length > 1 && (
           <>
-            <button type="button" aria-label="Previous image"
+            <button type="button" aria-label="Previous media"
               onClick={() => onSelectIndex(Math.max(activeIndex - 1, 0))}
               className={cn(
-                'absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-background/80 p-1.5 shadow-md backdrop-blur-sm transition-opacity lg:hidden',
-                activeIndex === 0 ? 'opacity-30 pointer-events-none' : 'opacity-80'
+                'absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-background/80 p-1.5 shadow-md backdrop-blur-sm transition-opacity hover:opacity-100',
+                activeIndex === 0 ? 'opacity-30 pointer-events-none' : 'opacity-90'
               )}
             >
               <ChevronLeft className="h-5 w-5 text-foreground" />
             </button>
-            <button type="button" aria-label="Next image"
+            <button type="button" aria-label="Next media"
               onClick={() => onSelectIndex(Math.min(activeIndex + 1, images.length - 1))}
               className={cn(
-                'absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-background/80 p-1.5 shadow-md backdrop-blur-sm transition-opacity lg:hidden',
-                activeIndex === images.length - 1 ? 'opacity-30 pointer-events-none' : 'opacity-80'
+                'absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full bg-background/80 p-1.5 shadow-md backdrop-blur-sm transition-opacity hover:opacity-100',
+                activeIndex === images.length - 1 ? 'opacity-30 pointer-events-none' : 'opacity-90'
               )}
             >
               <ChevronRight className="h-5 w-5 text-foreground" />
             </button>
-            {/* Dot indicators — mobile */}
-            <div className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 gap-1.5 lg:hidden">
+            <div className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
               {images.map((_, i) => (
-                <button key={i} type="button" aria-label={`Image ${i + 1}`}
+                <button key={i} type="button" aria-label={`Media ${i + 1}`}
                   onClick={() => onSelectIndex(i)}
                   className={cn('h-1.5 rounded-full transition-all',
                     i === activeIndex ? 'w-5 bg-primary' : 'w-1.5 bg-foreground/30')}

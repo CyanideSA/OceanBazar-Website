@@ -284,7 +284,7 @@ router.post('/message', optionalAuth, async (req: Request, res: Response) => {
 /* ── POST /api/chat/action ────────────────────────────────────────────────── */
 router.post('/action', optionalAuth, async (req: Request, res: Response) => {
   try {
-    const { sessionId, action, payload, visitorId } = req.body;
+    const { sessionId, action, payload, visitorId, productId, quantity } = req.body;
     const userId: string = (req as any).user?.userId ?? visitorId;
     if (!userId || !action) { res.status(400).json({ error: 'Missing fields' }); return; }
 
@@ -297,10 +297,35 @@ router.post('/action', optionalAuth, async (req: Request, res: Response) => {
     if (!session || session.user_id !== userId) { res.status(404).json({ error: 'Session not found' }); return; }
 
     const actionKey = String(action).toLowerCase().replace(/\s+/g, '_');
+    const mergedPayload: Record<string, unknown> = {
+      ...(payload && typeof payload === 'object' ? payload : {}),
+    };
+    if (productId && !mergedPayload.productId) mergedPayload.productId = productId;
+    if (quantity != null && mergedPayload.quantity == null) mergedPayload.quantity = quantity;
+
+    // #region agent log
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      fs.appendFileSync(
+        path.resolve(__dirname, '../../../debug-1eb282.log'),
+        `${JSON.stringify({
+          sessionId: '1eb282',
+          runId: 'pre-fix',
+          hypothesisId: 'H6',
+          location: 'chat.ts:/action',
+          message: 'chat action received',
+          data: { actionKey, hasProductId: Boolean(mergedPayload.productId) },
+          timestamp: Date.now(),
+        })}\n`,
+      );
+    } catch { /* ignore */ }
+    // #endregion
+
     const result = await processAction({
       session,
       action: actionKey,
-      payload,
+      payload: mergedPayload,
       userId,
       isAuthenticated: Boolean((req as any).user?.userId),
       userName: session.customer_name || undefined,

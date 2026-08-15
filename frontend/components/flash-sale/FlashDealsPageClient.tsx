@@ -48,13 +48,17 @@ function CampaignPageBlock({ campaign }: { campaign: FlashCampaign }) {
   );
 }
 
-export default function FlashDealsPageClient() {
+export default function FlashDealsPageClient({
+  initialPayload,
+}: {
+  initialPayload?: FlashPagePayload | null;
+}) {
   const locale = useLocale();
   const t = useTranslations('flashDealsPage');
   const searchParams = useSearchParams();
   const saleFilter = searchParams.get('sale');
-  const [payload, setPayload] = useState<FlashPagePayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [payload, setPayload] = useState<FlashPagePayload | null>(initialPayload ?? null);
+  const [loading, setLoading] = useState(!initialPayload);
 
   const fetchPage = useCallback(async () => {
     try {
@@ -81,9 +85,12 @@ export default function FlashDealsPageClient() {
     || payload?.upcoming[0]?.banner_color
     || '#f97316';
 
+  const ssrCount = (payload?.campaigns ?? []).reduce((n, c) => n + (c.products?.length ?? 0), 0);
+
   return (
     <div
       className="relative min-h-[70vh] overflow-hidden"
+      data-ob-ssr-products={String(ssrCount)}
       style={{
         background: `radial-gradient(ellipse at top, ${accent}22 0%, transparent 55%), linear-gradient(180deg, ${accent}12 0%, hsl(var(--background)) 45%)`,
       }}

@@ -48,10 +48,23 @@ router.post('/apply', async (req: Request, res: Response) => {
         user_id: req.user!.userId,
         business_name: String(businessName).trim(),
         tax_id: String(tradeLicense).trim(),
-        business_description: notes ? String(notes) : null,
+        business_description: [
+          notes ? String(notes) : '',
+          address ? `Address: ${String(address).trim()}` : '',
+        ].filter(Boolean).join('\n') || null,
         status: 'pending',
       },
     });
+
+    try {
+      const { emitAdminEvent } = await import('../lib/adminEvents');
+      emitAdminEvent('admin:applications:wholesale', {
+        id: created.id,
+        userId: req.user!.userId,
+        businessName: created.business_name,
+        status: created.status,
+      });
+    } catch { /* non-fatal */ }
 
     res.status(201).json({ application: created, message: 'Wholesale application submitted' });
   } catch (err: any) {

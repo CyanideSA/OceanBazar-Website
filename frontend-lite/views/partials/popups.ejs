@@ -1,0 +1,28 @@
+<%
+  var popupsRaw = (settings && Array.isArray(settings.storefrontPopups)) ? settings.storefrontPopups : [];
+  var appDl = (settings && settings.appDownload) ? settings.appDownload : { enabled: true };
+  var isLoggedIn = !!(typeof user !== 'undefined' && user);
+%>
+<script type="application/json" id="obStorefrontPopupsCfg"><%- JSON.stringify({
+  loggedIn: isLoggedIn,
+  popups: popupsRaw,
+  locale: locale,
+  basePath: basePath
+}).replace(/</g, '\\u003c') %></script>
+<script type="application/json" id="obAppDownloadCfg"><%- JSON.stringify(appDl || {}).replace(/</g, '\\u003c') %></script>
+
+<div id="obAppDownloadBanner" class="app-dl-banner is-hidden" hidden data-app-dl-banner></div>
+
+<div id="obPopupRoot" class="ob-popup-root is-hidden" hidden data-popup-root>
+  <div class="ob-popup-backdrop" data-popup-backdrop></div>
+  <div class="ob-popup-dialog" role="dialog" aria-modal="true" data-popup-dialog>
+    <button type="button" class="ob-popup-close" data-popup-close aria-label="Close">×</button>
+    <img class="ob-popup-image is-hidden" data-popup-image alt="" />
+    <div class="ob-popup-body">
+      <h2 class="ob-popup-title" data-popup-title></h2>
+      <p class="ob-popup-text" data-popup-text></p>
+      <a class="btn btn-primary ob-popup-cta is-hidden" data-popup-link></a>
+      <button type="button" class="btn btn-primary ob-popup-cta is-hidden" data-popup-close-btn></button>
+    </div>
+  </div>
+</div>

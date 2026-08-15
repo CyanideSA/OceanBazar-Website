@@ -20,13 +20,19 @@ export const StorefrontReviewSchema = z.object({
   unhelpfulCount: z.number().optional(),
   verifiedPurchase: z.boolean().optional(),
   authorName: z.string().optional(),
+  authorAvatar: z.string().nullable().optional(),
+  status: z.string().optional(),
+  pending: z.boolean().optional(),
   createdAt: z.string(),
 });
 
 export const ReviewListResponseSchema = z.object({
   reviews: z.array(StorefrontReviewSchema).optional(),
+  myReview: StorefrontReviewSchema.nullable().optional(),
   items: z.array(ReviewSchema).optional(),
   ratingDistribution: z.record(z.number()).optional(),
+  averageRating: z.number().optional(),
+  totalReviews: z.number().optional(),
   pagination: z
     .object({
       page: z.number(),

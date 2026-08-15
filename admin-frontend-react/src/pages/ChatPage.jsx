@@ -1,8 +1,9 @@
-﻿import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   FiSend, FiSearch, FiCheckCircle,
   FiMessageSquare, FiSlash, FiHeadphones, FiAlertCircle,
   FiEdit3, FiRefreshCw, FiZap, FiChevronDown,
+  FiPlus, FiTrash2, FiArrowLeft, FiInfo, FiX,
 } from "react-icons/fi";
 import { adminApi, resolveAdminApiBase } from "../lib/api";
 import { getAdminRealtimeToken } from "../lib/realtimeAuth";
@@ -11,7 +12,9 @@ import { isRealUserId } from "../lib/deepLink";
 import { format, formatDistanceToNow } from "date-fns";
 import { io } from "socket.io-client";
 
-const CANNED_RESPONSES = [
+const QUICK_REPLIES_SOFT_CAP = 200;
+
+const DEFAULT_QUICK_REPLIES = [
   { id: 1,  label: "Greeting",         text: "Hello! I'm from OceanBazar support. How can I help you today? 😊" },
   { id: 2,  label: "Order number ask", text: "Could you please share your order number so I can look into this for you?" },
   { id: 3,  label: "Checking now",     text: "I'll check on that right away and get back to you in just a moment!" },
@@ -23,6 +26,13 @@ const CANNED_RESPONSES = [
   { id: 9,  label: "Please wait",      text: "Thank you for your patience — please give me a moment while I look into this for you." },
   { id: 10, label: "Apology",          text: "I sincerely apologise for the inconvenience caused. Let me get this sorted for you right away." },
 ];
+
+function newQuickReplyId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `qr-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
 
 const BFF_URL = resolveAdminApiBase();
 
@@ -89,6 +99,128 @@ function GreetingModal({ onSave }) {
         >
           {saving ? "Saving…" : "Save & Continue"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Quick Replies Manage Modal ───────────────────────────────────────────── */
+function QuickRepliesManageModal({ replies, onClose, onSaved }) {
+  const toast = useToast();
+  const [drafts, setDrafts] = useState(() =>
+    (Array.isArray(replies) ? replies : []).map((r) => ({
+      id: r.id,
+      label: r.label || "",
+      text: r.text || "",
+    }))
+  );
+  const [saving, setSaving] = useState(false);
+
+  const updateRow = (id, patch) => {
+    setDrafts((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+  const removeRow = (id) => {
+    setDrafts((prev) => prev.filter((r) => r.id !== id));
+  };
+  const addRow = () => {
+    if (drafts.length >= QUICK_REPLIES_SOFT_CAP) {
+      toast.error(`Soft limit of ${QUICK_REPLIES_SOFT_CAP} quick replies reached`);
+      return;
+    }
+    setDrafts((prev) => [...prev, { id: newQuickReplyId(), label: "", text: "" }]);
+  };
+  const save = async () => {
+    const cleaned = drafts
+      .map((r) => ({
+        id: r.id,
+        label: String(r.label || "").trim(),
+        text: String(r.text || "").trim(),
+      }))
+      .filter((r) => r.label && r.text);
+    if (cleaned.length > QUICK_REPLIES_SOFT_CAP) {
+      toast.error(`Soft limit of ${QUICK_REPLIES_SOFT_CAP} quick replies reached`);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await adminApi.chatSetQuickReplies(cleaned);
+      const saved = Array.isArray(res?.replies) ? res.replies : cleaned;
+      onSaved(saved);
+      toast.success("Quick replies saved");
+      onClose();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to save quick replies");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+      <div className="flex h-[92dvh] sm:h-auto sm:max-h-[85vh] w-full max-w-lg flex-col rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Manage Quick Replies</h2>
+            <p className="text-xs text-muted-foreground">{drafts.length} / {QUICK_REPLIES_SOFT_CAP}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted">
+            <FiX size={18} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar">
+          {drafts.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No quick replies yet. Add your first one.</p>
+          ) : drafts.map((r, idx) => (
+            <div key={r.id} className="rounded-xl border border-border bg-background p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-muted-foreground w-6 shrink-0">#{idx + 1}</span>
+                <input
+                  value={r.label}
+                  onChange={(e) => updateRow(r.id, { label: e.target.value })}
+                  placeholder="Label (e.g. Greeting)"
+                  className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRow(r.id)}
+                  className="shrink-0 rounded-lg p-2 text-rose-500 hover:bg-rose-500/10"
+                  title="Delete"
+                >
+                  <FiTrash2 size={15} />
+                </button>
+              </div>
+              <textarea
+                value={r.text}
+                onChange={(e) => updateRow(r.id, { text: e.target.value })}
+                rows={2}
+                placeholder="Reply text inserted into the draft…"
+                className="w-full resize-none rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="shrink-0 border-t border-border px-4 py-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={addRow}
+            disabled={drafts.length >= QUICK_REPLIES_SOFT_CAP}
+            className="flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40"
+          >
+            <FiPlus size={14} /> Add reply
+          </button>
+          <div className="flex-1" />
+          <button type="button" onClick={onClose} className="rounded-xl px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={save}
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50 hover:brightness-110"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -231,6 +363,9 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
   const [customerTyping, setCustomerTyping] = useState(false);
   const [showGreetingModal, setShowGreetingModal] = useState(false);
   const [showCanned, setShowCanned] = useState(false);
+  const [showManageReplies, setShowManageReplies] = useState(false);
+  const [quickReplies, setQuickReplies] = useState(DEFAULT_QUICK_REPLIES);
+  const [mobilePane, setMobilePane] = useState("list"); // list | chat | info
   const [myAgentId, setMyAgentId] = useState(null);
   const [customerContext, setCustomerContext] = useState(null);
   const [customerContextLoading, setCustomerContextLoading] = useState(false);
@@ -242,6 +377,69 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
 
   // Keep ref in sync with state so socket handlers always read the latest value
   useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
+
+  // #region agent log
+  useEffect(() => {
+    const measure = () => {
+      const frame = document.querySelector(".crm-chat-mobile-frame");
+      const composer = document.querySelector("[data-ob-chat-composer]");
+      const bottomNav = document.querySelector("[data-ob-bottom-nav]");
+      const fr = frame?.getBoundingClientRect();
+      const cr = composer?.getBoundingClientRect();
+      const nr = bottomNav?.getBoundingClientRect();
+      const overlap = cr && nr ? Math.max(0, cr.bottom - nr.top) : null;
+      const payload = {
+        sessionId: "1eb282",
+        runId: "post-fix",
+        hypothesisId: "H1",
+        location: "ChatPage.jsx:layoutMeasure",
+        message: "chat vs bottom-nav geometry",
+        data: {
+          mobilePane,
+          vw: window.innerWidth,
+          vh: window.innerHeight,
+          frame: fr ? { top: fr.top, bottom: fr.bottom, height: fr.height, z: frame ? getComputedStyle(frame).zIndex : null } : null,
+          composer: cr ? { top: cr.top, bottom: cr.bottom, height: cr.height } : null,
+          bottomNav: nr ? { top: nr.top, bottom: nr.bottom, height: nr.height, z: bottomNav ? getComputedStyle(bottomNav).zIndex : null } : null,
+          overlapPx: overlap,
+          composerBuried: overlap != null ? overlap > 8 : null,
+          frameAboveNavPx: fr && nr ? nr.top - fr.bottom : null,
+          clearanceOk: fr && nr ? fr.bottom <= nr.top + 1 : null,
+        },
+        timestamp: Date.now(),
+      };
+      const body = JSON.stringify(payload);
+      fetch("/__ob-debug/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+      fetch("http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "1eb282" },
+        body,
+      }).catch(() => {});
+    };
+    measure();
+    const t = window.setTimeout(measure, 250);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("resize", measure);
+    };
+  }, [mobilePane, activeSession?.id]);
+  // #endregion
+
+  /* ── Load quick replies (seed defaults in UI only if API empty) ─────────── */
+  useEffect(() => {
+    let cancelled = false;
+    adminApi.chatGetQuickReplies()
+      .then((res) => {
+        if (cancelled) return;
+        const replies = Array.isArray(res?.replies) ? res.replies : [];
+        setQuickReplies(replies.length ? replies : DEFAULT_QUICK_REPLIES);
+      })
+      .catch(() => {
+        if (!cancelled) setQuickReplies(DEFAULT_QUICK_REPLIES);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const userId = activeSession?.user_id;
@@ -403,6 +601,7 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
       const s = res?.session || session;
       setActiveSession(s);
       setMessages(Array.isArray(s.messages) ? s.messages : []);
+      setMobilePane("chat");
       adminApi.chatMarkRead(s.id).catch(() => null);
     } catch { toast.error("Failed to load session"); }
   };
@@ -417,6 +616,10 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
       setActiveSession(updated);
       setMessages(Array.isArray(updated.messages) ? updated.messages : messages);
       setSessions((prev) => prev.map((s) => s.id === updated.id ? updated : s));
+      setMobilePane("chat");
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'078c95'},body:JSON.stringify({sessionId:'078c95',runId:'chat-mobile',hypothesisId:'M1',location:'ChatPage.jsx:handleClaim',message:'claim success — staying on chat pane',data:{sessionId:updated?.id||null,status:updated?.status||null,mobilePane:'chat',agentId:updated?.agent_id||null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       toast.success("You've claimed this conversation!");
     } catch (err) {
       toast.error(err?.response?.data?.error || "Could not claim session");
@@ -433,8 +636,9 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
       const newMsg = res?.message;
       if (newMsg) {
         setMessages((p) => {
+          if (p.some((m) => m.id === newMsg.id)) return p;
           // #region agent log
-          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'duplicate-pre-fix',hypothesisId:'DUP-A',location:'admin ChatPage.jsx:handleSend',message:'Admin HTTP send response appended',data:{messageId:String(newMsg.id||''),alreadyPresent:p.some((m)=>m.id===newMsg.id),messageCount:p.length},timestamp:Date.now()})}).catch(()=>{});
+          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'chat-e2e',hypothesisId:'DUP-A',location:'admin ChatPage.jsx:handleSend',message:'Admin HTTP send appended (deduped)',data:{messageId:String(newMsg.id||''),messageCount:p.length+1},timestamp:Date.now()})}).catch(()=>{});
           // #endregion
           return [...p, newMsg];
         });
@@ -463,6 +667,7 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
       setSessions((p) => p.filter((s) => s.id !== activeSession.id));
       setActiveSession(null);
       setMessages([]);
+      setMobilePane("list");
     } catch { toast.error("Failed to finish session"); }
   };
 
@@ -475,6 +680,7 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
       setSessions((p) => p.filter((s) => s.id !== activeSession.id));
       setActiveSession(null);
       setMessages([]);
+      setMobilePane("list");
       fetchSessions();
     } catch { toast.error("Failed to update session"); }
   };
@@ -497,17 +703,38 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
 
   /* ── Render ────────────────────────────────────────────────────────────── */
   return (
-    <div className="flex h-[calc(100vh-var(--crm-topbar-height,64px)-2rem)] gap-4 overflow-hidden">
+    <div
+      className={[
+        "crm-chat-mobile-frame flex overflow-hidden",
+        /* Sit above the fixed bottom dock (z-40). Full inset-0 buried the composer under the dock. */
+        "max-md:fixed max-md:inset-x-0 max-md:top-0 max-md:bottom-[var(--crm-bottom-nav-offset)] max-md:z-30 max-md:h-auto max-md:max-h-[100dvh] max-md:w-full max-md:flex-col max-md:gap-0 max-md:rounded-none",
+        "md:relative md:h-[calc(100vh-var(--crm-topbar-height,64px)-2rem)] md:gap-4",
+      ].join(" ")}
+    >
 
       {/* Greeting setup modal — shown first time */}
       {showGreetingModal && (
         <GreetingModal onSave={() => setShowGreetingModal(false)} />
       )}
+      {showManageReplies && (
+        <QuickRepliesManageModal
+          replies={quickReplies}
+          onClose={() => setShowManageReplies(false)}
+          onSaved={(saved) => setQuickReplies(saved)}
+        />
+      )}
 
       {/* ── LEFT: Session list ────────────────────────────────────────────── */}
-      <div className="w-80 flex flex-col crm-card p-0 overflow-hidden shrink-0">
+      <div
+        className={[
+          "w-full md:w-80 flex flex-col crm-card p-0 overflow-hidden shrink-0 min-h-0",
+          "max-md:rounded-none max-md:border-0 max-md:h-full",
+          mobilePane === "list" ? "max-md:flex" : "max-md:hidden",
+          "md:flex",
+        ].join(" ")}
+      >
         {/* Header */}
-        <div className="p-4 border-b border-crm-border">
+        <div className="p-4 border-b border-crm-border shrink-0">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-crm-text-bright">Live Chat</h3>
             <button onClick={fetchSessions} className="p-1.5 rounded-lg text-crm-text-dim hover:text-crm-primary transition-colors">
@@ -519,7 +746,7 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
             {[["queue", "Queue"], ["history", "History"]].map(([val, label]) => (
               <button
                 key={val}
-                onClick={() => { setStatusFilter(val); setActiveSession(null); setMessages([]); }}
+                onClick={() => { setStatusFilter(val); setActiveSession(null); setMessages([]); setMobilePane("list"); }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${statusFilter === val ? "bg-crm-primary text-white" : "text-crm-text-dim hover:text-crm-text-bright"}`}
               >
                 {label}
@@ -539,7 +766,7 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
         </div>
 
         {/* Session rows */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
           {loading ? (
             <div className="p-8 flex justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-crm-primary border-t-transparent" /></div>
           ) : filtered.length === 0 ? (
@@ -582,7 +809,7 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
         </div>
 
         {/* Greeting setup button */}
-        <div className="border-t border-crm-border p-3">
+        <div className="border-t border-crm-border p-3 shrink-0">
           <button
             onClick={() => setShowGreetingModal(true)}
             className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-crm-text-dim border border-crm-border hover:border-crm-primary/40 hover:text-crm-primary transition-colors"
@@ -593,7 +820,14 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
       </div>
 
       {/* ── CENTER: Chat window ───────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col crm-card p-0 overflow-hidden min-w-0">
+      <div
+        className={[
+          "flex-1 flex flex-col crm-card p-0 overflow-hidden min-w-0 min-h-0",
+          "max-md:rounded-none max-md:border-0 max-md:h-full max-md:w-full",
+          mobilePane === "chat" ? "max-md:flex" : "max-md:hidden",
+          "md:flex",
+        ].join(" ")}
+      >
         {!activeSession ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-crm-text-dim p-8 text-center">
             <FiMessageSquare size={48} className="opacity-20" />
@@ -602,9 +836,17 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
           </div>
         ) : (
           <>
-            {/* Chat header */}
-            <div className="flex items-center justify-between gap-3 border-b border-crm-border bg-crm-bg-alt/60 px-5 py-3 backdrop-blur-md">
-              <div className="flex items-center gap-3 min-w-0">
+            {/* Chat header — sticky top */}
+            <div className="sticky top-0 z-10 shrink-0 flex items-center justify-between gap-2 border-b border-crm-border bg-crm-bg-alt/95 px-3 sm:px-5 py-3 backdrop-blur-md">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setMobilePane("list")}
+                  className="md:hidden shrink-0 rounded-lg p-2 text-crm-text-dim hover:text-crm-text-bright hover:bg-crm-bg-hover"
+                  aria-label="Back to conversations"
+                >
+                  <FiArrowLeft size={18} />
+                </button>
                 <div className="relative shrink-0">
                   <div className="h-10 w-10 rounded-full bg-crm-primary/20 flex items-center justify-center text-sm font-bold text-crm-primary">
                     {(activeSession.customer_name || "?")[0].toUpperCase()}
@@ -620,7 +862,15 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
                 </div>
               </div>
               {/* Actions */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMobilePane("info")}
+                  className="md:hidden shrink-0 rounded-lg p-2 text-crm-text-dim hover:text-crm-text-bright hover:bg-crm-bg-hover"
+                  aria-label="Customer info"
+                >
+                  <FiInfo size={18} />
+                </button>
                 {!isMyClaim && !isFinished && (activeSession.status === "waiting_agent" || activeSession.status === "not_resolved" || activeSession.status === "bot") && (
                   <button
                     onClick={handleClaim}
@@ -634,15 +884,15 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
                   <>
                     <button
                       onClick={handleFinish}
-                      className="flex items-center gap-1.5 rounded-xl border border-crm-success/40 px-3 py-1.5 text-xs font-bold text-crm-success hover:bg-crm-success/10"
+                      className="flex items-center gap-1.5 rounded-xl border border-crm-success/40 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-crm-success hover:bg-crm-success/10"
                     >
-                      <FiCheckCircle size={12} /> Resolve
+                      <FiCheckCircle size={12} /> <span className="hidden sm:inline">Resolve</span>
                     </button>
                     <button
                       onClick={handleNotResolved}
-                      className="flex items-center gap-1.5 rounded-xl border border-crm-warning/40 px-3 py-1.5 text-xs font-bold text-crm-warning hover:bg-crm-warning/10"
+                      className="flex items-center gap-1.5 rounded-xl border border-crm-warning/40 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-crm-warning hover:bg-crm-warning/10"
                     >
-                      <FiSlash size={12} /> Not Resolved
+                      <FiSlash size={12} /> <span className="hidden sm:inline">Not Resolved</span>
                     </button>
                   </>
                 )}
@@ -654,14 +904,14 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
 
             {/* Not my session banner */}
             {activeSession.status === "active" && !isMyClaim && activeSession.agent_name && (
-              <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 px-5 py-2 text-xs text-amber-700 dark:text-amber-400">
+              <div className="shrink-0 flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 px-5 py-2 text-xs text-amber-700 dark:text-amber-400">
                 <FiAlertCircle size={13} />
                 This session is being handled by <strong>{activeSession.agent_name}</strong>. You can read but not reply.
               </div>
             )}
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 custom-scrollbar bg-crm-bg/20">
+            {/* Messages — scrollable body */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-4 custom-scrollbar bg-crm-bg/20">
               {messages.map((msg) => (
                 <Bubble key={msg.id} msg={msg} myAgentId={myAgentId} />
               ))}
@@ -669,23 +919,34 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
               <div ref={bottomRef} />
             </div>
 
-            {/* Input area */}
+            {/* Input area — sticky bottom */}
             {!isFinished && (
-              <div className="border-t border-crm-border bg-crm-bg-alt/60 px-4 py-3">
-                {/* Canned Responses Panel */}
+              <div data-ob-chat-composer="1" className="sticky bottom-0 shrink-0 border-t border-crm-border bg-crm-bg-alt/95 px-3 sm:px-4 py-3 backdrop-blur-md">
+                {/* Quick Replies Panel */}
                 {showCanned && canWrite && (
                   <div className="mb-3 rounded-xl border border-crm-border bg-crm-bg shadow-lg overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-crm-border bg-crm-bg-hover">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-crm-border bg-crm-bg-hover gap-2">
                       <span className="text-[11px] font-black text-crm-text-bright uppercase tracking-wider flex items-center gap-1.5">
                         <FiZap size={11} className="text-crm-primary" /> Quick Replies
                       </span>
-                      <button type="button" onClick={() => setShowCanned(false)}
-                        className="text-crm-text-dim hover:text-crm-text-bright p-0.5">
-                        <FiChevronDown size={13} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowManageReplies(true)}
+                          className="rounded-lg px-2 py-1 text-[10px] font-bold text-crm-primary hover:bg-crm-primary/10"
+                        >
+                          Manage
+                        </button>
+                        <button type="button" onClick={() => setShowCanned(false)}
+                          className="text-crm-text-dim hover:text-crm-text-bright p-0.5">
+                          <FiChevronDown size={13} />
+                        </button>
+                      </div>
                     </div>
                     <div className="max-h-40 overflow-y-auto">
-                      {CANNED_RESPONSES.map((r) => (
+                      {quickReplies.length === 0 ? (
+                        <p className="px-3 py-4 text-xs text-crm-text-dim text-center">No quick replies. Tap Manage to add some.</p>
+                      ) : quickReplies.map((r) => (
                         <button
                           key={r.id}
                           type="button"
@@ -746,10 +1007,25 @@ export default function ChatPage({ liveTick, wsConnected, chatInboundRef, onOpen
         )}
       </div>
 
-      {/* ── RIGHT: Customer details ───────────────────────────────────────── */}
+      {/* ── RIGHT: Customer details (desktop xl + mobile info pane) ───────── */}
       {activeSession && (
-        <div className="w-80 shrink-0 crm-card p-0 overflow-y-auto custom-scrollbar hidden xl:flex flex-col">
-          <div className="border-b border-crm-border px-4 py-3">
+        <div
+          className={[
+            "w-full xl:w-80 shrink-0 crm-card p-0 overflow-y-auto custom-scrollbar flex-col min-h-0",
+            "max-md:rounded-none max-md:border-0 max-md:h-full",
+            mobilePane === "info" ? "flex" : "hidden",
+            "md:hidden xl:flex",
+          ].join(" ")}
+        >
+          <div className="sticky top-0 z-10 shrink-0 border-b border-crm-border px-4 py-3 flex items-center gap-2 bg-crm-bg-alt/95 backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => setMobilePane("chat")}
+              className="md:hidden shrink-0 rounded-lg p-2 text-crm-text-dim hover:text-crm-text-bright hover:bg-crm-bg-hover"
+              aria-label="Back to chat"
+            >
+              <FiArrowLeft size={18} />
+            </button>
             <p className="text-xs font-bold uppercase tracking-wider text-crm-text-muted">Customer Info</p>
           </div>
           <div className="p-4 space-y-3">

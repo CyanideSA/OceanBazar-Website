@@ -1,0 +1,116 @@
+<%
+  /* Renders one chat message for lite (SSR). Supports product_card / order_card / system_action / quick replies. */
+  var sender = m.sender || 'bot';
+  var rawContent = m.content;
+  var contentObj = rawContent && typeof rawContent === 'object' && !Array.isArray(rawContent) ? rawContent : {};
+  var text = m.message || contentObj.text || '';
+  var mtype = m.message_type || m.type || contentObj.type || 'text';
+  var products = (mtype === 'product_card' && Array.isArray(rawContent)) ? rawContent : [];
+  var order = (mtype === 'order_card' && contentObj && contentObj.orderNumber) ? contentObj : null;
+  var systemAction = (mtype === 'system_action' && contentObj && contentObj.action) ? contentObj : null;
+  var quickReplies = Array.isArray(m.quickReplies) ? m.quickReplies
+    : (Array.isArray(contentObj.quickReplies) ? contentObj.quickReplies : []);
+  var links = [];
+  if (contentObj.url || contentObj.href) {
+    links.push({ href: contentObj.url || contentObj.href, label: contentObj.linkLabel || contentObj.title || contentObj.label || 'Open' });
+  }
+  if (Array.isArray(contentObj.attachments)) {
+    contentObj.attachments.forEach(function (a) {
+      if (a && (a.url || a.href)) links.push({ href: a.url || a.href, label: a.name || a.label || 'Attachment' });
+    });
+  }
+  function productHref(p) {
+    var u = p.url || ('/' + locale + '/product/' + p.id);
+    if (u.indexOf('http') === 0) return u;
+    if (u.indexOf(basePath) === 0) return u;
+    return basePath + (u.charAt(0) === '/' ? u : '/' + u);
+  }
+  function money(n) {
+    try { return helpers.money(n); } catch (e) { return '৳' + Number(n || 0).toLocaleString(); }
+  }
+  var hasBody = text || products.length || order || systemAction || links.length || quickReplies.length;
+%>
+<% if (hasBody) { %>
+<div class="chat-bubble chat-<%= sender %>" data-mid="<%= m.id || '' %>" data-mtype="<%= mtype %>">
+  <span class="chat-who"><%= sender === 'user' ? t('you') : (m.senderName || (sender === 'bot' ? 'OceanBazar' : sender)) %></span>
+  <% if (text) { %><p><%= text %></p><% } %>
+
+  <% if (products.length) { %>
+  <ul class="chat-products">
+    <% products.forEach(function (p) { %>
+    <li class="chat-product">
+      <% if (p.image) { %><img class="chat-product-img" src="<%= p.image %>" alt="" width="48" height="48" loading="lazy" /><% } %>
+      <div class="chat-product-body">
+        <a class="chat-product-name" href="<%= productHref(p) %>"><%= p.name || p.title || 'Product' %></a>
+        <span class="chat-product-price"><%= money(p.price) %></span>
+        <% if (p.rating != null) { %><span class="muted">★ <%= Number(p.rating).toFixed(1) %></span><% } %>
+        <div class="chat-product-actions">
+          <a class="chip-btn" href="<%= productHref(p) %>"><%= t('view') || 'View' %></a>
+          <form method="post" action="<%= basePath %>/<%= locale %>/chat/action" class="inline-form">
+            <input type="hidden" name="sessionId" value="<%= session.id %>" />
+            <input type="hidden" name="action" value="add_to_cart" />
+            <input type="hidden" name="productId" value="<%= p.id %>" />
+            <button type="submit" class="chip-btn chip-btn-primary"><%= t('addToCart') || 'Add to cart' %></button>
+          </form>
+        </div>
+      </div>
+    </li>
+    <% }) %>
+  </ul>
+  <% } %>
+
+  <% if (order) { %>
+  <div class="chat-order">
+    <p><strong>#<%= order.orderNumber %></strong> · <%= order.status %></p>
+    <% if (order.total != null) { %><p><%= money(order.total) %></p><% } %>
+    <% if (order.trackingNumber) { %><p class="muted"><%= t('trackingNumber') %>: <code><%= order.trackingNumber %></code></p><% } %>
+    <% if (Array.isArray(order.timeline)) { %>
+    <ol class="chat-order-timeline">
+      <% order.timeline.forEach(function (step) { %>
+      <li class="<%= step.done ? 'is-done' : '' %>"><%= step.label %></li>
+      <% }) %>
+    </ol>
+    <% } %>
+  </div>
+  <% } %>
+
+  <% if (systemAction) {
+    var saUrl = systemAction.url || '';
+    if (saUrl && saUrl.indexOf('http') !== 0 && saUrl.indexOf(basePath) !== 0) {
+      saUrl = basePath + (saUrl.charAt(0) === '/' ? saUrl : '/' + saUrl);
+    }
+  %>
+  <div class="chat-system-action">
+    <% if (saUrl) { %>
+    <a class="btn btn-primary btn-sm" href="<%= saUrl %>"><%= systemAction.label || systemAction.action %></a>
+    <% } else { %>
+    <form method="post" action="<%= basePath %>/<%= locale %>/chat/action" class="inline-form">
+      <input type="hidden" name="sessionId" value="<%= session.id %>" />
+      <input type="hidden" name="action" value="<%= systemAction.action %>" />
+      <button type="submit" class="btn btn-primary btn-sm"><%= systemAction.label || systemAction.action %></button>
+    </form>
+    <% } %>
+  </div>
+  <% } %>
+
+  <% links.forEach(function (lnk) { %>
+  <p><a href="<%= lnk.href %>" target="_blank" rel="noopener"><%= lnk.label %></a></p>
+  <% }) %>
+
+  <% if (quickReplies.length && sender !== 'user') { %>
+  <div class="chat-inline-replies">
+    <% quickReplies.forEach(function (qr) {
+      var qLabel = typeof qr === 'string' ? qr : (qr.label || qr.text || qr.action || '');
+      var qAction = typeof qr === 'string' ? qr : (qr.action || qr.label || qr.text || '');
+      if (!qLabel) return;
+    %>
+    <form method="post" action="<%= basePath %>/<%= locale %>/chat/action" class="inline-form">
+      <input type="hidden" name="sessionId" value="<%= session.id %>" />
+      <input type="hidden" name="action" value="<%= qAction %>" />
+      <button type="submit" class="chip-btn"><%= qLabel %></button>
+    </form>
+    <% }) %>
+  </div>
+  <% } %>
+</div>
+<% } %>

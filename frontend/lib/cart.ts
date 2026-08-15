@@ -41,10 +41,22 @@ function normalizeCartItem(row: unknown, index: number): CartItem | null {
   const stock = product.stock != null ? toNum(product.stock) : null;
   const retailMaxQty = product.retailMaxQty != null ? toNum(product.retailMaxQty) : null;
 
+  const variantId = (item.variantId as string | null) ?? null;
+  const variantLabelRaw = item.variantLabel ?? item.variantName ?? product.variantLabel ?? null;
+  const variantLabel =
+    typeof variantLabelRaw === 'string' && variantLabelRaw.trim()
+      ? variantLabelRaw.trim()
+      : null;
+  // #region agent log
+  if (typeof fetch !== 'undefined' && (variantId || variantLabel || item.attributes || item.variantAttributes)) {
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'post-fix',hypothesisId:'H5',location:'cart.ts:normalizeCartItem',message:'cart item variant fields',data:{productId,variantId,hasVariantLabel:!!variantLabel,rawKeys:Object.keys(item).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
+  }
+  // #endregion
   return {
     id: toNum(item.id) || index + 1,
     productId,
-    variantId: (item.variantId as string | null) ?? null,
+    variantId,
+    variantLabel,
     title: String(item.title ?? product.name ?? product.titleEn ?? product.title ?? 'Product'),
     image: (item.image as string | null) ?? (product.image as string | null) ?? null,
     quantity,
@@ -75,20 +87,35 @@ export function normalizeCartSummary(raw: unknown): CartSummary {
     .map(normalizeCartItem)
     .filter((item): item is CartItem => item != null && item.quantity > 0);
 
-  const subtotal = toNum(data.subtotal) || items.reduce((sum, item) => sum + item.lineTotal, 0);
-  const shippingFee = toNum(data.shippingFee ?? data.shipping);
-  const gst = toNum(data.gst);
-  const serviceFee = toNum(data.serviceFee);
-  const discount = toNum(data.discount);
-  const obDiscount = toNum(data.obDiscount);
+  return buildCartSummaryFromItems(items, data);
+}
+
+export function buildCartSummaryFromItems(
+  items: CartItem[],
+  extras?: Record<string, unknown>,
+): CartSummary {
+  const cleaned = items
+    .filter((item) => item.quantity > 0)
+    .map((item, index) => ({
+      ...item,
+      id: item.id || index + 1,
+      lineTotal: item.unitPrice * item.quantity,
+    }));
+
+  const subtotal = cleaned.reduce((sum, item) => sum + item.lineTotal, 0);
+  const shippingFee = toNum(extras?.shippingFee ?? extras?.shipping);
+  const gst = toNum(extras?.gst);
+  const serviceFee = toNum(extras?.serviceFee);
+  const discount = toNum(extras?.discount);
+  const obDiscount = toNum(extras?.obDiscount);
   const total =
-    toNum(data.total) || Math.max(0, subtotal + gst + shippingFee + serviceFee - discount - obDiscount);
-  const itemCount = toNum(data.itemCount) || items.reduce((sum, item) => sum + item.quantity, 0);
+    toNum(extras?.total) || Math.max(0, subtotal + gst + shippingFee + serviceFee - discount - obDiscount);
+  const itemCount = cleaned.reduce((sum, item) => sum + item.quantity, 0);
 
   return {
-    cartId: toNum(data.cartId),
-    items,
-    retailQuantityOrder: data.retailQuantityOrder !== false,
+    cartId: toNum(extras?.cartId) || 0,
+    items: cleaned,
+    retailQuantityOrder: extras?.retailQuantityOrder !== false,
     subtotal,
     discount,
     gst,
@@ -96,8 +123,90 @@ export function normalizeCartSummary(raw: unknown): CartSummary {
     serviceFee,
     obDiscount,
     total,
-    codAllowed: data.codAllowed !== false,
-    installmentAllowed: Boolean(data.installmentAllowed),
+    codAllowed: extras?.codAllowed !== false,
+    installmentAllowed: Boolean(extras?.installmentAllowed),
     itemCount,
   };
+}
+
+export type GuestCartAddInput = {
+  productId: string;
+  title: string;
+  image?: string | null;
+  unitPrice: number;
+  quantity: number;
+  variantId?: string | null;
+  variantLabel?: string | null;
+  stock?: number | null;
+  moq?: number;
+  retailMaxQty?: number | null;
+  discountPct?: number;
+};
+
+function sameLine(a: CartItem, productId: string, variantId?: string | null) {
+  const v = variantId ?? null;
+  return a.productId === productId && (a.variantId ?? null) === v;
+}
+
+/** Local guest cart: add or bump quantity without hitting the API. */
+export function guestAddToCart(cart: CartSummary | null, input: GuestCartAddInput): CartSummary {
+  const qty = Math.max(1, Math.floor(input.quantity) || 1);
+  const items = [...(cart?.items ?? [])];
+  const idx = items.findIndex((i) => sameLine(i, input.productId, input.variantId));
+  if (idx >= 0) {
+    const nextQty = items[idx].quantity + qty;
+    items[idx] = {
+      ...items[idx],
+      quantity: nextQty,
+      lineTotal: items[idx].unitPrice * nextQty,
+      unitPrice: input.unitPrice || items[idx].unitPrice,
+      title: input.title || items[idx].title,
+      image: input.image ?? items[idx].image,
+      stock: input.stock ?? items[idx].stock,
+      retailMaxQty: input.retailMaxQty ?? items[idx].retailMaxQty,
+      variantLabel: input.variantLabel ?? items[idx].variantLabel,
+    };
+  } else {
+    items.push({
+      id: Date.now() + items.length,
+      productId: input.productId,
+      variantId: input.variantId ?? null,
+      variantLabel: input.variantLabel ?? null,
+      title: input.title,
+      image: input.image ?? null,
+      quantity: qty,
+      unitPrice: input.unitPrice,
+      lineTotal: input.unitPrice * qty,
+      discountPct: input.discountPct ?? 0,
+      tierApplied: 0,
+      stock: input.stock ?? null,
+      moq: Math.max(1, input.moq || 1),
+      retailMaxQty: input.retailMaxQty ?? null,
+    });
+  }
+  return buildCartSummaryFromItems(items);
+}
+
+export function guestUpdateCartQty(
+  cart: CartSummary | null,
+  productId: string,
+  quantity: number,
+  variantId?: string | null,
+): CartSummary {
+  const items = (cart?.items ?? [])
+    .map((item) => {
+      if (!sameLine(item, productId, variantId)) return item;
+      return { ...item, quantity, lineTotal: item.unitPrice * quantity };
+    })
+    .filter((item) => item.quantity > 0);
+  return buildCartSummaryFromItems(items);
+}
+
+export function guestRemoveFromCart(
+  cart: CartSummary | null,
+  productId: string,
+  variantId?: string | null,
+): CartSummary {
+  const items = (cart?.items ?? []).filter((item) => !sameLine(item, productId, variantId));
+  return buildCartSummaryFromItems(items);
 }

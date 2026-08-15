@@ -123,7 +123,7 @@ SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
-EMAIL_FROM=Oceanbazar <noreply@oceanbazar.com>
+EMAIL_FROM=OceanBazar System <no-reply@oceanbazar.com.bd>
 
 FIREBASE_API_KEY=
 FIREBASE_PROJECT_ID=

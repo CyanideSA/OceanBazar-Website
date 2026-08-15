@@ -109,8 +109,8 @@ function VideoAssetSection({ productId, assets, onReload }) {
     for (const file of Array.from(files)) {
       try {
         await adminApi.uploadProductAsset(productId, file, "video", false);
-      } catch {
-        toast.error(`Failed to upload ${file.name}`);
+      } catch (err) {
+        toast.error(`Failed to upload ${file.name}`, err?.response?.data?.error || err?.message);
       }
     }
     setUploading(false);
@@ -176,8 +176,8 @@ function BannerSection({ productId, banners, productTitle, onReload }) {
           sortOrder: banners.length,
           enabled: true,
         });
-      } catch {
-        toast.error(`Failed to upload banner ${file.name}`);
+      } catch (err) {
+        toast.error(`Failed to upload banner ${file.name}`, err?.response?.data?.error || err?.message);
       }
     }
     setUploading(false);
@@ -379,6 +379,7 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
   const [assets, setAssets] = useState([]);
   const [banners, setBanners] = useState([]);
   const [allTags, setAllTags] = useState([]);
+  const [allTrustBadges, setAllTrustBadges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("basic");
@@ -390,12 +391,17 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
   const loadDetail = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, a, tags, bannersRes] = await Promise.all([
+      const [d, a, tags, bannersRes, trustRes] = await Promise.all([
         adminApi.productDetail(productId),
         adminApi.productAssets(productId),
         adminApi.tagGroups().catch(() => []),
         adminApi.banners({ productId }).catch(() => ({ banners: [] })),
+        adminApi.productTrustBadges(productId).catch(() => ({ badgeIds: [] })),
       ]);
+      adminApi.trustBadges().then((r) => {
+        const list = Array.isArray(r?.badges) ? r.badges : Array.isArray(r) ? r : [];
+        setAllTrustBadges(list.filter((b) => b.active !== false));
+      }).catch(() => setAllTrustBadges([]));
       const data = d?.product || d;
       setDetail(data);
       setAssets(Array.isArray(a) ? a : a?.assets || []);
@@ -446,6 +452,7 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
           try { return JSON.parse(data?.specifications || "[]"); } catch { return []; }
         })(),
         selectedTagIds: currentTagIds,
+        selectedTrustBadgeIds: Array.isArray(trustRes?.badgeIds) ? trustRes.badgeIds : [],
       });
     } catch (err) {
       toast.error("Failed to load product details");
@@ -526,6 +533,9 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
       if (form.selectedTagIds?.length >= 0) {
         await adminApi.setProductTags(productId, form.selectedTagIds).catch(() => {});
       }
+      await adminApi
+        .setProductTrustBadges(productId, (form.selectedTrustBadgeIds || []).map((id) => Number(id)).filter((n) => n > 0))
+        .catch(() => {});
 
       toast.success("Product updated successfully!");
       onSaved?.();
@@ -855,6 +865,37 @@ export default function EditProductDrawer({ productId, onClose, onSaved }) {
                       {allTags.length === 0 && <p className="text-xs text-crm-text-muted">No tags available</p>}
                     </div>
                     <p className="text-xs text-crm-text-muted">{(form.selectedTagIds || []).length} tag(s) selected</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-crm-text-dim uppercase">Trust badges</label>
+                    <p className="text-2xs text-crm-text-muted">Homepage counts + product page. Catalog managed in Settings.</p>
+                    <div className="flex flex-wrap gap-2 p-3 bg-crm-bg-hover rounded-xl max-h-48 overflow-y-auto">
+                      {allTrustBadges.map((badge) => {
+                        const selected = (form.selectedTrustBadgeIds || []).includes(badge.id);
+                        return (
+                          <button
+                            key={badge.id}
+                            type="button"
+                            onClick={() => {
+                              const ids = form.selectedTrustBadgeIds || [];
+                              set("selectedTrustBadgeIds", selected ? ids.filter((i) => i !== badge.id) : [...ids, badge.id]);
+                            }}
+                            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                              selected
+                                ? "bg-emerald-600 border-emerald-600 text-white"
+                                : "border-crm-border text-crm-text-dim hover:border-emerald-500"
+                            }`}
+                          >
+                            {badge.nameEn}
+                          </button>
+                        );
+                      })}
+                      {allTrustBadges.length === 0 && (
+                        <p className="text-xs text-crm-text-muted">No trust badges available</p>
+                      )}
+                    </div>
+                    <p className="text-xs text-crm-text-muted">{(form.selectedTrustBadgeIds || []).length} trust badge(s) selected</p>
                   </div>
                 </div>
               )}

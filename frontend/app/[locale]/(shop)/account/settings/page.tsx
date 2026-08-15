@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { authApi, profileApi } from '@/lib/api';
+import { authApi, profileApi, uploadApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import LanguageSelect from '@/components/shared/LanguageSelect';
+import { useRecaptchaBadge } from '@/lib/useRecaptchaBadge';
+import RecaptchaLegalNotice from '@/components/auth/RecaptchaLegalNotice';
 import type { User } from '@/types';
 
 function mapProfileUser(raw: Record<string, unknown>): Partial<User> {
@@ -22,8 +24,12 @@ export default function AccountSettingsPage() {
   const locale = useLocale();
   const { user, updateUser } = useAuthStore();
   const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useRecaptchaBadge('account-settings-password');
 
   const [name, setName] = useState(user?.name ?? '');
+  const [photoUrl, setPhotoUrl] = useState(user?.profileImage ?? '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,7 +38,33 @@ export default function AccountSettingsPage() {
 
   useEffect(() => {
     setName(user?.name ?? '');
-  }, [user?.name]);
+    setPhotoUrl(user?.profileImage ?? '');
+  }, [user?.name, user?.profileImage]);
+
+  const uploadPhoto = useMutation({
+    mutationFn: (file: File) => uploadApi.profilePhoto(file).then((r) => String((r.data as { url?: string }).url ?? '')),
+    onSuccess: (url) => {
+      if (!url) return;
+      setPhotoUrl(url);
+      updateUser({ profileImage: url });
+      setMsg(t('changesSaved'));
+      setErr(null);
+    },
+    onError: () => {
+      setErr('Photo upload failed');
+      setMsg(null);
+    },
+  });
+
+  const clearPhoto = useMutation({
+    mutationFn: () => profileApi.update({ profileImage: null }),
+    onSuccess: () => {
+      setPhotoUrl('');
+      updateUser({ profileImage: null });
+      setMsg(t('changesSaved'));
+      setErr(null);
+    },
+  });
 
   const saveProfile = useMutation({
     mutationFn: () => profileApi.update({ name: name.trim(), preferredLang: locale as 'en' | 'bn' }),
@@ -78,6 +110,52 @@ export default function AccountSettingsPage() {
 
       <section className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
         <h2 className="text-lg font-semibold text-foreground">{t('editProfile')}</h2>
+
+        <div className="flex items-center gap-4">
+          <div className="h-16 w-16 overflow-hidden rounded-full border border-border bg-muted flex items-center justify-center text-lg font-bold text-primary">
+            {photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              (name || user?.name || '?').charAt(0).toUpperCase()
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('profilePhotoHint')}</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadPhoto.mutate(f);
+                e.target.value = '';
+              }}
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={uploadPhoto.isPending}
+                onClick={() => fileRef.current?.click()}
+                className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {uploadPhoto.isPending ? t('saving') : photoUrl ? t('profilePhotoChange') : t('profilePhotoUpload')}
+              </button>
+              {photoUrl ? (
+                <button
+                  type="button"
+                  disabled={clearPhoto.isPending}
+                  onClick={() => clearPhoto.mutate()}
+                  className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-muted-foreground"
+                >
+                  {t('removePhoto')}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
         <label className="block text-xs font-medium text-muted-foreground">{t('name')}</label>
         <input
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
@@ -140,6 +218,7 @@ export default function AccountSettingsPage() {
         >
           {ta('changePassword')}
         </button>
+        <RecaptchaLegalNotice />
       </section>
     </div>
   );

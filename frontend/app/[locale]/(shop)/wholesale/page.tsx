@@ -9,9 +9,14 @@ import {
   BadgePercent, CheckCircle2, XCircle, ArrowRight, Star,
   BarChart3, HeadphonesIcon, RefreshCcw,
 } from 'lucide-react';
-import { customersApi, ticketsApi } from '@/lib/api';
+import { customersApi, ticketsApi, wholesaleApi, storefrontApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
+import { getMessageOverrides, tx } from '@/lib/pageContent';
+import {
+  STOREFRONT_SETTINGS_QUERY_KEY,
+  coalesceStorefrontSettings,
+} from '@/lib/storefrontSettings';
 
 type CustomerMeResponse = {
   user: { id: string; userType: 'retail' | 'wholesale'; name: string; email: string | null; phone: string | null };
@@ -22,8 +27,23 @@ export default function WholesalePage() {
   const locale = useLocale();
   const tNav = useTranslations('nav');
   const tCommon = useTranslations('common');
-  const tw = useTranslations('wholesale');
+  const twRaw = useTranslations('wholesale');
   const { user, isAuthenticated } = useAuthStore();
+
+  const { data: settingsData } = useQuery({
+    queryKey: STOREFRONT_SETTINGS_QUERY_KEY,
+    queryFn: () => storefrontApi.settings().then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const settings = coalesceStorefrontSettings(settingsData);
+  const ov = useMemo(
+    () => getMessageOverrides(settings.pageContent, 'wholesale', locale),
+    [settings.pageContent, locale]
+  );
+  const tw = useMemo(
+    () => ((key: string) => tx(ov, key, twRaw(key as Parameters<typeof twRaw>[0]))) as typeof twRaw,
+    [ov, twRaw]
+  );
 
   const { data: meData } = useQuery({
     queryKey: ['customers-me'],
@@ -46,7 +66,7 @@ export default function WholesalePage() {
   const [submitted, setSubmitted] = useState(false);
 
   const subject = useMemo(() => {
-    const base = 'Wholesale access application';
+    const base = '[APP:WHOLESALE] Wholesale access application';
     if (companyName.trim()) return `${base}: ${companyName.trim()}`;
     return base;
   }, [companyName]);
@@ -66,6 +86,8 @@ export default function WholesalePage() {
       '',
       'Description:',
       description || '—',
+      '',
+      'Note: This ticket mirrors your wholesale application so you can track updates here. Staff review applications under Admin → Applications.',
     ].join('\n');
   }, [address, companyName, contactPerson, description, email, expectedMonthlyVolume, phone, segment, taxId]);
 
@@ -73,14 +95,29 @@ export default function WholesalePage() {
     mutationFn: async () => {
       setError('');
       if (!isAuthenticated) throw new Error('Please login to apply.');
-      if (!companyName.trim() || !contactPerson.trim() || (!email.trim() && !phone.trim()) || !description.trim()) {
-        throw new Error('Please fill in all required fields.');
+      if (!companyName.trim() || !contactPerson.trim() || (!email.trim() && !phone.trim()) || !description.trim() || !address.trim()) {
+        throw new Error('Please fill in all required fields (including business address).');
       }
       await customersApi.updateMe({
         companyName: companyName.trim(),
         taxId: taxId.trim() ? taxId.trim() : null,
         segment: segment.trim() ? segment.trim() : null,
       });
+      // Canonical application record for Admin CRM → Applications → Wholesale
+      await wholesaleApi.apply({
+        businessName: companyName.trim(),
+        tradeLicense: taxId.trim() || segment.trim() || 'N/A',
+        address: address.trim(),
+        notes: [
+          description.trim(),
+          contactPerson.trim() ? `Contact: ${contactPerson.trim()}` : '',
+          email.trim() ? `Email: ${email.trim()}` : '',
+          phone.trim() ? `Phone: ${phone.trim()}` : '',
+          expectedMonthlyVolume.trim() ? `Monthly volume: ${expectedMonthlyVolume.trim()}` : '',
+          segment.trim() ? `Segment: ${segment.trim()}` : '',
+        ].filter(Boolean).join('\n'),
+      });
+      // Customer-visible tracking ticket (hidden from Admin Tickets list)
       await ticketsApi.create({ subject, category: 'other', priority: 'medium', message: payloadMessage });
     },
     onSuccess: () => { setSubmitted(true); },
@@ -90,7 +127,7 @@ export default function WholesalePage() {
   });
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="container-tight py-10">
 
       {/* ── Hero Banner ────────────────────────────────────────────── */}
       <div className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-primary/90 to-primary px-8 py-10 text-primary-foreground shadow-soft md:px-12 md:py-14">

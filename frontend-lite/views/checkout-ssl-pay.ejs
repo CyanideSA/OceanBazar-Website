@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title><%= t('payNow') %> · OceanBazar</title>
+  <link rel="stylesheet" href="<%= basePath %>/styles.css?v=15" />
+  <style>
+    .ssl-pay-bridge {
+      min-height: 70vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .ssl-pay-card {
+      width: min(420px, 100%);
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    .ssl-pay-card h1 { font-size: 1.15rem; margin: 0 0 8px; }
+    .ssl-pay-card p { color: #64748b; font-size: 0.9rem; margin: 0 0 16px; }
+    .ssl-pay-actions { display: flex; flex-direction: column; gap: 8px; }
+  </style>
+</head>
+<body>
+  <main class="ssl-pay-bridge">
+    <div class="ssl-pay-card">
+      <h1><%= t('payNow') %></h1>
+      <p id="sslPayStatus"><%= t('payNowSub') %></p>
+      <div class="ssl-pay-actions">
+        <button type="button" class="btn btn-primary" id="sslPayOpen"><%= t('payNow') %></button>
+        <a class="btn" href="<%= basePath %>/<%= locale %>/account/orders/<%= orderId %>"><%= t('myOrders') || 'My orders' %></a>
+      </div>
+    </div>
+  </main>
+  <script>
+    (function () {
+      var gatewayUrl = <%= JSON.stringify(gatewayUrl) %>;
+      var logo = <%= JSON.stringify(logo || '') %>;
+      var embedScriptUrl = <%= JSON.stringify(embedScriptUrl) %>;
+      var orderId = <%= JSON.stringify(orderId) %>;
+      var orderUrl = <%= JSON.stringify(basePath + '/' + locale + '/account/orders/' + orderId) %>;
+      var apiBase = <%= JSON.stringify((typeof apiPublicUrl !== 'undefined' && apiPublicUrl) ? apiPublicUrl : '') %>;
+      var OVERLAY_ID = 'sslcz-easy-checkout-overlay';
+      var pollTimer = null;
+
+      function loadEmbed() {
+        return new Promise(function (resolve) {
+          if (document.querySelector('script[data-sslcz-embed="1"]')) return resolve();
+          var script = document.createElement('script');
+          script.src = embedScriptUrl + (embedScriptUrl.indexOf('?') >= 0 ? '&' : '?') + Math.random().toString(36).slice(2, 9);
+          script.async = true;
+          script.dataset.sslczEmbed = '1';
+          script.onload = function () { resolve(); };
+          script.onerror = function () { resolve(); };
+          document.body.appendChild(script);
+        });
+      }
+
+      function closeOverlay() {
+        var el = document.getElementById(OVERLAY_ID);
+        if (el) el.remove();
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+      }
+
+      function stopPoll() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      }
+
+      function startPoll() {
+        stopPoll();
+        if (!orderId) return;
+        var tries = 0;
+        pollTimer = setInterval(function () {
+          tries += 1;
+          if (tries > 90) { stopPoll(); return; }
+          var url = (apiBase || '') + '/api/orders/' + encodeURIComponent(orderId);
+          fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+              if (!data) return;
+              var status = String((data.paymentStatus || (data.order && data.order.paymentStatus) || '')).toLowerCase();
+              if (status === 'under_verification' || status === 'pending_verification' || status === 'paid') {
+                stopPoll();
+                closeOverlay();
+                window.location.href = orderUrl;
+              }
+            })
+            .catch(function () {});
+        }, 2500);
+      }
+
+      function openCompactModal() {
+        closeOverlay();
+        var overlay = document.createElement('div');
+        overlay.id = OVERLAY_ID;
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.dataset.obSslCompact = '1';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,0.55);display:flex;align-items:center;justify-content:center;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));box-sizing:border-box;';
+
+        var panel = document.createElement('div');
+        panel.style.cssText = 'position:relative;width:min(420px,100%);height:min(720px,92vh);max-height:92vh;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 20px 45px rgba(0,0,0,0.30);display:flex;flex-direction:column;';
+
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.textContent = '✕';
+        closeBtn.setAttribute('aria-label', 'Close payment');
+        closeBtn.style.cssText = 'position:absolute;top:6px;right:8px;z-index:2;border:0;background:rgba(248,250,252,0.92);border-radius:999px;width:32px;height:32px;font:700 14px/1 system-ui,sans-serif;cursor:pointer;color:#64748b;box-shadow:0 1px 4px rgba(0,0,0,0.12)';
+        closeBtn.onclick = function () { stopPoll(); closeOverlay(); };
+
+        var iframe = document.createElement('iframe');
+        iframe.src = gatewayUrl;
+        iframe.title = 'SSLCommerz Easy Checkout';
+        iframe.allow = 'payment *';
+        iframe.style.cssText = 'display:block;width:100%;height:100%;border:0;background:#fff;';
+
+        panel.appendChild(closeBtn);
+        panel.appendChild(iframe);
+        overlay.appendChild(panel);
+        overlay.addEventListener('click', function (e) {
+          if (e.target === overlay) { stopPoll(); closeOverlay(); }
+        });
+        document.body.appendChild(overlay);
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+        startPoll();
+      }
+
+      function openViaOfficialEmbed() {
+        return new Promise(function (resolve) {
+          var payload = JSON.stringify({ status: 'success', data: gatewayUrl, logo: logo || null });
+          var used = false;
+          var originalFetch = window.fetch.bind(window);
+          window.fetch = function (input, init) {
+            var url = typeof input === 'string' ? input : (input && input.url) || '';
+            if (!used && String(url).indexOf('easy-checkout-bridge') >= 0) {
+              used = true;
+              window.fetch = originalFetch;
+              return Promise.resolve(new Response(payload, { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return originalFetch(input, init);
+          };
+
+          var XO = window.XMLHttpRequest;
+          var openOrig = XO.prototype.open;
+          var sendOrig = XO.prototype.send;
+          XO.prototype.open = function (method, url) {
+            this.__obSslBridge = String(url).indexOf('easy-checkout-bridge') >= 0;
+            return openOrig.apply(this, arguments);
+          };
+          XO.prototype.send = function (body) {
+            if (this.__obSslBridge && !used) {
+              used = true;
+              XO.prototype.open = openOrig;
+              XO.prototype.send = sendOrig;
+              window.fetch = originalFetch;
+              var self = this;
+              Object.defineProperty(self, 'readyState', { configurable: true, get: function () { return 4; } });
+              Object.defineProperty(self, 'status', { configurable: true, get: function () { return 200; } });
+              Object.defineProperty(self, 'responseText', { configurable: true, get: function () { return payload; } });
+              Object.defineProperty(self, 'response', { configurable: true, get: function () { return payload; } });
+              if (self.onreadystatechange) self.onreadystatechange();
+              if (self.onload) self.onload();
+              return;
+            }
+            return sendOrig.apply(this, arguments);
+          };
+
+          var old = document.getElementById('sslczPayBtn');
+          if (old) old.remove();
+          var btn = document.createElement('button');
+          btn.id = 'sslczPayBtn';
+          btn.type = 'button';
+          btn.style.cssText = 'position:fixed;left:-9999px;opacity:0;width:1px;height:1px;';
+          btn.setAttribute('endpoint', '/api/payments/sslcommerz/easy-checkout-bridge');
+          btn.setAttribute('postdata', '{}');
+          document.body.appendChild(btn);
+          setTimeout(function () {
+            btn.click();
+            setTimeout(function () {
+              var opened = !!document.querySelector('.tingle-modal-box, .tingle-modal--visible, .tingle-enabled');
+              window.fetch = originalFetch;
+              XO.prototype.open = openOrig;
+              XO.prototype.send = sendOrig;
+              btn.remove();
+              if (opened || used) startPoll();
+              resolve(opened || used);
+            }, 600);
+          }, 50);
+        });
+      }
+
+      function boot() {
+        var status = document.getElementById('sslPayStatus');
+        var openBtn = document.getElementById('sslPayOpen');
+        openBtn.addEventListener('click', function () {
+          openCompactModal();
+          if (status) status.textContent = 'Complete payment in the window.';
+        });
+        loadEmbed().then(function () {
+          openViaOfficialEmbed().then(function (ok) {
+            if (!ok) openCompactModal();
+            if (status) status.textContent = 'Complete payment in the secure window. This page updates when payment succeeds.';
+          });
+        });
+      }
+
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+      else boot();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,476 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var userType = helpers.resolveUserType(typeof user !== 'undefined' ? user : null);
+  var name = helpers.pickName(product, locale);
+  var pid = helpers.productId(product);
+  var pricingState = helpers.productPricingState(product, typeof user !== 'undefined' ? user : null);
+  var price = pricingState.unitPrice;
+  var compare = helpers.productCompareAt(product, { userType: userType, qty: 1 });
+  var tiers = pricingState.mode === 'wholesale' ? pricingState.wholesaleTiers : pricingState.retailTiers;
+  var inStock = pricingState.stock > 0 || product.stock == null;
+  var maxQty = pricingState.maxQty;
+  var moq = pricingState.moq;
+  var wholesaleAvailable = pricingState.wholesaleAvailable;
+  var savePct = compare && compare > price ? Math.round((1 - price / compare) * 100) : 0;
+  var pricingPayload = {
+    userType: pricingState.userType,
+    wholesaleAvailable: wholesaleAvailable,
+    moq: moq,
+    maxQty: maxQty,
+    stock: pricingState.stock,
+    retail: pricingState.retail,
+    wholesale: pricingState.wholesale,
+    flashPerCustomerLimit: pricingState.flashPerCustomerLimit,
+    flashAvailable: pricingState.flashAvailable
+  };
+%>
+
+<article class="pdp">
+  <div class="gallery" data-gallery>
+    <div class="gallery-main">
+      <img id="galleryMain" src="<%= images[0] || (basePath + '/placeholder.svg') %>" alt="<%= name %>" width="900" height="900" decoding="async" fetchpriority="high" />
+    </div>
+    <% if (images.length > 1) { %>
+    <div class="thumbs">
+      <% images.forEach(function(src, i) { %>
+      <button type="button" class="thumb<%= i === 0 ? ' active' : '' %>" data-src="<%= src %>" aria-label="Image <%= i + 1 %>">
+        <img src="<%= src %>" alt="" width="64" height="64" loading="lazy" decoding="async" />
+      </button>
+      <% }) %>
+    </div>
+    <% } %>
+  </div>
+
+  <div class="pdp-info">
+    <h1><%= name %></h1>
+    <% if (product.brand || product.brandName) { %>
+    <p class="pdp-meta"><%= product.brandName || product.brand %></p>
+    <% } %>
+    <%
+      var rm = (typeof reviewMeta !== 'undefined' && reviewMeta) ? reviewMeta : { averageRating: 0, totalReviews: 0 };
+      var showRating = Number(rm.averageRating) > 0 || Number(rm.totalReviews) > 0;
+    %>
+    <% if (showRating) { %>
+    <p class="pdp-rating" data-engagement-rating>
+      <span class="stars" aria-hidden="true"><%= '★'.repeat(Math.round(Number(rm.averageRating) || 0)) %><%= '☆'.repeat(Math.max(0, 5 - Math.round(Number(rm.averageRating) || 0))) %></span>
+      <strong data-avg><%= Number(rm.averageRating || 0).toFixed(1) %></strong>
+      <a href="#reviews">(<span data-review-count><%= rm.totalReviews || 0 %></span> <%= t('reviews') %>)</a>
+    </p>
+    <% } %>
+    <%
+      var pTrust = Array.isArray(product.trustBadges) ? product.trustBadges : [];
+    %>
+    <% if (pTrust.length) { %>
+    <div class="pdp-trust" data-ob-product-trust="<%= pTrust.length %>">
+      <% pTrust.forEach(function(badge) {
+        var blabel = (locale === 'bn' && badge.nameBn) ? badge.nameBn : (badge.nameEn || '');
+      %>
+      <a class="pdp-trust-pill" href="<%= basePath %>/<%= locale %>/products?trustBadge=<%= encodeURIComponent(badge.slug || badge.id) %>"><%= blabel %></a>
+      <% }) %>
+    </div>
+    <% } %>
+
+    <form method="post" action="<%= basePath %>/<%= locale %>/cart/add" class="buy-form" data-ajax-cart data-pricing-root>
+      <input type="hidden" name="productId" value="<%= pid %>" />
+      <input type="hidden" name="next" value="<%= basePath %>/<%= locale %>/cart" />
+      <script type="application/json" id="obPricingCfg"><%- JSON.stringify(pricingPayload).replace(/</g, '\\u003c') %></script>
+
+      <label class="field qty" data-qty>
+        <span><%= t('quantity') %></span>
+        <button type="button" class="qty-btn" data-qty-dec aria-label="-">−</button>
+        <input type="number" name="quantity" value="1" min="1" max="<%= maxQty %>" data-qty-input />
+        <button type="button" class="qty-btn" data-qty-inc aria-label="+">+</button>
+        <% if (wholesaleAvailable) { %>
+        <span class="qty-hint" data-moq-hint>(<%= t('wholesale') %> <%= t('wholesaleFrom') %> <%= moq %>+)</span>
+        <% } %>
+      </label>
+      <p class="qty-cap muted" data-qty-cap>
+        <%= t('maxQtyLabel') %>: <%= maxQty %>
+        <% if (pricingState.flashPerCustomerLimit) { %> · <%= t('perCustomerLimit') %>: <%= pricingState.flashPerCustomerLimit %><% } %>
+      </p>
+
+      <div class="pricing-panel<%= pricingState.mode === 'wholesale' ? ' is-wholesale' : ' is-retail' %>" data-pricing-panel>
+        <div class="pricing-badges">
+          <span class="mode-pill" data-mode-pill data-label-retail="<%= t('retail') %>" data-label-wholesale="<%= t('wholesale') %>"><%= pricingState.mode === 'wholesale' ? t('wholesale') : t('retail') %></span>
+          <span class="tier-pill<%= pricingState.discountPct > 0 ? '' : ' is-hidden' %>" data-tier-pill>
+            -<%= pricingState.discountPct %>% <%= t('volumeTier') %>
+          </span>
+        </div>
+
+        <div class="price lg">
+          <strong data-unit-price><%= helpers.money(price) %></strong>
+          <s data-compare-price<%= !compare ? ' class="is-hidden"' : '' %>><%= compare ? helpers.money(compare) : '' %></s>
+          <span class="save<%= savePct >= 5 ? '' : ' is-hidden' %>" data-save-pct data-label="<%= t('youSave') %>"><%= t('youSave') %> <%= savePct %>%</span>
+        </div>
+
+        <div class="line-total-box">
+          <span><%= t('total') %></span>
+          <strong data-line-total><%= helpers.money(pricingState.lineTotal) %></strong>
+        </div>
+
+        <% if (tiers.length) { %>
+        <div class="tier-table-wrap" data-tier-table>
+          <table class="tier-table">
+            <thead>
+              <tr>
+                <th><%= t('qtyRange') %></th>
+                <th><%= t('discountCol') %></th>
+                <th><%= t('unitPrice') %></th>
+              </tr>
+            </thead>
+            <tbody data-tier-body>
+              <%
+                var basePrice = pricingState.mode === 'wholesale' && pricingState.wholesale
+                  ? pricingState.wholesale.price
+                  : (pricingState.retail ? pricingState.retail.price : price);
+                var firstMin = tiers[0] ? tiers[0].minQty : null;
+              %>
+              <tr data-tier-row="0" class="is-active">
+                <td>1<% if (firstMin && firstMin > 1) { %>–<%= firstMin - 1 %><% } else { %>+<% } %></td>
+                <td>—</td>
+                <td><%= helpers.money(basePrice) %></td>
+              </tr>
+              <% tiers.forEach(function(tier, i) { %>
+              <tr data-tier-row="<%= i + 1 %>">
+                <td><%= tier.minQty %><% if (tier.maxQty) { %>–<%= tier.maxQty %><% } else { %>+<% } %></td>
+                <td class="tier-disc">-<%= tier.discountPct %>%</td>
+                <td><%= helpers.money(tier.price != null ? tier.price : basePrice * (1 - tier.discountPct / 100)) %></td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } %>
+
+        <p class="moq-met is-hidden" data-moq-met><%= t('meetsMoq') %></p>
+      </div>
+
+      <% if (variants && variants.length) { %>
+      <label class="field">
+        <span><%= t('variant') %></span>
+        <select name="variantId" required>
+          <option value=""><%= t('variant') %></option>
+          <% variants.forEach(function(v) { %>
+          <option value="<%= v.id %>"><%= v.name || v.label || v.sku || v.id %></option>
+          <% }) %>
+        </select>
+      </label>
+      <% } %>
+
+      <% if (!inStock) { %>
+      <p class="badge-stock out"><%= t('outOfStock') %></p>
+      <% } else if (pricingState.stock != null) { %>
+      <p class="badge-stock in"><%= t('inStock') || 'In stock' %>: <%= pricingState.stock %></p>
+      <% if (pricingState.stock > 0 && pricingState.stock < 10) { %>
+      <p class="muted" style="margin-top:4px;"><%= (t('onlyLeft') || 'Only {n} left in stock').replace('{n}', String(pricingState.stock)) %></p>
+      <% } %>
+      <% } %>
+
+      <div class="actions">
+        <button type="submit" class="btn" <%= !inStock ? 'disabled' : '' %>><%= t('addToCart') %></button>
+        <button type="submit" name="buyNow" value="1" class="btn btn-primary" <%= !inStock ? 'disabled' : '' %>><%= t('buyNow') %></button>
+      </div>
+
+      <% if (moq > 1 && !wholesaleAvailable) { %>
+      <p class="muted"><%= t('moq') %>: <%= moq %></p>
+      <% } %>
+
+      <div class="assurance">
+        <span><%= t('trustAuthDesc') %></span>
+        <span><%= t('trustShipDesc') %></span>
+        <span><%= t('trustPayDesc') %></span>
+      </div>
+    </form>
+
+    <% if (product.description || product.descriptionBn || product.descriptionEn) { %>
+    <section class="desc">
+      <h2><%= t('description') %></h2>
+      <div class="prose">
+        <%- (locale === 'bn' ? (product.descriptionBn || product.description) : (product.descriptionEn || product.description)) || '' %>
+      </div>
+    </section>
+    <% } %>
+
+    <%
+      var fe = String(typeof formError !== 'undefined' ? formError : '');
+      var fn = String(typeof formNotice !== 'undefined' ? formNotice : '');
+      // `flash` is the flash-sale payload — never stringify it into UI banners
+      var ff = String(
+        (typeof flashMsg !== 'undefined' && flashMsg) ? flashMsg
+          : (typeof queryFlash !== 'undefined' && queryFlash) ? queryFlash
+          : ''
+      );
+      var loggedIn = !!(typeof user !== 'undefined' && user);
+      var qaList = (typeof qaItems !== 'undefined' && qaItems) ? qaItems : [];
+    %>
+
+    <% if (fe) { %><div class="banner err" role="alert"><%= fe %></div><% } %>
+    <% if (fn || ff) { %><div class="banner ok" role="status"><%= fn || ff %></div><% } %>
+
+    <%
+      var dist = (typeof ratingDistribution !== 'undefined' && ratingDistribution) ? ratingDistribution : {1:0,2:0,3:0,4:0,5:0};
+      var distTotal = Number((typeof reviewMeta !== 'undefined' && reviewMeta && reviewMeta.totalReviews) || 0);
+      if (!distTotal) {
+        distTotal = [1,2,3,4,5].reduce(function(s, n){ return s + Number(dist[n] || 0); }, 0);
+      }
+      function starsHtml(n) {
+        var r = Math.round(Number(n) || 0);
+        var out = '';
+        for (var i = 1; i <= 5; i++) out += i <= r ? '★' : '☆';
+        return out;
+      }
+    %>
+
+    <section class="reviews" id="reviews" data-engagement-reviews>
+      <h2><%= t('reviews') %></h2>
+      <div class="rating-chart">
+        <div class="rating-chart-summary">
+          <span class="stars" aria-hidden="true"><%= starsHtml(rm.averageRating) %></span>
+          <strong data-avg><%= Number(rm.averageRating || 0).toFixed(1) %></strong>
+          <span class="muted">(<span data-review-count><%= rm.totalReviews || 0 %></span>)</span>
+        </div>
+        <div class="rating-bars">
+          <% [5,4,3,2,1].forEach(function(star) {
+            var c = Number(dist[star] || 0);
+            var pct = distTotal > 0 ? Math.round((c / distTotal) * 100) : 0;
+          %>
+          <div class="rating-bar-row">
+            <span><%= star %>★</span>
+            <span class="rating-bar"><span style="width:<%= pct %>%"></span></span>
+            <span><%= c %></span>
+          </div>
+          <% }) %>
+        </div>
+      </div>
+
+      <% if (reviews && reviews.length) { %>
+        <% reviews.forEach(function(r) {
+          var author = r.authorName || r.userName || 'Customer';
+          var avatar = r.authorAvatar || r.avatar || '';
+          var pending = r.pending || r.status === 'pending';
+        %>
+        <div class="review">
+          <div class="review-head">
+            <% if (avatar) { %>
+            <img class="review-avatar" src="<%= avatar %>" alt="" width="36" height="36" loading="lazy" />
+            <% } else { %>
+            <span class="review-avatar review-avatar-fallback" aria-hidden="true"><%= String(author).charAt(0).toUpperCase() %></span>
+            <% } %>
+            <div>
+              <strong><%= author %></strong>
+              <% if (pending) { %><span class="pill pill-warn"><%= t('pendingApproval') %></span><% } %>
+              <div class="stars" aria-label="<%= r.rating || 0 %> stars"><%= starsHtml(r.rating || r.stars || 0) %></div>
+            </div>
+          </div>
+          <% if (r.title) { %><p class="review-title"><%= r.title %></p><% } %>
+          <p><%= r.body || r.comment || '' %></p>
+          <% var imgs = Array.isArray(r.imageUrls) ? r.imageUrls : []; %>
+          <% if (imgs.length) { %>
+          <div class="review-photos">
+            <% imgs.slice(0, 5).forEach(function(src) { %>
+            <img src="<%= src %>" alt="" width="72" height="72" loading="lazy" />
+            <% }) %>
+          </div>
+          <% } %>
+        </div>
+        <% }) %>
+      <% } else { %>
+        <p class="muted"><%= t('noReviewsYet') %></p>
+      <% } %>
+
+      <% if (loggedIn) {
+        var mine = typeof myReview !== 'undefined' && myReview ? myReview : null;
+        var mineRating = mine && mine.rating ? Number(mine.rating) : 5;
+        var mineTitle = mine && mine.title ? String(mine.title) : '';
+        var mineBody = mine && mine.body ? String(mine.body) : '';
+        var mineImages = mine && Array.isArray(mine.imageUrls) ? mine.imageUrls : [];
+      %>
+      <form method="post" action="<%= basePath %>/<%= locale %>/product/<%= encodeURIComponent(pid) %>/reviews" class="stack review-form" data-photo-form>
+        <h3><%= mine ? t('editReview') : t('writeReview') %></h3>
+        <p class="muted"><%= mine ? t('editReviewHint') : t('reviewPendingHint') %></p>
+        <% if (typeof query !== 'undefined' && query.orderId) { %>
+        <input type="hidden" name="orderId" value="<%= String(query.orderId) %>" />
+        <% } %>
+        <label class="field">
+          <span><%= t('rating') %></span>
+          <select name="rating" required>
+            <% [5,4,3,2,1].forEach(function(n) { %>
+            <option value="<%= n %>" <%= mineRating === n ? 'selected' : '' %>><%= '★'.repeat(n) + '☆'.repeat(5-n) %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="field">
+          <span><%= t('reviewTitle') %></span>
+          <input name="title" maxlength="120" autocomplete="off" value="<%= mineTitle.replace(/"/g, '&quot;') %>" />
+        </label>
+        <label class="field">
+          <span><%= t('yourReview') %></span>
+          <textarea name="body" rows="4" required minlength="5" maxlength="2000"><%= mineBody %></textarea>
+        </label>
+        <label class="field">
+          <span><%= t('addPhotos') %></span>
+          <input type="file" accept="image/*" multiple data-photo-input />
+        </label>
+        <input type="hidden" name="imageUrls" value="<%= JSON.stringify(mineImages).replace(/"/g, '&quot;') %>" data-photo-urls />
+        <p class="muted" data-photo-status><% if (mineImages.length) { %><%= mineImages.length %> photo(s) attached<% } %></p>
+        <button type="submit" class="btn btn-primary"><%= mine ? t('saveReview') : t('submitReview') %></button>
+      </form>
+      <% } else { %>
+      <p class="muted">
+        <a href="<%= basePath %>/<%= locale %>/auth/login?next=<%= encodeURIComponent(basePath + '/' + locale + '/product/' + pid) %>"><%= t('loginToReview') %></a>
+      </p>
+      <% } %>
+    </section>
+
+    <section class="qa" id="qa" data-engagement-qa>
+      <h2><%= t('questionsAnswers') %></h2>
+      <% if (qaList.length) { %>
+        <% qaList.forEach(function(q) {
+          var qName = q.askerName || q.asker_name || 'Customer';
+          var qAvatar = q.askerAvatar || '';
+          var answeredBy = q.answeredByName || 'OceanBazar Customer Support';
+          var qPending = q.pending || q.status === 'pending';
+          var aImgs = Array.isArray(q.answerImageUrls) ? q.answerImageUrls : [];
+          var qImgs = Array.isArray(q.imageUrls) ? q.imageUrls : [];
+        %>
+        <div class="qa-item">
+          <div class="review-head">
+            <% if (qAvatar) { %>
+            <img class="review-avatar" src="<%= qAvatar %>" alt="" width="36" height="36" loading="lazy" />
+            <% } else { %>
+            <span class="review-avatar review-avatar-fallback"><%= String(qName).charAt(0).toUpperCase() %></span>
+            <% } %>
+            <strong><%= qName %></strong>
+            <% if (qPending) { %><span class="pill pill-warn"><%= t('pendingApproval') %></span><% } %>
+          </div>
+          <p class="qa-q"><strong>Q:</strong> <%= q.question %></p>
+          <% if (qImgs.length) { %>
+          <div class="review-photos">
+            <% qImgs.slice(0, 4).forEach(function(src) { %><img src="<%= src %>" alt="" width="64" height="64" loading="lazy" /><% }) %>
+          </div>
+          <% } %>
+          <% if (q.answer) { %>
+          <div class="qa-reply">
+            <p class="qa-reply-from"><%= t('replyFrom') %> <%= answeredBy %></p>
+            <p class="qa-a"><%= q.answer %></p>
+            <% if (aImgs.length) { %>
+            <div class="review-photos">
+              <% aImgs.slice(0, 4).forEach(function(src) { %><img src="<%= src %>" alt="" width="64" height="64" loading="lazy" /><% }) %>
+            </div>
+            <% } %>
+          </div>
+          <% } else { %>
+          <p class="muted"><%= t('awaitingAnswer') %></p>
+          <% } %>
+        </div>
+        <% }) %>
+      <% } else { %>
+        <p class="muted"><%= t('noQuestionsYet') %></p>
+      <% } %>
+
+      <form method="post" action="<%= basePath %>/<%= locale %>/product/<%= encodeURIComponent(pid) %>/qa" class="stack qa-form" data-photo-form="<%= loggedIn ? '1' : '' %>">
+        <h3><%= t('askQuestion') %></h3>
+        <p class="muted"><%= t('qaPendingHint') %></p>
+        <% if (!loggedIn) { %>
+        <label class="field">
+          <span><%= t('name') %></span>
+          <input name="askerName" autocomplete="name" />
+        </label>
+        <label class="field">
+          <span><%= t('email') %></span>
+          <input type="email" name="askerEmail" autocomplete="email" />
+        </label>
+        <% } %>
+        <label class="field">
+          <span><%= t('yourQuestion') %></span>
+          <textarea name="question" rows="3" required minlength="5" maxlength="1000"></textarea>
+        </label>
+        <% if (loggedIn) { %>
+        <label class="field">
+          <span><%= t('addPhotos') %></span>
+          <input type="file" accept="image/*" multiple data-photo-input />
+        </label>
+        <input type="hidden" name="imageUrls" value="[]" data-photo-urls />
+        <p class="muted" data-photo-status></p>
+        <% } %>
+        <button type="submit" class="btn btn-primary"><%= t('submitQuestion') %></button>
+      </form>
+    </section>
+  </div>
+</article>
+
+<script>
+(function () {
+  var uploadUrl = '<%= basePath %>/<%= locale %>/upload/image';
+  function wirePhotoForm(form) {
+    if (!form || !form.querySelector('[data-photo-input]')) return;
+    var input = form.querySelector('[data-photo-input]');
+    var hidden = form.querySelector('[data-photo-urls]');
+    var status = form.querySelector('[data-photo-status]');
+    var urls = [];
+    input.addEventListener('change', function () {
+      var files = Array.prototype.slice.call(input.files || [], 0, 5 - urls.length);
+      if (!files.length) return;
+      status.textContent = 'Uploading…';
+      var chain = Promise.resolve();
+      files.forEach(function (file) {
+        chain = chain.then(function () {
+          var fd = new FormData();
+          fd.append('image', file);
+          fd.append('folder', 'reviews');
+          return fetch(uploadUrl, { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+              if (res.ok && res.j && (res.j.url || res.j.secureUrl)) {
+                urls.push(res.j.url || res.j.secureUrl);
+              }
+            });
+        });
+      });
+      chain.then(function () {
+        hidden.value = JSON.stringify(urls);
+        status.textContent = urls.length ? (urls.length + ' photo(s) attached') : 'Upload failed';
+        input.value = '';
+      }).catch(function () {
+        status.textContent = 'Upload failed';
+      });
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-photo-form]'), wirePhotoForm);
+
+  var pollUrl = '<%= basePath %>/<%= locale %>/product/<%= encodeURIComponent(pid) %>/engagement.json';
+  var last = { reviewCount: <%= Number((typeof reviewMeta !== 'undefined' && reviewMeta && reviewMeta.totalReviews) || 0) %>, qaCount: <%= (typeof qaItems !== 'undefined' && qaItems) ? qaItems.length : 0 %> };
+  function tick() {
+    fetch(pollUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.ok) return;
+        var changed = data.reviewCount !== last.reviewCount || data.qaCount !== last.qaCount;
+        last.reviewCount = data.reviewCount;
+        last.qaCount = data.qaCount;
+        var avgEl = document.querySelector('[data-avg]');
+        var cntEl = document.querySelector('[data-review-count]');
+        if (avgEl && data.averageRating != null) avgEl.textContent = Number(data.averageRating).toFixed(1);
+        if (cntEl) cntEl.textContent = String(data.reviewCount || 0);
+        if (changed) {
+          var hint = document.querySelector('[data-engagement-hint]');
+          if (!hint) {
+            hint = document.createElement('p');
+            hint.className = 'banner ok';
+            hint.setAttribute('data-engagement-hint', '1');
+            hint.setAttribute('role', 'status');
+            hint.textContent = '<%= t('engagementUpdated') %>';
+            var root = document.querySelector('[data-engagement-reviews]');
+            if (root) root.insertBefore(hint, root.firstChild);
+          }
+        }
+      })
+      .catch(function () {});
+  }
+  setInterval(tick, 45000);
+})();
+</script>
+
+<%- include('partials/footer') %>

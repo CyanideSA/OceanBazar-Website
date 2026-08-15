@@ -1,0 +1,170 @@
+<%
+  var navCats = (typeof navCategories !== 'undefined' && Array.isArray(navCategories)) ? navCategories : [];
+  var isActivePath = function (suffix) {
+    var p = String(path || '');
+    return p === suffix || p.indexOf(suffix + '/') === 0;
+  };
+%>
+<div id="obAppDownloadSlot"></div>
+<div class="lite-note"><%= t('liteBanner') %>
+  <a href="<%= basePath %>/prefer?view=full&amp;next=<%= encodeURIComponent('/' + locale) %>"><%= t('fullSite') %></a>
+</div>
+<header class="site-header">
+  <div class="bar">
+    <a class="logo-link" href="<%= basePath %>/<%= locale %>" aria-label="<%= t('siteName') %>">
+      <%
+        var headerCms = !!(settings && (settings.logoLightUrl || settings.logoDarkUrl));
+        var headerLogo = headerCms
+          ? (settings.logoLightUrl || settings.logoDarkUrl)
+          : (basePath + '/ob-brand-logo.png?v=8');
+      %>
+      <% if (!headerCms) { %>
+      <picture>
+        <source srcset="<%= basePath %>/ob-brand-logo.webp?v=8" type="image/webp" />
+        <img
+          id="obBrandLogo"
+          src="<%= headerLogo %>"
+          alt="OceanBazar"
+          width="152"
+          height="72"
+          decoding="async"
+          data-ob-logo-cms="0"
+        />
+      </picture>
+      <% } else { %>
+      <img
+        id="obBrandLogo"
+        src="<%= headerLogo %>"
+        alt="OceanBazar"
+        width="152"
+        height="72"
+        decoding="async"
+        data-ob-logo-cms="1"
+      />
+      <% } %>
+    </a>
+    <div class="bar-spacer"></div>
+    <% if (user) {
+      var headerAvatar = user.profileImage || user.profile_image || user.avatar || '';
+      var headerInitial = String(user.name || user.email || 'U').trim().charAt(0).toUpperCase() || 'U';
+    %>
+    <a class="icon-btn icon-btn-avatar" href="<%= basePath %>/<%= locale %>/account" aria-label="<%= t('account') %>" title="<%= t('account') %>" data-has-avatar="<%= headerAvatar ? '1' : '0' %>">
+      <% if (headerAvatar) { %>
+      <img class="header-avatar" src="<%= headerAvatar %>" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+      <% } else { %>
+      <span class="header-avatar-fallback" aria-hidden="true"><%= headerInitial %></span>
+      <% } %>
+    </a>
+    <% } else { %>
+    <a class="icon-btn" href="<%= basePath %>/<%= locale %>/auth/login" aria-label="<%= t('login') %>" title="<%= t('login') %>">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>
+    </a>
+    <% } %>
+    <a class="icon-btn cart-link" href="<%= basePath %>/<%= locale %>/cart" aria-label="<%= t('cart') %>" title="<%= t('cart') %>">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 18a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 18zm10 0a2 2 0 1 0 .001 4.001A2 2 0 0 0 17 18zM7.2 14h9.9c.8 0 1.5-.5 1.7-1.3l1.8-6.2H6.2L5.5 4H2v2h2.2l2.3 8.5-.9 1.6A2 2 0 0 0 7.2 19H19v-2H7.4l.6-1.1.2-1.9z"/></svg>
+      <% if (cartCount) { %><span class="badge"><%= cartCount %></span><% } %>
+    </a>
+    <button type="button" class="icon-btn" id="menuBtn" aria-controls="navDrawer" aria-expanded="false" aria-label="<%= t('menu') %>" title="<%= t('menu') %>">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+    </button>
+  </div>
+  <form class="search" id="liteSearchForm" action="<%= basePath %>/<%= locale %>/search" method="get" role="search"
+    data-suggest-url="<%= basePath %>/<%= locale %>/search/suggest"
+    data-trending-url="<%= basePath %>/<%= locale %>/search/trending"
+    data-search-url="<%= basePath %>/<%= locale %>/search"
+    data-product-url="<%= basePath %>/<%= locale %>/product/"
+    data-i18n-trending="<%= t('trendingSearches') %>"
+    data-i18n-recent="<%= t('recentSearches') %>"
+    data-i18n-clear="<%= t('clearRecent') %>"
+    data-i18n-see-all="<%= t('seeAllResults') %>"
+    data-i18n-no-match="<%= t('noSearchSuggestions') %>"
+    data-locale="<%= locale %>">
+    <div class="search-field">
+      <input type="search" id="liteSearchInput" name="q" placeholder="<%= t('searchPlaceholder') %>" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>" autocomplete="off" enterkeyhint="search" />
+      <button type="button" class="search-clear" id="liteSearchClear" hidden aria-label="<%= t('clear') %>">×</button>
+      <div class="search-panel" id="liteSearchPanel" hidden role="listbox" aria-label="<%= t('search') %>"></div>
+    </div>
+    <button type="submit"><%= t('search') %></button>
+  </form>
+  <% if (flash && flashMs > 0) { %>
+  <a class="flash-bar" href="<%= basePath %>/<%= locale %>/flash-deals">
+    <span><%= t('flashDeals') %></span>
+    <span data-countdown="<%= flashMs %>" data-label="<%= t('endsIn') %>"><%= t('endsIn') %> <%= flashCountdown %></span>
+  </a>
+  <% } %>
+</header>
+
+<div id="navBackdrop" class="nav-backdrop" hidden data-nav-close></div>
+<aside id="navDrawer" class="nav-drawer" hidden role="dialog" aria-modal="true" aria-label="<%= t('menu') %>">
+  <div class="nav-drawer-head">
+    <a class="nav-drawer-brand" href="<%= basePath %>/<%= locale %>" data-nav-close>
+      <picture>
+        <source srcset="<%= basePath %>/ob-brand-logo.webp?v=8" type="image/webp" />
+        <img src="<%= basePath %>/ob-brand-logo.png?v=8" alt="OceanBazar" width="118" height="56" decoding="async" />
+      </picture>
+    </a>
+    <button type="button" class="icon-btn" id="menuCloseBtn" data-nav-close aria-label="<%= t('closeMenu') %>">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3 1.4 1.4z"/></svg>
+    </button>
+  </div>
+  <div class="nav-drawer-body">
+    <p class="nav-section-label"><%= t('shop') %></p>
+    <nav class="nav-list">
+      <a class="nav-link<%= isActivePath('/' + locale) && path === '/' + locale ? ' is-active' : '' %>" href="<%= basePath %>/<%= locale %>" data-nav-close><%= t('home') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/products" data-nav-close><%= t('products') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/products/featured" data-nav-close><%= t('featured') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/products/latest" data-nav-close><%= t('latest') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/products/top-trending" data-nav-close><%= t('topTrending') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/products/best-deals" data-nav-close><%= t('bestDeals') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/flash-deals" data-nav-close><%= t('flashDeals') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/track" data-nav-close><%= t('trackOrder') %></a>
+    </nav>
+
+    <% if (navCats.length) { %>
+    <p class="nav-section-label"><%= t('categories') %></p>
+    <nav class="nav-list nav-cats">
+      <% navCats.forEach(function (cat) {
+        var cid = cat.id || cat.slug || '';
+        var label = helpers.pickName(cat, locale) || cat.slug || cid;
+        if (!cid) return;
+      %>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/category/<%= encodeURIComponent(cid) %>" data-nav-close><%= label %></a>
+      <% }) %>
+      <a class="nav-link nav-link-muted" href="<%= basePath %>/<%= locale %>/products" data-nav-close><%= t('seeAll') %></a>
+    </nav>
+    <% } %>
+
+    <p class="nav-section-label"><%= t('account') %></p>
+    <nav class="nav-list">
+      <% if (user) {
+        var drawerAvatar = user.profileImage || user.profile_image || user.avatar || '';
+        var drawerInitial = String(user.name || user.email || 'U').trim().charAt(0).toUpperCase() || 'U';
+      %>
+      <a class="nav-link nav-link-account" href="<%= basePath %>/<%= locale %>/account" data-nav-close>
+        <% if (drawerAvatar) { %>
+        <img class="header-avatar header-avatar--drawer" src="<%= drawerAvatar %>" alt="" width="24" height="24" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+        <% } else { %>
+        <span class="header-avatar-fallback header-avatar-fallback--drawer" aria-hidden="true"><%= drawerInitial %></span>
+        <% } %>
+        <span><%= user.name ? String(user.name).split(' ')[0] : t('account') %></span>
+      </a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/account/orders" data-nav-close><%= t('orders') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/account/addresses" data-nav-close><%= t('addresses') %></a>
+      <a class="nav-link nav-link-danger" href="<%= basePath %>/<%= locale %>/auth/logout" data-nav-close><%= t('logout') %></a>
+      <% } else { %>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/auth/login" data-nav-close><%= t('login') %></a>
+      <a class="nav-link" href="<%= basePath %>/<%= locale %>/auth/register" data-nav-close><%= t('register') %></a>
+      <% } %>
+    </nav>
+
+    <p class="nav-section-label"><%= t('preferences') %></p>
+    <nav class="nav-list">
+      <a class="nav-link" href="<%= basePath %><%= locale === 'bn' ? '/en' : '/bn' %>" data-nav-close><%= locale === 'bn' ? 'English' : 'বাংলা' %></a>
+      <a class="nav-link" href="<%= basePath %>/prefer?view=full&amp;next=<%= encodeURIComponent('/' + locale) %>" data-nav-close><%= t('fullSite') %></a>
+    </nav>
+  </div>
+</aside>
+
+<% if (flashMsg) { %><div class="banner ok" role="status"><%= flashMsg %></div><% } %>
+<% if (errorMsg) { %><div class="banner err" role="alert"><%= errorMsg %></div><% } %>
+<main class="main">

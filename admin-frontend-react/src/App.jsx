@@ -30,7 +30,9 @@ const InventoryPage = lazy(() => import("./pages/InventoryPage"));
 const ReturnsPage = lazy(() => import("./pages/ReturnsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const CouponsPage = lazy(() => import("./pages/CouponsPage"));
+const TagsPage = lazy(() => import("./pages/TagsPage"));
 const ReviewsPage = lazy(() => import("./pages/ReviewsPage"));
+const QaPage = lazy(() => import("./pages/QaPage"));
 const OBPointsPage = lazy(() => import("./pages/OBPointsPage"));
 const TicketsPage = lazy(() => import("./pages/TicketsPage"));
 const ABTestsPage = lazy(() => import("./pages/ABTestsPage"));
@@ -66,6 +68,7 @@ export default function App() {
   const [adminUnreadAlerts, setAdminUnreadAlerts] = useState(0);
   const [overviewCounts, setOverviewCounts] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loginChallenge, setLoginChallenge] = useState(null);
   const [theme, setTheme] = useState(() => {
     // Default: light. Only use dark when the admin previously chose it.
     const saved = typeof window !== "undefined" ? localStorage.getItem("oceanbazar_admin_theme") : null;
@@ -188,13 +191,21 @@ export default function App() {
     adminApi
       .ssoExchange({ code: ssoCode })
       .then((res) => {
+        window.history.replaceState({}, "", window.location.pathname);
+        if (res?.requires2faSetup || res?.requiresPasswordChange || res?.requires2fa) {
+          // #region agent log
+          fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'admin-2fa-reset',hypothesisId:'H3',location:'App.jsx:ssoExchange',message:'SSO returned auth challenge',data:{requires2faSetup:!!res.requires2faSetup,requiresPasswordChange:!!res.requiresPasswordChange,requires2fa:!!res.requires2fa,mustResetTwoFa:!!res.mustResetTwoFa},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+          setLoginChallenge(res);
+          return;
+        }
         if (!res?.token || !res?.admin?.id) throw new Error("SSO exchange failed");
         setSession(res.token, res.admin);
         markAdminLoginSuccess();
         resetAdminAuthErrorFlag();
         setToken(res.token);
         setAdmin(res.admin);
-        window.history.replaceState({}, "", window.location.pathname);
+        setLoginChallenge(null);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -332,7 +343,14 @@ export default function App() {
   }, [token, admin, denied, active]);
 
   if (!token || !admin) {
-    return <LoginPage onLogin={handleLogin} loading={loading} />;
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+        loading={loading}
+        initialChallenge={loginChallenge}
+        onChallengeConsumed={() => setLoginChallenge(null)}
+      />
+    );
   }
 
   const contentMap = {
@@ -399,7 +417,9 @@ export default function App() {
       />
     ),
     reviews: <ReviewsPage />,
+    qa: <QaPage />,
     coupons: <CouponsPage />,
+    tags: <TagsPage />,
     analytics: <AnalyticsPage liveTick={mergedTicks.payments + mergedTicks.orders} />,
     chat: (
       <ChatPage
@@ -415,6 +435,7 @@ export default function App() {
     engagement: (
       <EngagementPage
         onOpenCustomer={(id) => navigateTo("customers", { customerId: id })}
+        onOpenQa={() => navigateTo("qa")}
       />
     ),
     disputes: <DisputesPage />,

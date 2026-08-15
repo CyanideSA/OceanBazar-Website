@@ -31,17 +31,23 @@ export async function uploadMedia(
   } = {}
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
+    const resourceType = options.resourceType || 'auto';
+    // quality/fetch_format are image-only — applying them to videos breaks Cloudinary uploads
+    const params: Record<string, unknown> = {
+      folder: `oceanbazar/${folder}`,
+      public_id: options.publicId,
+      resource_type: resourceType,
+      overwrite: true,
+    };
+    if (options.transformation) params.transformation = options.transformation;
+    if (options.allowedFormats) params.allowed_formats = options.allowedFormats;
+    if (resourceType === 'image') {
+      params.quality = 'auto';
+      params.fetch_format = 'auto';
+    }
+
     const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: `oceanbazar/${folder}`,
-        public_id: options.publicId,
-        resource_type: options.resourceType || 'auto',
-        transformation: options.transformation,
-        allowed_formats: options.allowedFormats,
-        overwrite: true,
-        quality: 'auto',
-        fetch_format: 'auto',
-      },
+      params,
       (error, result) => {
         if (error) return reject(error);
         const r = result as UploadApiResponse;

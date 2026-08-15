@@ -1,0 +1,58 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section narrow">
+  <h1><%= t('addresses') %></h1>
+  <p class="muted">City and zone must match Pathao courier for accurate delivery charges.</p>
+  <% if (!addresses.length) { %>
+  <p class="empty"><%= t('noAddresses') %></p>
+  <% } else { %>
+  <ul class="menu-list">
+    <% addresses.forEach(function(addr) { %>
+    <li>
+      <strong><%= addr.label || addr.name || '' %></strong>
+      <% if (addr.isDefault) { %> <em>(<%= t('default') %>)</em><% } %><br />
+      <%= addr.line1 || addr.addressLine1 || addr.address || '' %><% if (addr.line2) { %>, <%= addr.line2 %><% } %>,
+      <%= addr.city || '' %>, <%= addr.district || addr.area || '' %>
+      <% if (addr.pathaoAreaName) { %>, <%= addr.pathaoAreaName %><% } %>
+      <% if (!addr.pathaoCityId || !addr.pathaoZoneId) { %>
+      <br /><span class="warn-text">Update this address with Pathao city/zone before checkout.</span>
+      <% } %>
+    </li>
+    <% }) %>
+  </ul>
+  <% } %>
+
+  <h2><%= t('addAddress') %></h2>
+  <form
+    method="post"
+    action="<%= basePath %>/<%= locale %>/account/addresses"
+    class="stack"
+    data-pathao-base="<%= basePath %>/<%= locale %>/pathao"
+  >
+    <label class="field"><span><%= t('name') %> / Label</span><input name="label" required /></label>
+    <label class="field"><span><%= t('addressLine') %></span><input name="line1" required /></label>
+    <label class="field"><span>Address line 2</span><input name="line2" /></label>
+    <label class="field">
+      <span><%= t('city') %> (Pathao)</span>
+      <select name="pathaoCityId" data-pathao="city" required></select>
+    </label>
+    <label class="field">
+      <span><%= t('district') %> / Zone (Pathao)</span>
+      <select name="pathaoZoneId" data-pathao="zone" required></select>
+    </label>
+    <label class="field">
+      <span>Area (optional)</span>
+      <select name="pathaoAreaId" data-pathao="area"></select>
+    </label>
+    <input type="hidden" name="pathaoCityName" value="" />
+    <input type="hidden" name="pathaoZoneName" value="" />
+    <input type="hidden" name="pathaoAreaName" value="" />
+    <label class="field"><span><%= t('postalCode') %></span><input name="postalCode" /></label>
+    <label><input type="checkbox" name="isDefault" value="1" /> <%= t('default') %></label>
+    <button type="submit" class="btn btn-primary"><%= t('save') %></button>
+  </form>
+</section>
+
+<script src="<%= basePath %>/js/pathao-address.js" defer></script>
+<%- include('partials/footer') %>

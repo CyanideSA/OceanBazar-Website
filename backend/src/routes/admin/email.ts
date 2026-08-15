@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { Router, Request, Response } from 'express';
 import { prisma } from '../../lib/prisma';
 
@@ -15,8 +17,14 @@ import {
   patchGraphMessageRead,
   listGraphAttachments,
   createGraphDraft,
+  setMailboxPhoto,
   STANDARD_FOLDERS,
 } from '../../services/microsoftGraphService';
+import {
+  listMailIdentities,
+  resolveMailIdentity,
+  formatMailFrom,
+} from '../../config/mailAddresses';
 import { v4 as uuidv4 } from 'uuid';
 import { logCommunication, resolveCustomerIdByEmail } from '../../services/communicationLogService';
 
@@ -24,13 +32,64 @@ const router = Router();
 
 /** GET /api/admin/email/status — provider + configured mailboxes */
 router.get('/status', (_req: Request, res: Response) => {
+  const identities = listMailIdentities().map((id) => ({
+    key: id.key,
+    address: id.address,
+    displayName: id.displayName,
+    fromHeader: formatMailFrom(id),
+    logoFile: id.themeIconFile,
+    tagline: id.tagline,
+  }));
   res.json({
     graphConfigured: graphConfigured(),
     smtpConfigured: Boolean(process.env.SMTP_USER),
     mailboxes: configuredMailboxes(),
     defaultSender: defaultSender(),
+    identities,
   });
 });
+
+/**
+ * POST /api/admin/email/sync-theme-photos
+ * Push theme icons to each M365 shared mailbox profile photo (inbox avatar).
+ * Requires Graph User.ReadWrite.All (or photo write) admin consent.
+ */
+router.post(
+  '/sync-theme-photos',
+  requireRole('super_admin', 'admin'),
+  async (_req: Request, res: Response) => {
+    if (!graphConfigured()) {
+      res.status(409).json({ error: 'graph_not_configured' });
+      return;
+    }
+    const results: Array<{ address: string; displayName: string; ok: boolean; error?: string }> = [];
+    for (const identity of listMailIdentities()) {
+      const logoPath = path.join(__dirname, `../../../assets/${identity.themeIconFile}`);
+      if (!fs.existsSync(logoPath)) {
+        results.push({
+          address: identity.address,
+          displayName: identity.displayName,
+          ok: false,
+          error: `missing_asset:${identity.themeIconFile}`,
+        });
+        continue;
+      }
+      const content = fs.readFileSync(logoPath);
+      const result = await setMailboxPhoto({
+        mailbox: identity.address,
+        contentType: 'image/png',
+        content,
+      });
+      results.push({
+        address: identity.address,
+        displayName: identity.displayName,
+        ok: result.ok,
+        error: result.error,
+      });
+    }
+    res.json({ results });
+  }
+);
 
 /** GET /api/admin/email/logs — unified communication log (default: email channel) */
 router.get('/logs', async (req: Request, res: Response) => {
@@ -112,8 +171,14 @@ router.post(
       res.status(400).json({ error: 'to, subject and body are required' });
       return;
     }
-    const html = emailWrapper(`<div style="font-size:15px;color:#374151;line-height:1.6;">${body}</div>`);
-    const ok = await sendMail(String(to), String(subject), html, 'admin_compose', { from });
+    const identity = resolveMailIdentity(from || defaultSender());
+    const html = emailWrapper(
+      `<div style="font-size:15px;color:#374151;line-height:1.6;">${body}</div>`,
+      identity,
+    );
+    const ok = await sendMail(String(to), String(subject), html, 'admin_compose', {
+      from: identity.address,
+    });
 
     const customerId = await resolveCustomerIdByEmail(String(to));
     await logCommunication({
@@ -123,7 +188,7 @@ router.post(
       subject: String(subject),
       body: String(body),
       toAddress: String(to),
-      fromAddress: from || defaultSender(),
+      fromAddress: formatMailFrom(identity),
       status: ok ? 'sent' : 'failed',
       provider: graphConfigured() ? 'microsoft_graph' : 'smtp',
       refType: 'admin_compose',

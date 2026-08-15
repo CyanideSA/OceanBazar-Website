@@ -1,0 +1,11 @@
+<% if (pagination && pagination.pages > 1) { %>
+<nav class="pager" aria-label="Pagination">
+  <% if (pagination.page > 1) { %>
+  <a href="?<%= Object.keys(query).filter(function(k){return k!=='page'}).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(query[k])}).concat(['page='+(pagination.page-1)]).join('&') %>"><%= t('prev') %></a>
+  <% } %>
+  <span><%= t('page') %> <%= pagination.page %> / <%= pagination.pages %></span>
+  <% if (pagination.page < pagination.pages) { %>
+  <a href="?<%= Object.keys(query).filter(function(k){return k!=='page'}).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(query[k])}).concat(['page='+(pagination.page+1)]).join('&') %>"><%= t('next') %></a>
+  <% } %>
+</nav>
+<% } %>

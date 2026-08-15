@@ -1,0 +1,113 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var quickActions = [
+    { key: 'Track Order', label: t('chatQuickTrack') || 'Track Order' },
+    { key: 'Browse Products', label: t('chatQuickBrowse') || 'Browse Products' },
+    { key: 'My Cart', label: t('chatQuickCart') || 'My Cart' },
+    { key: 'Return Item', label: t('chatQuickReturn') || 'Return Item' },
+    { key: 'Talk to Human', label: t('chatQuickHuman') || 'Talk to Human' },
+    { key: 'Payment Help', label: t('chatQuickPay') || 'Payment Help' }
+  ];
+%>
+
+<section
+  class="section svc-page chat-page"
+  <% if (poll) { %>
+  data-chat-poll="10"
+  data-chat-session="<%= session && session.id ? session.id : '' %>"
+  data-chat-poll-url="<%= basePath %>/<%= locale %>/chat/poll"
+  data-chat-action-url="<%= basePath %>/<%= locale %>/chat/action"
+  data-chat-base="<%= basePath %>"
+  data-chat-locale="<%= locale %>"
+  <% } %>
+>
+  <div class="svc-hero svc-hero-chat">
+    <p class="info-eyebrow">OceanBazar</p>
+    <h1><%= t('liveChat') %></h1>
+    <p class="info-intro"><%= t('chatIntro') %></p>
+  </div>
+
+  <% if (!session) { %>
+  <form method="post" action="<%= basePath %>/<%= locale %>/chat/start" class="svc-card stack auth-form">
+    <h2><%= t('chatStartTitle') %></h2>
+    <label class="field">
+      <span><%= t('chatName') %></span>
+      <input name="name" value="<%= user && user.name ? user.name : '' %>" <%= user ? '' : 'required' %> autocomplete="name" />
+    </label>
+    <label class="field">
+      <span><%= t('chatEmail') %></span>
+      <input type="email" name="email" value="<%= user && user.email ? user.email : '' %>" autocomplete="email" />
+    </label>
+    <label class="field">
+      <span><%= t('chatPhone') %></span>
+      <input name="phone" value="<%= user && user.phone ? user.phone : '' %>" inputmode="tel" autocomplete="tel" />
+    </label>
+    <label class="field">
+      <span><%= t('chatIssue') %></span>
+      <select name="issue">
+        <option value="order"><%= t('chatIssueOrder') %></option>
+        <option value="payment"><%= t('chatIssuePayment') %></option>
+        <option value="delivery"><%= t('chatIssueDelivery') %></option>
+        <option value="product"><%= t('chatIssueProduct') %></option>
+        <option value="general" selected><%= t('chatIssueGeneral') %></option>
+      </select>
+    </label>
+    <label class="field">
+      <span><%= t('chatDetails') %></span>
+      <textarea name="details" rows="3" required placeholder="<%= t('chatDetailsPlaceholder') %>"></textarea>
+    </label>
+    <button type="submit" class="btn btn-primary btn-block"><%= t('chatStart') %></button>
+  </form>
+  <% } else { %>
+  <div class="chat-shell svc-card">
+    <div class="chat-meta">
+      <span class="pill pill-info" id="chatStatusPill"><%= session.status || 'active' %></span>
+      <% if (session.agent_name) { %><span class="muted" id="chatAgentLabel"><%= t('chatAgent') %>: <%= session.agent_name %></span><% } %>
+    </div>
+    <div class="chat-thread" id="chatThread" data-msg-count="<%= messages.length %>">
+      <% messages.forEach(function (m) { %>
+        <%- include('partials/chat-message', { m: m, session: session }) %>
+      <% }) %>
+    </div>
+
+    <div class="chat-quick" id="chatQuickActions" aria-label="<%= t('liveChat') %>">
+      <% quickActions.forEach(function (qa) { %>
+      <form method="post" action="<%= basePath %>/<%= locale %>/chat/action" class="inline-form">
+        <input type="hidden" name="sessionId" value="<%= session.id %>" />
+        <input type="hidden" name="action" value="<%= qa.key %>" />
+        <button type="submit" class="chip-btn" title="<%= qa.label %>"><%= qa.label %></button>
+      </form>
+      <% }) %>
+    </div>
+
+    <form method="post" action="<%= basePath %>/<%= locale %>/chat/message" class="chat-compose" id="chatComposeForm">
+      <input type="hidden" name="sessionId" value="<%= session.id %>" />
+      <input name="message" required autocomplete="off" placeholder="<%= t('chatMessagePlaceholder') %>" />
+      <button type="submit" class="btn btn-primary"><%= t('send') %></button>
+    </form>
+    <div class="chat-actions">
+      <% if (session.status === 'bot' || session.status === 'waiting_agent') { %>
+      <form method="post" action="<%= basePath %>/<%= locale %>/chat/escalate">
+        <input type="hidden" name="sessionId" value="<%= session.id %>" />
+        <button type="submit" class="btn btn-outline btn-sm"><%= t('chatTalkToHuman') %></button>
+      </form>
+      <% } %>
+      <form method="post" action="<%= basePath %>/<%= locale %>/chat/close">
+        <input type="hidden" name="sessionId" value="<%= session.id %>" />
+        <button type="submit" class="link-btn"><%= t('chatEnd') %></button>
+      </form>
+    </div>
+    <p class="muted chat-poll-note"><%= t('chatPollNote') %></p>
+  </div>
+  <% } %>
+
+  <p class="svc-alt-links muted">
+    <a href="<%= basePath %>/<%= locale %>/tickets"><%= t('supportTickets') %></a>
+    ·
+    <a href="<%= basePath %>/<%= locale %>/support"><%= t('supportCenter') %></a>
+  </p>
+</section>
+
+<%- include('partials/footer') %>

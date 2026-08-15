@@ -13,7 +13,7 @@ const locales = ['en', 'bn'] as const;
 function pickLocale(request: NextRequest, pathname: string): string {
   const seg = pathname.split('/').filter(Boolean)[0];
   if (seg && locales.includes(seg as (typeof locales)[number])) return seg;
-  return request.cookies.get('NEXT_LOCALE')?.value || 'bn';
+  return request.cookies.get('NEXT_LOCALE')?.value || 'en';
 }
 
 function isMaintenancePagePath(pathname: string): boolean {
@@ -103,12 +103,12 @@ export default function middleware(request: NextRequest) {
   const defaultLocale =
     cookieLocale && locales.includes(cookieLocale as (typeof locales)[number])
       ? cookieLocale
-      : 'bn';
+      : 'en';
   return createMiddleware({
     locales: [...locales],
     defaultLocale: defaultLocale as 'en' | 'bn',
     localePrefix: 'always',
-    // Prefer Bangla for first-time visitors; do not follow Accept-Language to English.
+    // Prefer English for first-time visitors; do not follow Accept-Language automatically.
     localeDetection: false,
   })(request);
 }

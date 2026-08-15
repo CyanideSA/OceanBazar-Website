@@ -1,0 +1,46 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <div class="section-head">
+    <h1><%= t('orders') %></h1>
+    <a href="<%= basePath %>/<%= locale %>/account"><%= t('myAccount') %></a>
+  </div>
+
+  <% if (typeof errorMsg !== 'undefined' && errorMsg) { %>
+  <p class="empty"><%= errorMsg %></p>
+  <% } %>
+
+  <% if (!orders.length) { %>
+  <div class="empty-state">
+    <p class="empty"><%= t('noOrders') %></p>
+    <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/products"><%= t('continueShopping') %></a>
+  </div>
+  <% } else { %>
+  <div class="order-list">
+    <% orders.forEach(function(o) {
+      var paid = String(o.paymentStatus || '').toLowerCase() === 'paid';
+      var itemCount = Array.isArray(o.items || o.orderItems) ? (o.items || o.orderItems).length : (o.itemCount || 0);
+      var created = o.createdAt || o.created_at;
+    %>
+    <a class="order-card" href="<%= basePath %>/<%= locale %>/account/orders/<%= encodeURIComponent(o.id) %>">
+      <div class="order-card-top">
+        <strong>#<%= o.orderNumber || o.id %></strong>
+        <span class="pill <%= paid ? 'pill-ok' : 'pill-warn' %>"><%= paid ? t('paid') : t('pendingPayment') %></span>
+      </div>
+      <div class="order-card-meta">
+        <% if (created) { %><span><%= new Date(created).toLocaleDateString(locale === 'bn' ? 'bn-BD' : 'en-GB', { year: 'numeric', month: 'short', day: 'numeric' }) %></span><% } %>
+        <% if (o.status) { %><span class="dot">•</span><span class="order-status"><%= o.status %></span><% } %>
+        <% if (itemCount) { %><span class="dot">•</span><span><%= itemCount %> <%= t('items') %></span><% } %>
+      </div>
+      <div class="order-card-bottom">
+        <span class="order-total"><%= helpers.money(o.total || o.grandTotal || 0) %></span>
+        <span class="order-view"><%= t('viewDetails') %> →</span>
+      </div>
+    </a>
+    <% }) %>
+  </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

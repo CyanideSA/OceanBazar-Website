@@ -1,0 +1,85 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section info-page">
+  <div class="info-hero">
+    <p class="info-eyebrow">OceanBazar</p>
+    <h1><%= copy.heroTitle %></h1>
+    <p class="info-intro"><%= copy.heroSub %></p>
+    <div class="info-cta-row">
+      <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/products"><%= copy.shopNow || t('shopNow') %></a>
+    </div>
+  </div>
+
+  <section class="info-block">
+    <h2><%= copy.whyTitle %></h2>
+    <p class="muted"><%= copy.whySub %></p>
+    <div class="info-card-grid">
+      <div class="info-card"><strong><%= copy.feat1Title %></strong><span><%= copy.feat1Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat2Title %></strong><span><%= copy.feat2Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat3Title %></strong><span><%= copy.feat3Body %></span></div>
+      <div class="info-card"><strong><%= copy.feat4Title %></strong><span><%= copy.feat4Body %></span></div>
+    </div>
+  </section>
+
+  <section class="info-block">
+    <h2><%= copy.logisticsTitle %></h2>
+    <p><%= copy.logisticsSub %></p>
+    <ul>
+      <li><%= copy.log1 %></li>
+      <li><%= copy.log2 %></li>
+      <li><%= copy.log3 %></li>
+      <li><%= copy.log4 %></li>
+    </ul>
+  </section>
+
+  <section class="info-block">
+    <h2><%= copy.paymentsTitle %></h2>
+    <p><%= copy.paymentsSub %></p>
+    <h3><%= copy.protectionTitle %></h3>
+    <ul>
+      <li><%= copy.protect1 %></li>
+      <li><%= copy.protect2 %></li>
+      <li><%= copy.protect3 %></li>
+      <li><%= copy.protect4 %></li>
+      <li><%= copy.protect5 %></li>
+      <li><%= copy.protect6 %></li>
+    </ul>
+  </section>
+
+  <section class="info-block">
+    <h2><%= copy.deliveryTitle %></h2>
+    <p class="muted"><%= copy.deliverySub %></p>
+    <div class="info-card-grid">
+      <div class="info-card"><strong><%= copy.del1Title %></strong><span><%= copy.del1Body %></span></div>
+      <div class="info-card"><strong><%= copy.del2Title %></strong><span><%= copy.del2Body %></span></div>
+      <div class="info-card"><strong><%= copy.del3Title %></strong><span><%= copy.del3Body %></span></div>
+    </div>
+  </section>
+
+  <section class="info-block">
+    <h2><%= copy.wholesaleTitle %></h2>
+    <p><%= copy.wholesaleSub %></p>
+    <ul>
+      <li><%= copy.wPoint1 %></li>
+      <li><%= copy.wPoint2 %></li>
+      <li><%= copy.wPoint3 %></li>
+      <li><%= copy.wPoint4 %></li>
+      <li><%= copy.wPoint5 %></li>
+    </ul>
+    <p style="margin-top:12px;">
+      <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/wholesale"><%= copy.applyWholesale || t('applyWholesale') %></a>
+    </p>
+  </section>
+
+  <section class="info-block info-cta-block">
+    <h2><%= copy.ctaTitle %></h2>
+    <p><%= copy.ctaSub %></p>
+    <div class="info-cta-row">
+      <a class="btn btn-primary" href="<%= basePath %>/<%= locale %>/products"><%= copy.browseProducts || t('shopNow') %></a>
+      <a class="btn btn-outline" href="<%= basePath %>/<%= locale %>/wholesale"><%= copy.wholesaleHub || t('wholesaleHub') %></a>
+    </div>
+  </section>
+</section>
+
+<%- include('partials/footer') %>

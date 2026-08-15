@@ -11,7 +11,6 @@ import { useToast } from "../components/ToastProvider";
 import { normalizeProductImageUrl } from "../utils/mediaUrl";
 import { format } from "date-fns";
 import AddProductWizard from "../components/products/AddProductWizard";
-import EditProductDrawer from "../components/products/EditProductDrawer";
 
 
 const PAGE_LIMIT = 50;
@@ -440,21 +439,13 @@ export default function ProductsPage({ initialSearch = "", onOpenInExplorer }) {
             </div>
       </div>
 
-      {/* ── Add Product Wizard ───────────────────────────────────────────── */}
+      {/* ── Add / Edit Product Wizard (same flow) ───────────────────────── */}
       <AddProductWizard
-        open={showForm}
-        onClose={() => setShowCreateForm(false)}
-        onSuccess={() => fetchProducts(1, activeTab, search)}
+        open={showForm || Boolean(editProductId)}
+        editProductId={editProductId}
+        onClose={() => { setShowCreateForm(false); setEditProductId(null); }}
+        onSuccess={() => fetchProducts(editProductId ? page : 1, activeTab, search)}
       />
-
-      {/* ── Full Edit Product Drawer ─────────────────────────────────────── */}
-      {editProductId && (
-        <EditProductDrawer
-          productId={editProductId}
-          onClose={() => setEditProductId(null)}
-          onSaved={() => fetchProducts(page, activeTab, search)}
-        />
-      )}
     </div>
   );
 }

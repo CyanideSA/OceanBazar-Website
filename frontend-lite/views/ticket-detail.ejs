@@ -1,0 +1,40 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section svc-page">
+  <p class="crumb"><a href="<%= basePath %>/<%= locale %>/tickets">← <%= t('supportTickets') %></a></p>
+  <div class="svc-hero svc-hero-tickets">
+    <h1><%= ticket.subject %></h1>
+    <p class="info-intro">
+      <span class="pill pill-info"><%= ticket.status %></span>
+      <span class="pill"><%= ticket.category || 'other' %></span>
+      <span class="pill"><%= ticket.priority || 'medium' %></span>
+    </p>
+  </div>
+
+  <div class="svc-card chat-thread ticket-thread">
+    <% var msgs = ticket.messages || []; %>
+    <% if (!msgs.length) { %><p class="muted"><%= t('ticketNoMessages') %></p><% } %>
+    <% msgs.forEach(function (m) {
+      var mine = (m.senderType || m.sender_type) === 'customer';
+    %>
+    <div class="chat-bubble <%= mine ? 'chat-user' : 'chat-agent' %>">
+      <span class="chat-who"><%= mine ? t('you') : t('supportTeam') %></span>
+      <p><%= m.message %></p>
+      <span class="muted chat-time"><%= m.createdAt || m.created_at || '' %></span>
+    </div>
+    <% }) %>
+  </div>
+
+  <% if (ticket.status !== 'closed' && ticket.status !== 'resolved') { %>
+  <form method="post" action="<%= basePath %>/<%= locale %>/tickets/<%= encodeURIComponent(ticket.id) %>/messages" class="svc-card stack auth-form">
+    <label class="field">
+      <span><%= t('ticketReply') %></span>
+      <textarea name="message" rows="3" required></textarea>
+    </label>
+    <button type="submit" class="btn btn-primary"><%= t('send') %></button>
+  </form>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

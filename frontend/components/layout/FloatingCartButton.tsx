@@ -30,6 +30,7 @@ export default function FloatingCartButton() {
     <button
       type="button"
       onClick={() => setOpen(true)}
+      data-ob-cart-trigger="1"
       className={cn(
         'fixed right-0 top-1/2 -translate-y-1/2 z-[45]',
         'flex flex-col items-center gap-1 rounded-l-2xl px-3 py-3.5',

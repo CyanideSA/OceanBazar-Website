@@ -13,14 +13,22 @@ const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 
 const router = Router();
 
+const APPLICATION_TICKET_PREFIXES = ['[APP:WHOLESALE]', '[APP:BUSINESS]'];
+
 // GET /api/admin/tickets
+// Application mirror tickets (wholesale/business) stay visible to customers but are
+// excluded from Admin Tickets — they belong in Applications CRM.
 router.get('/', async (req: Request, res: Response) => {
   const { status, priority, category, page = '1' } = req.query as Record<string, string>;
   const limit = 20;
-  const where: Record<string, unknown> = {};
-  if (status) where.status = status;
-  if (priority) where.priority = priority;
-  if (category) where.category = category;
+  const where: Record<string, unknown> = {
+    AND: [
+      { NOT: { OR: APPLICATION_TICKET_PREFIXES.map((p) => ({ subject: { startsWith: p } })) } },
+    ],
+  };
+  if (status) (where.AND as object[]).push({ status });
+  if (priority) (where.AND as object[]).push({ priority });
+  if (category) (where.AND as object[]).push({ category });
 
   const [tickets, total] = await Promise.all([
     prisma.ticket.findMany({

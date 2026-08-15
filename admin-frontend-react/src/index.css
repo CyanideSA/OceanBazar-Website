@@ -11,7 +11,13 @@
     @apply h-full m-0 overflow-hidden;
   }
 
-  @media (max-width: 1024px) {
+  /*
+   * Phones (<768): document scroll + fixed bottom dock.
+   * Previous rule enabled body scroll up to 1024px while .crm-shell stayed
+   * height:100dvh;overflow:hidden — nested .crm-content scroll then failed on
+   * iOS/iPad, so Orders/Payments lists sat under the bottom bar unreachable.
+   */
+  @media (max-width: 767px) {
     html,
     body,
     #root {
@@ -24,11 +30,10 @@
     }
   }
 
-  @supports (padding: env(safe-area-inset-bottom)) {
+  @supports (padding: env(safe-area-inset-left)) {
     body {
       padding-left: env(safe-area-inset-left, 0px);
       padding-right: env(safe-area-inset-right, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
     }
   }
 
@@ -218,12 +223,21 @@
 
 /* Custom styles for components */
 .crm-shell {
-  @apply flex h-screen w-screen overflow-hidden;
+  @apply flex w-screen overflow-hidden;
+  /* Prefer dynamic viewport height — 100vh clips the bottom chrome on iOS/iPad
+     Safari (browser UI makes the visible area shorter than 100vh). */
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
   background-color: var(--crm-bg);
 }
 
 .crm-sidebar {
-  @apply h-full overflow-y-auto overflow-x-hidden transition-all flex flex-col;
+  /* display is controlled in JSX (hidden md:flex) — do NOT set display:flex here
+     or it overrides Tailwind visibility utilities and keeps sidebar+bottom dock
+     both visible (duplicate profile/logout strip). */
+  @apply h-full overflow-y-auto overflow-x-hidden transition-all flex-col;
   background-color: var(--crm-bg-alt);
   border-right: 1px solid var(--crm-border);
   width: var(--crm-sidebar-width);
@@ -234,7 +248,7 @@
 }
 
 .crm-main {
-  @apply flex flex-col flex-1 h-full overflow-hidden;
+  @apply flex flex-col flex-1 min-h-0 overflow-hidden;
 }
 
 .crm-topbar {
@@ -245,7 +259,85 @@
 }
 
 .crm-content {
-  @apply flex-1 overflow-y-auto p-6 animate-fade-in;
+  @apply flex-1 min-h-0 overflow-y-auto p-6 animate-fade-in;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.crm-bottom-nav {
+  /* Same rule: no display:flex here — JSX uses "flex md:hidden". */
+  @apply items-center gap-1 border-t border-crm-border bg-crm-bg-alt px-1 py-1 shrink-0;
+  z-index: 30;
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom, 0px));
+}
+
+/*
+ * MUST come after .crm-main / .crm-content base rules — equal-specificity later
+ * rules were overriding the previous mobile block, so overflow:hidden stayed
+ * and Orders/Payments lists remained unreachable under the bottom dock.
+ */
+@media (max-width: 1024px) {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 100%;
+    min-height: 100dvh;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .crm-shell {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 100dvh;
+    overflow: visible !important;
+  }
+
+  .crm-main {
+    overflow: visible !important;
+    min-height: 100dvh;
+  }
+
+  /* Keep hamburger / module chrome reachable while long pages (Products) scroll */
+  .crm-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 35;
+  }
+
+  .crm-content {
+    overflow: visible !important;
+    flex: 1 0 auto !important;
+    min-height: 0 !important;
+    /* Clear bottom dock (phones) / leave breathing room (tablets) */
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .crm-bottom-nav {
+    position: fixed !important;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+  }
+}
+
+/* Tablet: sidebar stays pinned while document scroll (shell height:auto ≤1024) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .crm-shell {
+    align-items: flex-start;
+  }
+
+  .crm-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100dvh !important;
+    max-height: 100dvh;
+    align-self: flex-start;
+    z-index: 36;
+  }
 }
 
 /* Scrollbar styles for specific containers */
@@ -1128,3 +1220,47 @@
 .toast-close:hover {
   opacity: 1;
 }
+
+/* ─── Live Chat mobile frame (WhatsApp-style single-pane) ─────────────────── */
+/*
+ * On phones (<768), body may scroll for CRM pages, but the chat UI must be a
+ * self-contained fixed viewport so list/thread/info panes don't fight the
+ * CRM shell (nested calc heights / overflow bleed).
+ */
+@media (max-width: 767px) {
+  .crm-chat-mobile-frame {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: var(--crm-bg);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .crm-chat-mobile-frame > * {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 768px) {
+  .crm-chat-mobile-frame {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    height: calc(100vh - var(--crm-topbar-height, 64px) - 2rem);
+    max-height: none;
+    overflow: hidden;
+  }
+}
+

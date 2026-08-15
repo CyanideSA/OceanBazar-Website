@@ -218,15 +218,116 @@ async function main() {
     await prisma.site_settings.create({
       data: {
         id: 'default',
-        support_email: 'support@oceanbazar.com',
+        support_email: 'contact@oceanbazar.com.bd',
+        business_inquiry_email: 'business@oceanbazar.com.bd',
         support_phone: '+880-1700-000000',
         facebook_url: 'https://facebook.com/oceanbazar',
         instagram_url: 'https://instagram.com/oceanbazar',
         youtube_url: 'https://youtube.com/@oceanbazar',
         default_courier: 'steadfast',
+        legal_name: 'Ocean Bazar',
+        trade_license_no: 'TRAD/NCC/0002285/2026',
+        tin_number: '790019137950',
+        registered_address: 'Tatkhana L N Mills-1432, Siddhirganj, Narayanganj',
+        contact_address: 'Tatkhana L N Mills-1432, Siddhirganj, Narayanganj',
+        sslcommerz_mode: 'sandbox',
+        company_vision:
+          'Ocean Bazar was founded by a collaborative team of entrepreneurs with one clear ambition: to redefine modern e-commerce in Bangladesh through reliability, innovation, and uncompromising customer care. We built a digital marketplace where seamless technology meets a carefully managed supply chain—so authentic, high-quality products are accessible and delivered with care. As shared owners, we are personally invested in every step of your journey. From our digital storefront to your doorstep, we are dedicated to growing Ocean Bazar into your most trusted destination for value and excellence.',
+        leadership_intro:
+          'Our success is driven by a leadership team committed to exceptional products and a seamless shopping experience. As co-founders, each member brings a specialized focus—from our digital storefront to your doorstep. Reach out to the relevant department head for specific inquiries.',
+        leadership_team: [
+          {
+            name: 'Suvo Ahmed',
+            title: 'Chief Technology Officer (CTO) & Head of Strategy',
+            bio: 'Suvo leads our digital infrastructure and business planning. He keeps Ocean Bazar’s platform secure, innovative, and user-friendly while charting the strategic roadmap for long-term growth.',
+            email: 'suvo-ahmed@oceanbazar.com.bd',
+            phone: '',
+          },
+          {
+            name: 'Eamam Hasan Nishad',
+            title: 'Chief Customer Officer (CCO)',
+            bio: 'Eamam is the voice of our brand and the primary champion for our shoppers. He oversees customer interactions and relationship management so every query is met with dedicated support.',
+            email: 'nishad@oceanbazar.com.bd',
+            phone: '',
+          },
+          {
+            name: 'Naeimuzzaman Akand',
+            title: 'Chief Financial Officer (CFO) & Director of Sales',
+            bio: 'Naeimuzzaman drives commercial success and financial health. By managing financial strategy and sales initiatives, he keeps operations sustainable while delivering competitive value.',
+            email: 'akand@oceanbazar.com.bd',
+            phone: '',
+          },
+          {
+            name: 'MD Jobayer',
+            title: 'Chief Operating Officer (COO) & Head of Logistics',
+            bio: 'Jobayer powers our supply chain—inventory, restocking, and fulfillment—so every order is processed accurately and delivered with care across Bangladesh.',
+            email: 'md-jobayer@oceanbazar.com.bd',
+            phone: '',
+          },
+        ],
       },
     });
     console.log('  ✓ Created default site_settings');
+  } else {
+    await prisma.site_settings.update({
+      where: { id: settings.id },
+      data: {
+        legal_name: settings.legal_name || 'Ocean Bazar',
+        trade_license_no: settings.trade_license_no || 'TRAD/NCC/0002285/2026',
+        tin_number: settings.tin_number || '790019137950',
+        registered_address:
+          settings.registered_address
+          || settings.contact_address
+          || 'Tatkhana L N Mills-1432, Siddhirganj, Narayanganj',
+        sslcommerz_mode: settings.sslcommerz_mode || 'sandbox',
+        ...(!settings.company_vision
+          ? {
+              company_vision:
+                'Ocean Bazar was founded by a collaborative team of entrepreneurs with one clear ambition: to redefine modern e-commerce in Bangladesh through reliability, innovation, and uncompromising customer care. We built a digital marketplace where seamless technology meets a carefully managed supply chain—so authentic, high-quality products are accessible and delivered with care. As shared owners, we are personally invested in every step of your journey. From our digital storefront to your doorstep, we are dedicated to growing Ocean Bazar into your most trusted destination for value and excellence.',
+            }
+          : {}),
+        ...(!settings.leadership_intro
+          ? {
+              leadership_intro:
+                'Our success is driven by a leadership team committed to exceptional products and a seamless shopping experience. As co-founders, each member brings a specialized focus—from our digital storefront to your doorstep. Reach out to the relevant department head for specific inquiries.',
+            }
+          : {}),
+        ...(!settings.leadership_team
+          ? {
+              leadership_team: [
+                {
+                  name: 'Suvo Ahmed',
+                  title: 'Chief Technology Officer (CTO) & Head of Strategy',
+                  bio: 'Suvo leads our digital infrastructure and business planning. He keeps Ocean Bazar’s platform secure, innovative, and user-friendly while charting the strategic roadmap for long-term growth.',
+                  email: 'suvo-ahmed@oceanbazar.com.bd',
+                  phone: '',
+                },
+                {
+                  name: 'Eamam Hasan Nishad',
+                  title: 'Chief Customer Officer (CCO)',
+                  bio: 'Eamam is the voice of our brand and the primary champion for our shoppers. He oversees customer interactions and relationship management so every query is met with dedicated support.',
+                  email: 'nishad@oceanbazar.com.bd',
+                  phone: '',
+                },
+                {
+                  name: 'Naeimuzzaman Akand',
+                  title: 'Chief Financial Officer (CFO) & Director of Sales',
+                  bio: 'Naeimuzzaman drives commercial success and financial health. By managing financial strategy and sales initiatives, he keeps operations sustainable while delivering competitive value.',
+                  email: 'akand@oceanbazar.com.bd',
+                  phone: '',
+                },
+                {
+                  name: 'MD Jobayer',
+                  title: 'Chief Operating Officer (COO) & Head of Logistics',
+                  bio: 'Jobayer powers our supply chain—inventory, restocking, and fulfillment—so every order is processed accurately and delivered with care across Bangladesh.',
+                  email: 'md-jobayer@oceanbazar.com.bd',
+                  phone: '',
+                },
+              ],
+            }
+          : {}),
+      },
+    });
   }
 
   console.log('\n✅ Seed complete!\n');

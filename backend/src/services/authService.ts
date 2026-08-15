@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma';
 
 import { generateEntityId } from '../utils/hexId';
-import { normalizePhoneTarget } from '../utils/phoneNormalize';
+import { normalizePhoneTarget, isValidBdMobile } from '../utils/phoneNormalize';
 import { validatePassword } from '../utils/passwordRules';
 import { ensureCustomerForUser } from './customerService';
 import { env } from '../config/env';
@@ -19,6 +19,8 @@ function generateOtp(): string {
 
 export async function sendOtp(target: string, type: 'login' | 'forgot_password' | 'verify_email'): Promise<string> {
   target = normalizePhoneTarget(target);
+  // Emails are case-insensitive — always store/lookup lowercase so send vs verify never mismatch.
+  if (target.includes('@')) target = target.toLowerCase();
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + (Number(process.env.OTP_EXPIRE_MINUTES) || 10) * 60_000);
 
@@ -42,16 +44,47 @@ export async function sendOtp(target: string, type: 'login' | 'forgot_password' 
   }
 
   // If not terminal-only, send real email/SMS
+  let delivered = process.env.OTP_TERMINAL_ONLY === 'true';
   if (process.env.OTP_TERMINAL_ONLY !== 'true') {
     const isEmail = target.includes('@');
     const sent = isEmail
       ? await sendEmailOtp(target, otp, type)
       : await sendSmsOtp(target, otp, type);
-
+    delivered = sent;
 
     if (!sent) {
-      console.error(`[otp] Delivery failed for ${isEmail ? 'email' : 'phone'} target ${target}`);
+      console.error(`[otp] Delivery failed for ${isEmail ? 'email' : 'phone'} target=${isEmail ? target.replace(/(.{2}).+(@.+)/, '$1***$2') : 'phone'} type=${type}`);
     }
+  }
+
+  // #region agent log
+  try {
+    const fs = await import('fs');
+    fs.appendFileSync(
+      'debug-7c9155.log',
+      `${JSON.stringify({
+        sessionId: '7c9155',
+        runId: 'otp-email',
+        hypothesisId: 'H5',
+        location: 'authService.ts:sendOtp',
+        message: 'otp send result',
+        data: {
+          type,
+          isEmail: target.includes('@'),
+          delivered,
+          terminalOnly: process.env.OTP_TERMINAL_ONLY === 'true',
+          nodeEnv: process.env.NODE_ENV || '',
+        },
+        timestamp: Date.now(),
+      })}\n`,
+    );
+  } catch { /* ignore */ }
+  // #endregion
+
+  if (!delivered && process.env.OTP_TERMINAL_ONLY !== 'true') {
+    const err = new Error('Failed to deliver verification code. Please try again shortly.') as Error & { status?: number };
+    err.status = 503;
+    throw err;
   }
 
   return otp;
@@ -63,6 +96,13 @@ export async function verifyOtp(
   type: 'login' | 'forgot_password' | 'verify_email'
 ): Promise<boolean> {
   target = normalizePhoneTarget(target);
+  if (target.includes('@')) target = target.toLowerCase();
+  // Strip spaces and map Bengali/Arabic-Indic digits → ASCII (common on BD keyboards).
+  const normalizedCode = String(code || '')
+    .replace(/[০-৯]/g, (ch) => String('০১২৩৪৫৬৭৮৯'.indexOf(ch)))
+    .replace(/[٠-٩]/g, (ch) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(ch)))
+    .replace(/\s+/g, '')
+    .trim();
   const record = await prisma.otpCode.findFirst({
     where: {
       target,
@@ -73,7 +113,7 @@ export async function verifyOtp(
     orderBy: { createdAt: 'desc' },
   });
 
-  if (!record || record.code !== code) return false;
+  if (!record || record.code !== normalizedCode) return false;
 
   await prisma.otpCode.update({ where: { id: record.id }, data: { used: true } });
   return true;
@@ -100,6 +140,7 @@ export function issueRefreshToken(userId: string): string {
 // ─── User upsert / login ──────────────────────────────────────────────────────
 
 export async function findOrCreateUserByEmail(email: string) {
+  email = String(email || '').trim().toLowerCase();
   let user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     user = await prisma.user.create({
@@ -148,6 +189,12 @@ export async function registerUser(data: {
   }
   if (data.phone) {
     data.phone = normalizePhoneTarget(data.phone);
+    if (!isValidBdMobile(data.phone)) {
+      throw Object.assign(
+        new Error('Enter a valid Bangladesh mobile number (11 digits, e.g. 017XXXXXXXX)'),
+        { status: 400 },
+      );
+    }
     const exists = await prisma.user.findUnique({ where: { phone: data.phone } });
     if (exists) throw Object.assign(new Error('Phone already registered'), { status: 409 });
   }
@@ -162,6 +209,8 @@ export async function registerUser(data: {
         phone: data.phone,
         passwordHash,
         userType: data.userType || 'retail',
+        // Register page requires email OTP before submit
+        emailVerified: Boolean(data.email),
       },
     });
     await tx.customer.create({ data: { userId: user.id } });

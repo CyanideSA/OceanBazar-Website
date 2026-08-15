@@ -121,9 +121,15 @@ const TreeNode = memo(function TreeNode({ node, onNavigate, onContextMenu, level
         )}
 
         <span className="tree-node-icon">
-          {node.isLeaf
-            ? <IconPackage size={14} color={isActive ? "var(--crm-primary)" : "var(--crm-text-dim)"} />
-            : <IconFolder size={14} color={folderColor} open={isExpanded} />}
+          {node.imageUrl ? (
+            <img src={node.imageUrl} alt="" style={{ width: 14, height: 14, objectFit: "cover", borderRadius: 3 }} />
+          ) : node.icon ? (
+            <span style={{ fontSize: 12, lineHeight: 1 }}>{node.icon}</span>
+          ) : node.isLeaf ? (
+            <IconPackage size={14} color={isActive ? "var(--crm-primary)" : "var(--crm-text-dim)"} />
+          ) : (
+            <IconFolder size={14} color={folderColor} open={isExpanded} />
+          )}
         </span>
 
         <span className="tree-node-label">{node.nameEn}</span>

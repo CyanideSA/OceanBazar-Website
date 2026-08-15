@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, memo } from 'react';
+import { useState, memo, type MouseEvent } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { ShoppingCart, Star } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
@@ -15,6 +15,9 @@ import { getMediaUrl } from '@/lib/mediaUrl';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
+import { isIosWebKit } from '@/lib/iosSafari';
+import { isLegacyStorefrontDevice } from '@/lib/legacyDevice';
+import { debugSessionLog } from '@/lib/debugSessionLog';
 
 interface Props {
   product: Product;
@@ -35,8 +38,11 @@ function ProductCard({ product }: Props) {
   const locale = useLocale();
   const tc = useTranslations('common');
   const tp = useTranslations('product');
-  const { setCart, setOpen } = useCartStore();
-  const { user } = useAuthStore();
+  const setCart = useCartStore((s) => s.setCart);
+  const setOpen = useCartStore((s) => s.setOpen);
+  const addLocalItem = useCartStore((s) => s.addLocalItem);
+  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { success, error: toastError } = useToast();
   const [imgError, setImgError] = useState(false);
   const userType = user?.userType ?? 'retail';
@@ -52,16 +58,78 @@ function ProductCard({ product }: Props) {
     : false;
 
   const isTopTrending = Array.isArray(product.tags) && product.tags.includes('ob_top_trending');
+  const productHref = `/${locale}/product/${product.id}`;
+
+  const goToProduct = (e: MouseEvent) => {
+    const hardNav = isIosWebKit() || isLegacyStorefrontDevice();
+    // #region agent log
+    debugSessionLog({
+      hypothesisId: 'H7',
+      location: 'ProductCard.tsx:goToProduct',
+      message: 'product navigation',
+      data: {
+        productId: product.id,
+        ios: isIosWebKit(),
+        hardNav,
+      },
+      runId: 'post-test-hydration',
+    });
+    // #endregion
+    // Legacy phones: soft App Router transitions often stall under a loading overlay.
+    if (!hardNav) return;
+    e.preventDefault();
+    window.location.assign(productHref);
+  };
 
   const addMutation = useMutation({
-    mutationFn: () => cartApi.add(product.id, 1),
+    mutationFn: async () => {
+      if (!isAuthenticated) {
+        return addLocalItem({
+          productId: product.id,
+          title: product.title,
+          image: product.primaryImage ?? null,
+          unitPrice: priceResult.unitPrice,
+          quantity: 1,
+          stock: typeof product.stock === 'number' ? product.stock : null,
+          moq: product.moq,
+          retailMaxQty: (product as { retailMaxQty?: number }).retailMaxQty ?? null,
+        });
+      }
+      return cartApi.add(product.id, 1);
+    },
     onSuccess: (data) => {
-      setCart(data);
-      setOpen(true);
-      success(tp('addedToCart'));
+      // #region agent log
+      debugSessionLog({
+        hypothesisId: 'H5',
+        location: 'ProductCard.tsx:add-success',
+        message: 'add to cart success',
+        data: { productId: product.id, ios: isIosWebKit(), itemCount: data?.itemCount ?? null },
+      });
+      // #endregion
+      try {
+        setCart(data);
+        // iOS WebKit (Safari + Chrome): skip drawer mount — only update badge.
+        if (isIosWebKit()) {
+          success(tp('addedToCart'));
+        } else {
+          setOpen(true);
+          success(tp('addedToCart'));
+        }
+      } catch (e) {
+        // #region agent log
+        debugSessionLog({
+          hypothesisId: 'H5',
+          location: 'ProductCard.tsx:add-success-catch',
+          message: 'add to cart UI update threw',
+          data: { err: e instanceof Error ? e.message : String(e) },
+        });
+        // #endregion
+        toastError(tc('error'));
+        return;
+      }
       void trackAbOutcome('add_to_cart', {
         value: priceResult.unitPrice,
-        metadata: { productId: product.id, source: product.flashDeal ? 'flash_sale' : 'product_card' },
+        metadata: { productId: product.id, source: product.flashDeal ? 'flash_sale' : 'product_card', guest: !isAuthenticated },
       });
     },
     onError: (err: any) => {
@@ -76,16 +144,20 @@ function ProductCard({ product }: Props) {
     <div
       className={cn(
         'group relative flex flex-col overflow-hidden rounded-xl border border-border/60 bg-card text-card-foreground',
-        'shadow-soft transition-all duration-300 content-visibility-auto',
+        'shadow-soft transition-all duration-300',
         'hover:border-primary/20 hover:shadow-soft-lg hover:-translate-y-0.5',
       )}
     >
       {/* Image */}
       <Link
-        href={`/${locale}/product/${product.id}`}
-        prefetch
+        href={productHref}
+        prefetch={false}
         className="relative aspect-square overflow-hidden bg-muted"
-        onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
+        data-no-nav-loading="true"
+        onMouseEnter={() => {
+          if (!isIosWebKit()) router.prefetch(productHref);
+        }}
+        onClick={goToProduct}
       >
         {product.primaryImage && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -140,7 +212,7 @@ function ProductCard({ product }: Props) {
 
         {/* Out of stock */}
         {product.stock === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
             <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
               {tc('outOfStock')}
             </span>
@@ -150,7 +222,21 @@ function ProductCard({ product }: Props) {
         {/* Quick-add overlay */}
         <div className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/60 to-transparent p-3 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
           <button
-            onClick={(e) => { e.preventDefault(); addMutation.mutate(); }}
+            type="button"
+            data-no-nav-loading="true"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // #region agent log
+              debugSessionLog({
+                hypothesisId: 'H5',
+                location: 'ProductCard.tsx:quick-add-click',
+                message: 'quick-add clicked on card image',
+                data: { productId: product.id, ios: isIosWebKit() },
+              });
+              // #endregion
+              addMutation.mutate();
+            }}
             disabled={product.stock === 0 || addMutation.isPending}
             className={cn(
               'flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground',
@@ -174,9 +260,13 @@ function ProductCard({ product }: Props) {
 
         {/* Title */}
         <Link
-          href={`/${locale}/product/${product.id}`}
-          prefetch
-          onMouseEnter={() => router.prefetch(`/${locale}/product/${product.id}`)}
+          href={productHref}
+          prefetch={false}
+          data-no-nav-loading="true"
+          onMouseEnter={() => {
+            if (!isIosWebKit()) router.prefetch(productHref);
+          }}
+          onClick={goToProduct}
         >
           <h3 className="mb-2 line-clamp-2 text-sm font-medium leading-snug text-foreground transition-colors hover:text-primary">
             {product.title}

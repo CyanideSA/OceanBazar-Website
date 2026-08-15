@@ -185,12 +185,13 @@ const EN_POLICIES: Record<PolicyKey, PolicyDocument> = {
         heading: 'Refund timelines by payment method',
         body: 'Processing time after approval:',
         bullets: [
-          'bKash / Nagad / Rocket / Upay — within 3 business days',
-          'SSLCommerz (card/internet banking) — 5–10 business days depending on issuing bank',
+          'Standard refund timeline — 7 to 10 working days after approval',
+          'bKash / Nagad / Rocket / Upay — usually within 3–7 working days',
+          'SSLCommerz (card/internet banking) — 7–10 working days depending on issuing bank',
           'OB Points (if used) — restored within 24 hours',
-          'Cash on Delivery — refund via mobile wallet within 3 business days',
+          'Cash on Delivery — refund via mobile wallet within 3–7 working days',
         ],
-        highlight: 'All timelines start from the date our team marks the refund as approved, not from when you submit the request.',
+        highlight: 'Approved refunds are completed within 7 to 10 working days from the date our team marks the refund as approved.',
       },
       {
         icon: 'scale',
@@ -248,13 +249,13 @@ const EN_POLICIES: Record<PolicyKey, PolicyDocument> = {
         icon: 'clock',
         tag: 'timeline',
         heading: 'Estimated delivery timelines',
-        body: 'After order dispatch:',
+        body: 'After order confirmation:',
         bullets: [
-          'Dhaka metro area — 1–2 business days',
-          'Other major cities — 2–3 business days',
-          'District towns and rural areas — 3–5 business days',
-          'Remote or hard-to-reach zones — up to 7 business days',
+          'Inside Dhaka — within 5 days',
+          'Outside Dhaka — within 10 days',
+          'Remote or hard-to-reach zones may take up to the outside-Dhaka window',
         ],
+        highlight: 'Delivery windows: Inside Dhaka — 5 days · Outside Dhaka — 10 days.',
       },
       {
         icon: 'credit',
@@ -825,6 +826,58 @@ const BN_POLICIES: Record<PolicyKey, PolicyDocument> = {
 
 export const POLICY_ORDER: PolicyKey[] = ['privacy', 'returns', 'refunds', 'shipping', 'terms', 'warranty'];
 
-export function getPolicies(locale: string): Record<PolicyKey, PolicyDocument> {
-  return locale === 'bn' ? BN_POLICIES : EN_POLICIES;
+function mergePolicyDoc(base: PolicyDocument, override: unknown): PolicyDocument {
+  if (!override || typeof override !== 'object' || Array.isArray(override)) return base;
+  const o = override as Record<string, unknown>;
+  const sectionsOverride = Array.isArray(o.sections) ? o.sections : null;
+  const sections: PolicySection[] = sectionsOverride
+    ? sectionsOverride.map((raw, i) => {
+        const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        const fallback = base.sections[i] || { heading: '', body: '' };
+        const bullets = Array.isArray(s.bullets)
+          ? s.bullets.map((b) => String(b ?? '')).filter((b) => b.trim())
+          : fallback.bullets;
+        return {
+          heading: String(s.heading ?? fallback.heading ?? ''),
+          body: String(s.body ?? fallback.body ?? ''),
+          icon: (s.icon as PolicySection['icon']) || fallback.icon,
+          highlight: s.highlight != null && String(s.highlight).trim()
+            ? String(s.highlight)
+            : fallback.highlight,
+          bullets: bullets?.length ? bullets : fallback.bullets,
+          tag: (s.tag as PolicySection['tag']) || fallback.tag,
+        };
+      })
+    : base.sections;
+
+  return {
+    title: String(o.title ?? base.title),
+    intro: String(o.intro ?? base.intro),
+    lastUpdated: o.lastUpdated != null && String(o.lastUpdated).trim()
+      ? String(o.lastUpdated)
+      : base.lastUpdated,
+    sections,
+  };
+}
+
+/**
+ * @param locale - 'en' | 'bn'
+ * @param override - optional per-locale map from settings.pageContent.policies
+ *   e.g. { privacy: { en: {...}, bn: {...} }, returns: {...} }
+ */
+export function getPolicies(
+  locale: string,
+  override?: Record<string, Partial<Record<'en' | 'bn', unknown>>> | null
+): Record<PolicyKey, PolicyDocument> {
+  const base = locale === 'bn' ? BN_POLICIES : EN_POLICIES;
+  const loc = locale === 'bn' ? 'bn' : 'en';
+  if (!override || typeof override !== 'object') return base;
+
+  const out = { ...base };
+  for (const key of POLICY_ORDER) {
+    const pageOv = override[key];
+    const locOv = pageOv && typeof pageOv === 'object' ? (pageOv as Record<string, unknown>)[loc] : null;
+    if (locOv && typeof locOv === 'object') out[key] = mergePolicyDoc(base[key], locOv);
+  }
+  return out;
 }

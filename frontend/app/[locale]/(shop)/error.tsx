@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { RefreshCw } from 'lucide-react';
 import Logo from '@/components/shared/Logo';
 import { reportClientError } from '@/lib/reportClientError';
+import { isChunkLoadError, reloadOnceForChunkError } from '@/lib/chunkLoadRecovery';
 
 interface Props {
   error: Error & { digest?: string };
@@ -18,6 +19,7 @@ export default function ErrorPage({ error, reset }: Props) {
 
   useEffect(() => {
     console.error('[Error boundary]', error);
+    if (isChunkLoadError(error) && reloadOnceForChunkError(error.message)) return;
     reportClientError({
       digest: error.digest,
       message: error.message,

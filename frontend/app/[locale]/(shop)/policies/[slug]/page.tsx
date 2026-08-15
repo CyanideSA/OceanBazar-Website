@@ -5,6 +5,7 @@ import {
   RefreshCcw, Star, List, User, Mail,
 } from 'lucide-react';
 import { getPolicies, type PolicyKey, type SectionIcon } from '@/lib/policies';
+import { fetchStorefrontSettings } from '@/lib/fetchStorefrontCatalog';
 
 const SLUG_TO_KEY: Record<string, PolicyKey> = {
   privacy: 'privacy',
@@ -76,12 +77,15 @@ export default async function PolicyPage(
   const key = SLUG_TO_KEY[params.slug];
   if (!key) notFound();
 
-  const policy = getPolicies(params.locale)[key];
+  const settings = await fetchStorefrontSettings();
+  const policyOverrides = settings.pageContent?.policies as
+    | Record<string, Partial<Record<'en' | 'bn', unknown>>>
+    | undefined;
+  const policy = getPolicies(params.locale, policyOverrides)[key];
   if (!policy) notFound();
 
   return (
     <article className="rounded-2xl border border-border bg-card shadow-soft">
-      {/* Header */}
       <header className="border-b border-border px-6 py-7 sm:px-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{policy.title}</h1>
@@ -96,12 +100,11 @@ export default async function PolicyPage(
         </p>
       </header>
 
-      {/* Sections */}
       <div className="divide-y divide-border">
-        {policy.sections.map((section) => {
+        {policy.sections.map((section, si) => {
           const Icon = section.icon ? ICON_MAP[section.icon] : null;
           return (
-            <section key={section.heading} className="px-6 py-6 sm:px-8">
+            <section key={`${section.heading}-${si}`} className="px-6 py-6 sm:px-8">
               <div className="flex flex-wrap items-start gap-3">
                 {Icon && (
                   <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted">
@@ -121,8 +124,8 @@ export default async function PolicyPage(
 
                   {section.bullets && section.bullets.length > 0 && (
                     <ul className="mt-3 space-y-1.5">
-                      {section.bullets.map((b) => (
-                        <li key={b} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      {section.bullets.map((b, bi) => (
+                        <li key={`${bi}-${b.slice(0, 24)}`} className="flex items-start gap-2 text-sm text-muted-foreground">
                           <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                           {b}
                         </li>

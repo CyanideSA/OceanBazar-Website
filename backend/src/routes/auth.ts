@@ -23,6 +23,11 @@ import {
   revokeRefreshSessionByToken,
   getLoginVerificationDecision,
 } from '../services/userSessionService';
+import {
+  isMobileClient,
+  readRefreshToken,
+  refreshTokenSource,
+} from '../utils/mobileClient';
 
 const router = Router();
 
@@ -41,6 +46,53 @@ function refreshCookieOptions() {
     maxAge: 7 * 86400_000,
     ...(domain ? { domain } : {}),
   };
+}
+
+type AuthUserPayload = Record<string, unknown>;
+
+/**
+ * Web: set HttpOnly cookie + return { access, user? }.
+ * Mobile (X-Client-Platform: mobile): also return refresh in JSON for secure storage.
+ */
+function respondWithSession(
+  req: Request,
+  res: Response,
+  opts: { access: string; refresh: string; user?: AuthUserPayload; status?: number },
+) {
+  const mobile = isMobileClient(req);
+  const body: { access: string; user?: AuthUserPayload; refresh?: string } = {
+    access: opts.access,
+  };
+  if (opts.user) body.user = opts.user;
+  // Only native clients get refresh in the body — keeps XSS blast radius low on web.
+  if (mobile) body.refresh = opts.refresh;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Debug-Session-Id': '781e0c',
+    },
+    body: JSON.stringify({
+      sessionId: '781e0c',
+      runId: 'mobile-auth',
+      hypothesisId: 'H3',
+      location: 'auth.ts:respondWithSession',
+      message: 'Auth session response shaped',
+      data: {
+        mobile,
+        hasUser: Boolean(opts.user),
+        includesRefreshInBody: Boolean(body.refresh),
+        status: opts.status || 200,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
+  const responder = opts.status ? res.status(opts.status) : res;
+  responder.cookie('refreshToken', opts.refresh, refreshCookieOptions()).json(body);
 }
 
 // ─── Setup Passport strategies (only if real OAuth creds are configured) ─────
@@ -121,7 +173,14 @@ router.post(
       if (digits.startsWith('88') && digits.length >= 11) return `+${digits}`;
       if (digits.startsWith('0')) return `+880${digits.slice(1)}`;
       return `+880${digits}`;
-    }).isMobilePhone('any'),
+    }).custom((v) => {
+      if (typeof v !== 'string' || !v.trim()) return true;
+      // Bangladesh mobile: +880 1X XXXXXXXX (10 digits after country code, starting with 1)
+      if (!/^\+8801\d{9}$/.test(v)) {
+        throw new Error('Enter a valid Bangladesh mobile number (11 digits, e.g. 017XXXXXXXX)');
+      }
+      return true;
+    }),
     body('password').notEmpty(),
   ],
   async (req: Request, res: Response) => {
@@ -134,18 +193,26 @@ router.post(
       const recaptchaToken = (req.body as { recaptchaToken?: string }).recaptchaToken;
       const captcha = await verifyRecaptchaToken(recaptchaToken || '', 'register');
       if (!captcha.ok) {
-        res.status(403).json({ error: 'reCAPTCHA verification failed', reason: captcha.reason });
+        res.status(403).json({
+          error: 'reCAPTCHA verification failed',
+          reason: captcha.reason,
+          detail: captcha.detail,
+        });
         return;
       }
       console.log(`[AUTH] Register attempt for email: ${req.body.email}, phone: ${req.body.phone}`);
       const user = await registerUser(req.body);
       console.log(`[AUTH] Register successful for user: ${user.id}, email: ${user.email}, phone: ${user.phone}`);
       try { emitAdminEvent('admin:user:new', { userId: user.id, userType: user.userType }); } catch { /* non-fatal */ }
+      if (user.email) {
+        try {
+          const { sendWelcomeCatalogEmail } = await import('../services/emailService');
+          sendWelcomeCatalogEmail(user.email, user.name).catch(() => {});
+        } catch { /* non-fatal */ }
+      }
       const access = issueAccessToken(user.id, user.userType);
       const refresh = await issueRefreshSession(user.id, req);
-      res
-        .cookie('refreshToken', refresh, refreshCookieOptions())
-        .json({ access, user: sanitizeUser(user) });
+      respondWithSession(req, res, { access, refresh, user: sanitizeUser(user) as AuthUserPayload });
     } catch (e: unknown) {
       const err = e as Error & { status?: number };
       console.error(`[AUTH] Register failed for email: ${req.body.email}, phone: ${req.body.phone}, error: ${err.message}`);
@@ -175,8 +242,9 @@ router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
 
   // Any successful email OTP proves ownership of that address.
   if (target.includes('@')) {
+    const email = String(target).trim().toLowerCase();
     await prisma.user.updateMany({
-      where: { email: target },
+      where: { email },
       data: { emailVerified: true },
     });
   }
@@ -194,9 +262,7 @@ router.post('/verify-otp', authLimiter, async (req: Request, res: Response) => {
 
   const access = issueAccessToken(user.id, user.userType);
   const refresh = await issueRefreshSession(user.id, req, { verified: true });
-  res
-    .cookie('refreshToken', refresh, refreshCookieOptions())
-    .json({ access, user: sanitizeUser(user) });
+  respondWithSession(req, res, { access, refresh, user: sanitizeUser(user) as AuthUserPayload });
 });
 
 // ─── POST /api/auth/login (password) ─────────────────────────────────────────
@@ -208,10 +274,40 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     return;
   }
   try {
-    const captcha = await verifyRecaptchaToken(recaptchaToken || '', 'login');
-    if (!captcha.ok) {
-      res.status(403).json({ error: 'reCAPTCHA verification failed' });
-      return;
+    // Lite / native mobile clients use X-Client-Platform (no browser reCAPTCHA).
+    const skipCaptcha = isMobileClient(req);
+    // #region agent log
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      fs.appendFileSync(
+        path.resolve(__dirname, '../../../debug-1eb282.log'),
+        `${JSON.stringify({
+          sessionId: '1eb282',
+          runId: 'pre-fix',
+          hypothesisId: 'H2',
+          location: 'auth.ts:login',
+          message: 'password login captcha gate',
+          data: {
+            skipCaptcha,
+            platform: String(req.headers['x-client-platform'] || ''),
+            hasRecaptcha: Boolean(recaptchaToken),
+          },
+          timestamp: Date.now(),
+        })}\n`,
+      );
+    } catch { /* ignore */ }
+    // #endregion
+    if (!skipCaptcha) {
+      const captcha = await verifyRecaptchaToken(recaptchaToken || '', 'login');
+      if (!captcha.ok) {
+        res.status(403).json({
+          error: 'reCAPTCHA verification failed',
+          reason: captcha.reason,
+          detail: captcha.detail,
+        });
+        return;
+      }
     }
     console.log(`[AUTH] Login attempt for identifier: ${identifier}`);
     const user = await loginWithPassword(identifier, password);
@@ -230,9 +326,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     }
     const access = issueAccessToken(user.id, user.userType);
     const refresh = await issueRefreshSession(user.id, req);
-    res
-      .cookie('refreshToken', refresh, refreshCookieOptions())
-      .json({ access, user: sanitizeUser(user) });
+    respondWithSession(req, res, { access, refresh, user: sanitizeUser(user) as AuthUserPayload });
   } catch (e: unknown) {
     const err = e as Error & { status?: number };
     console.error(`[AUTH] Login failed for identifier: ${identifier}, error: ${err.message}`);
@@ -243,7 +337,30 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
 // ─── POST /api/auth/refresh ───────────────────────────────────────────────────
 
 router.post('/refresh', async (req: Request, res: Response) => {
-  const token = req.cookies?.refreshToken;
+  const source = refreshTokenSource(req);
+  const token = readRefreshToken(req);
+  // #region agent log
+  fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Debug-Session-Id': '781e0c',
+    },
+    body: JSON.stringify({
+      sessionId: '781e0c',
+      runId: 'mobile-auth',
+      hypothesisId: 'H1',
+      location: 'auth.ts:refresh',
+      message: 'Refresh token source resolved',
+      data: {
+        source,
+        mobile: isMobileClient(req),
+        hasToken: Boolean(token),
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   if (!token) { res.status(401).json({ error: 'No refresh token' }); return; }
   try {
     const payload = await rotateRefreshSession(token, req);
@@ -252,9 +369,25 @@ router.post('/refresh', async (req: Request, res: Response) => {
     if (!user) { res.status(401).json({ error: 'User not found' }); return; }
     const access = issueAccessToken(user.id, user.userType);
     const refresh = await issueRefreshSession(user.id, req);
-    res
-      .cookie('refreshToken', refresh, refreshCookieOptions())
-      .json({ access });
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': '781e0c',
+      },
+      body: JSON.stringify({
+        sessionId: '781e0c',
+        runId: 'mobile-auth',
+        hypothesisId: 'H2',
+        location: 'auth.ts:refresh:success',
+        message: 'Refresh rotated successfully',
+        data: { source, mobile: isMobileClient(req) },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    respondWithSession(req, res, { access, refresh });
   } catch {
     res.status(401).json({ error: 'Invalid refresh token' });
   }
@@ -271,7 +404,26 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
 
 router.post('/logout', async (req: Request, res: Response) => {
-  const token = req.cookies?.refreshToken;
+  const source = refreshTokenSource(req);
+  const token = readRefreshToken(req);
+  // #region agent log
+  fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Debug-Session-Id': '781e0c',
+    },
+    body: JSON.stringify({
+      sessionId: '781e0c',
+      runId: 'mobile-auth',
+      hypothesisId: 'H4',
+      location: 'auth.ts:logout',
+      message: 'Logout refresh revoke attempt',
+      data: { source, hasToken: Boolean(token), mobile: isMobileClient(req) },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   if (token) await revokeRefreshSessionByToken(token);
   res.clearCookie('refreshToken', refreshCookieOptions()).json({ message: 'Logged out' });
 });
@@ -281,8 +433,47 @@ router.post('/logout', async (req: Request, res: Response) => {
 router.post('/forgot-password', otpLimiter, async (req: Request, res: Response) => {
   const { target } = req.body as { target: string };
   if (!target) { res.status(400).json({ error: 'Email or phone required' }); return; }
-  await sendOtp(target, 'forgot_password');
-  res.json({ message: 'Reset OTP sent.' });
+  try {
+    await sendOtp(target, 'forgot_password');
+    // #region agent log
+    try {
+      const fs = await import('fs');
+      fs.appendFileSync(
+        'debug-7c9155.log',
+        `${JSON.stringify({
+          sessionId: '7c9155',
+          runId: 'otp-email',
+          hypothesisId: 'H5',
+          location: 'auth.ts:forgot-password',
+          message: 'forgot-password otp accepted',
+          data: { isEmail: String(target).includes('@') },
+          timestamp: Date.now(),
+        })}\n`,
+      );
+    } catch { /* ignore */ }
+    // #endregion
+    res.json({ message: 'Reset OTP sent.' });
+  } catch (e: unknown) {
+    const err = e as Error & { status?: number };
+    // #region agent log
+    try {
+      const fs = await import('fs');
+      fs.appendFileSync(
+        'debug-7c9155.log',
+        `${JSON.stringify({
+          sessionId: '7c9155',
+          runId: 'otp-email',
+          hypothesisId: 'H5',
+          location: 'auth.ts:forgot-password-fail',
+          message: 'forgot-password otp failed',
+          data: { status: err.status || 500, err: err.message },
+          timestamp: Date.now(),
+        })}\n`,
+      );
+    } catch { /* ignore */ }
+    // #endregion
+    res.status(err.status || 500).json({ error: err.message || 'Failed to send reset code' });
+  }
 });
 
 // ─── POST /api/auth/reset-password ───────────────────────────────────────────
@@ -365,9 +556,7 @@ router.post('/firebase', async (req: Request, res: Response) => {
 
     console.log(`[AUTH] Firebase login for uid: ${fbUser.uid}, provider: ${provider}, user: ${user.id}`);
 
-    res
-      .cookie('refreshToken', refresh, refreshCookieOptions())
-      .json({ access, user: sanitizeUser(user) });
+    respondWithSession(req, res, { access, refresh, user: sanitizeUser(user) as AuthUserPayload });
   } catch (e: unknown) {
     const err = e as Error;
     console.error('[AUTH] Firebase auth error:', err.message);

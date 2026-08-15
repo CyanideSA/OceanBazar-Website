@@ -14,12 +14,43 @@ router.get('/members', async (req: Request, res: Response) => {
   const page = parseInt(String(req.query.page || '1'));
   const limit = 20;
   const members = await prisma.adminUser.findMany({
-    select: { id: true, name: true, username: true, email: true, role: true, active: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      email: true,
+      role: true,
+      active: true,
+      createdAt: true,
+      twoFaEnabled: true,
+      mustResetTwoFa: true,
+      profileImage: true,
+    },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * limit,
     take: limit,
   });
   const total = await prisma.adminUser.count();
+  // #region agent log
+  try {
+    const fs = await import('fs');
+    fs.appendFileSync(
+      '/tmp/ob-debug-1eb282.ndjson',
+      `${JSON.stringify({
+        sessionId: '1eb282',
+        runId: 'admin-avatar',
+        hypothesisId: 'H-TEAM-AVATAR',
+        location: 'team.ts:GET/members',
+        message: 'team members list includes profileImage',
+        data: {
+          count: members.length,
+          withPhoto: members.filter((m) => Boolean(m.profileImage)).length,
+        },
+        timestamp: Date.now(),
+      })}\n`,
+    );
+  } catch { /* ignore */ }
+  // #endregion
   res.json({ members, total, page, limit });
 });
 
@@ -27,7 +58,18 @@ router.get('/members', async (req: Request, res: Response) => {
 router.get('/members/:id', async (req: Request, res: Response) => {
   const member = await prisma.adminUser.findUnique({
     where: { id: parseInt(routeParam(req.params.id)) },
-    select: { id: true, name: true, username: true, email: true, role: true, active: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      email: true,
+      role: true,
+      active: true,
+      createdAt: true,
+      twoFaEnabled: true,
+      mustResetTwoFa: true,
+      profileImage: true,
+    },
   });
   if (!member) { res.status(404).json({ error: 'Member not found' }); return; }
   res.json({ member });
@@ -101,6 +143,82 @@ router.put('/members/:id', requireRole('super_admin', 'admin'), async (req: Requ
 
   res.json({ member: { id: member.id, name: member.name, username: member.username, email: member.email, role: member.role, active: member.active } });
 });
+
+// POST /api/admin/team/members/:id/request-2fa-reset — super_admin forces re-enroll on next login
+router.post(
+  '/members/:id/request-2fa-reset',
+  requireRole('super_admin'),
+  requireAdminReauth(),
+  async (req: Request, res: Response) => {
+    const targetId = parseInt(routeParam(req.params.id), 10);
+    if (!Number.isFinite(targetId)) {
+      res.status(400).json({ error: 'Invalid member id' });
+      return;
+    }
+    if (targetId === req.admin!.adminId) {
+      res.status(400).json({
+        error: 'Use Reset Authenticator on your own account instead of requesting a reset for yourself',
+      });
+      return;
+    }
+
+    const target = await prisma.adminUser.findUnique({ where: { id: targetId } });
+    if (!target) {
+      res.status(404).json({ error: 'Member not found' });
+      return;
+    }
+    if (!target.active) {
+      res.status(400).json({ error: 'Cannot request authenticator reset for an inactive account' });
+      return;
+    }
+
+    await prisma.adminUser.update({
+      where: { id: targetId },
+      data: {
+        mustResetTwoFa: true,
+        twoFaEnabled: false,
+        twoFaSecret: null,
+        twoFaLastCounter: null,
+      },
+    });
+
+    const revoked = await prisma.adminSession.updateMany({
+      where: { adminId: targetId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    await recordAdminAudit(req, {
+      action: 'REQUEST_2FA_RESET',
+      targetType: 'admin_user',
+      targetId: String(targetId),
+      details: { revokedSessions: revoked.count },
+    });
+
+    // #region agent log
+    try {
+      const fs = await import('fs');
+      fs.appendFileSync(
+        'debug-7c9155.log',
+        `${JSON.stringify({
+          sessionId: '7c9155',
+          runId: 'admin-2fa-reset',
+          hypothesisId: 'H1',
+          location: 'team.ts:request-2fa-reset',
+          message: 'SA requested authenticator reset',
+          data: { targetId, revokedSessions: revoked.count, callerId: req.admin!.adminId },
+          timestamp: Date.now(),
+        })}\n`,
+      );
+    } catch { /* ignore */ }
+    // #endregion
+
+    res.json({
+      message: 'Authenticator reset requested. Member must set up a new authenticator on next sign-in.',
+      mustResetTwoFa: true,
+      revokedSessions: revoked.count,
+    });
+  },
+);
 
 // PUT /api/admin/team/members/:id/password — reset password
 router.put('/members/:id/password', requireRole('super_admin', 'admin'), requireAdminReauth(), async (req: Request, res: Response) => {

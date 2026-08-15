@@ -33,7 +33,13 @@ function FolderCard({ node, onOpen, onContextMenu }) {
       title={`${node.nameEn} — double-click to open`}
     >
       <div className="item-icon-wrap">
-        <IconFolder size={36} color="var(--crm-warning)" open={false} />
+        {node.imageUrl ? (
+          <img src={node.imageUrl} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 8 }} />
+        ) : node.icon ? (
+          <span style={{ fontSize: 28, lineHeight: 1 }}>{node.icon}</span>
+        ) : (
+          <IconFolder size={36} color="var(--crm-warning)" open={false} />
+        )}
       </div>
       <div className="item-name" title={node.nameEn}>{node.nameEn}</div>
       <div className="item-meta">

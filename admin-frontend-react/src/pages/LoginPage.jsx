@@ -40,7 +40,7 @@ function MicrosoftLogo({ size = 20 }) {
   );
 }
 
-export default function LoginPage({ onLogin, loading }) {
+export default function LoginPage({ onLogin, loading, initialChallenge = null, onChallengeConsumed }) {
   const [step, setStep] = useState(STEPS.credentials);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -57,6 +57,7 @@ export default function LoginPage({ onLogin, loading }) {
   const [ssoStatus, setSsoStatus] = useState({ microsoft: false, google: false });
   const [showEmergency, setShowEmergency] = useState(false);
   const [footerClicks, setFooterClicks] = useState(0);
+  const [forcedResetNotice, setForcedResetNotice] = useState(false);
 
   useEffect(() => {
     sanitizeAdminApiStorage();
@@ -180,28 +181,47 @@ export default function LoginPage({ onLogin, loading }) {
 
   const handlePostLoginResponse = async (res) => {
     if (res?.requiresPasswordChange) {
+      setShowEmergency(false);
       setOnboardingToken(res.onboardingToken);
       setStep(STEPS.changePassword);
       setNewPassword("");
       setConfirmPassword("");
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'admin-2fa-panel',hypothesisId:'H1',location:'LoginPage.jsx:handlePostLoginResponse',message:'password change challenge → dedicated panel',data:{step:'changePassword',showEmergency:false},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       return;
     }
     if (res?.requires2faSetup) {
+      setShowEmergency(false);
       setOnboardingToken(res.onboardingToken);
       setStep(STEPS.setup2fa);
       setTwoFaSetup(null);
       setOtp("");
       setOtpCheckOk(false);
+      setForcedResetNotice(Boolean(res.mustResetTwoFa));
+      // #region agent log
+      fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'admin-2fa-panel',hypothesisId:'H1',location:'LoginPage.jsx:handlePostLoginResponse',message:'2FA setup challenge → dedicated panel',data:{mustResetTwoFa:!!res.mustResetTwoFa,showEmergency:false,dedicatedPanel:true},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       return;
     }
     if (res?.requires2fa) {
+      setShowEmergency(true);
       setTempToken(res.tempToken);
       setStep(STEPS.verify2fa);
       setOtp("");
+      setForcedResetNotice(false);
       return;
     }
     await finishSession(res);
   };
+
+  useEffect(() => {
+    if (!initialChallenge) return;
+    handlePostLoginResponse(initialChallenge).finally(() => {
+      onChallengeConsumed?.();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialChallenge]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -300,8 +320,10 @@ export default function LoginPage({ onLogin, loading }) {
     },
     [STEPS.changePassword]: { heading: "Set Your Password", sub: "You must choose a new password before continuing" },
     [STEPS.setup2fa]: {
-      heading: "Set Up 2FA",
-      sub: "Scan the QR code or enter the setup key in Google Authenticator, then enter the 6-digit code",
+      heading: forcedResetNotice ? "Reset Authenticator" : "Set Up 2FA",
+      sub: forcedResetNotice
+        ? "A Super Admin requested an authenticator reset. Scan the new QR in Google Authenticator — your old codes will not work."
+        : "Scan the QR code or enter the setup key in Google Authenticator, then enter the 6-digit code",
     },
     [STEPS.verify2fa]: {
       heading: "Verify Authenticator",
@@ -333,7 +355,23 @@ export default function LoginPage({ onLogin, loading }) {
     }
   };
 
-  const showM365Primary = !showEmergency || step === STEPS.credentials;
+  const showDedicatedOnboarding =
+    step === STEPS.setup2fa || step === STEPS.changePassword;
+  const showEmergencyPanel =
+    showEmergency &&
+    !showDedicatedOnboarding &&
+    (step === STEPS.credentials ||
+      step === STEPS.verify2fa ||
+      step === STEPS.forgotStart ||
+      step === STEPS.forgotReset ||
+      step === STEPS.forgotSuccess);
+  const showM365Primary = !showEmergencyPanel && !showDedicatedOnboarding;
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'admin-2fa-panel',hypothesisId:'H1',location:'LoginPage.jsx:panelVisibility',message:'login panel visibility',data:{step,showEmergency,showDedicatedOnboarding,showEmergencyPanel,showM365Primary,forcedResetNotice},timestamp:Date.now()})}).catch(()=>{});
+  }, [step, showEmergency, showDedicatedOnboarding, showEmergencyPanel, showM365Primary, forcedResetNotice]);
+  // #endregion
 
   // OceanBazar cream (#FAF7F2) 75% + brand blue (#1E7EB8) 25% → #C3D9E4
   const gradientWash =
@@ -453,7 +491,140 @@ export default function LoginPage({ onLogin, loading }) {
               )}
 
               <AnimatePresence initial={false}>
-                {showEmergency && (
+                {showDedicatedOnboarding && (
+                  <motion.div
+                    key="dedicated-onboarding"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="space-y-4"
+                  >
+                    <div className="space-y-1">
+                      <h2 className="text-base font-semibold text-[#0C2F4A]">{heading}</h2>
+                      <p className="text-[11px] text-[#4A6B82]">{sub}</p>
+                    </div>
+
+                    <form onSubmit={submit} className="space-y-4">
+                      {step === STEPS.changePassword && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
+                              New Password
+                            </label>
+                            <div className="relative">
+                              <FiKey className="absolute left-3 top-1/2 -translate-y-1/2 text-[#1E7EB8]/70" />
+                              <input
+                                type="password"
+                                required
+                                minLength={8}
+                                placeholder="At least 8 characters"
+                                className="w-full h-11 rounded-xl bg-white/90 border border-[#1E7EB8]/25 text-[#0C2F4A] placeholder:text-[#4A6B82]/45 pl-10 pr-3 text-sm outline-none focus:border-[#1E7EB8]/70"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
+                              Confirm Password
+                            </label>
+                            <div className="relative">
+                              <FiKey className="absolute left-3 top-1/2 -translate-y-1/2 text-[#1E7EB8]/70" />
+                              <input
+                                type="password"
+                                required
+                                minLength={8}
+                                placeholder="Repeat new password"
+                                className="w-full h-11 rounded-xl bg-white/90 border border-[#1E7EB8]/25 text-[#0C2F4A] placeholder:text-[#4A6B82]/45 pl-10 pr-3 text-sm outline-none focus:border-[#1E7EB8]/70"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {step === STEPS.setup2fa && (
+                        <>
+                          {forcedResetNotice && (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-50/90 p-3 text-xs text-amber-900">
+                              No previous authenticator code is required. Delete any old OceanBazar entries in Google Authenticator, then enroll the new key below.
+                            </div>
+                          )}
+                          {!twoFaSetup ? (
+                            <div className="rounded-lg border border-[#1E7EB8]/20 bg-white/70 p-4 text-xs text-[#3A5A72]">
+                              <FiShield className="inline mr-1 text-[#1E7EB8]" />
+                              Two-factor authentication is required. Click below to generate your QR code and setup key.
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-[#1E7EB8]/20 bg-white/70 p-3 space-y-3">
+                              <TwoFaSetupDisplay
+                                key={twoFaSetup.setupToken}
+                                secret={twoFaSetup.secret}
+                                otpauthUrl={twoFaSetup.otpauthUrl}
+                                secretHint={twoFaSetup.secretHint}
+                                manualEntryKey={twoFaSetup.manualEntryKey}
+                                accountLabel={twoFaSetup.accountLabel}
+                              >
+                                <div className="flex gap-2">
+                                  <input
+                                    value={otp}
+                                    onChange={(e) => {
+                                      setOtp(e.target.value.replace(/\D+/g, "").slice(0, 6));
+                                      setOtpCheckOk(false);
+                                    }}
+                                    className="w-full h-11 rounded-xl bg-white/90 border border-[#1E7EB8]/25 text-[#0C2F4A] placeholder:text-[#4A6B82]/45 px-3 text-sm outline-none focus:border-[#1E7EB8]/70 flex-1"
+                                    placeholder="6-digit code"
+                                    maxLength={6}
+                                    required
+                                  />
+                                  <button
+                                    type="button"
+                                    className="h-11 px-3 text-xs shrink-0 rounded-xl border border-[#1E7EB8]/25 text-[#0C2F4A]/80 hover:bg-white"
+                                    disabled={busy || otp.length !== 6}
+                                    onClick={test2faCode}
+                                  >
+                                    Test code
+                                  </button>
+                                </div>
+                                {otpCheckOk ? (
+                                  <p className="text-[11px] text-emerald-700 font-medium">
+                                    Code matches — you can enable 2FA now.
+                                  </p>
+                                ) : null}
+                              </TwoFaSetupDisplay>
+                              <button
+                                type="button"
+                                className="w-full h-9 text-xs rounded-xl border border-[#1E7EB8]/25 text-[#4A6B82] hover:bg-white"
+                                disabled={busy}
+                                onClick={refresh2faSetup}
+                              >
+                                Regenerate setup key (after deleting old Google Authenticator entries)
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      <button
+                        type="submit"
+                        className="w-full h-11 rounded-xl bg-[#1E7EB8] hover:bg-[#1869A0] text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+                        disabled={isLoading}
+                      >
+                        {isLoading ? <FiRefreshCw className="animate-spin" /> : <FiArrowRight />}
+                        {isLoading
+                          ? "Processing..."
+                          : step === STEPS.changePassword
+                            ? "Update Password"
+                            : step === STEPS.setup2fa && !twoFaSetup
+                              ? "Generate 2FA Key"
+                              : "Enable 2FA & Sign In"}
+                      </button>
+                    </form>
+                  </motion.div>
+                )}
+
+                {showEmergencyPanel && (
                   <motion.div
                     key="emergency"
                     initial={{ opacity: 0, height: 0 }}
@@ -512,22 +683,9 @@ export default function LoginPage({ onLogin, loading }) {
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
-                                  Password
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setStep(STEPS.forgotStart);
-                                    setError("");
-                                    setPassword("");
-                                  }}
-                                  className="text-[11px] text-[#1E7EB8] hover:underline"
-                                >
-                                  Forgot password?
-                                </button>
-                              </div>
+                              <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
+                                Password
+                              </label>
                               <div className="relative">
                                 <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-[#1E7EB8]/70" />
                                 <input
@@ -540,6 +698,16 @@ export default function LoginPage({ onLogin, loading }) {
                                 />
                               </div>
                             </div>
+                            <button
+                              type="button"
+                              className="text-[11px] text-[#1E7EB8] hover:underline"
+                              onClick={() => {
+                                setStep(STEPS.forgotStart);
+                                setError("");
+                              }}
+                            >
+                              Forgot password?
+                            </button>
                             <p className="text-[10px] text-[#4A6B82] flex items-start gap-1.5">
                               <FiShield className="mt-0.5 shrink-0 text-[#1E7EB8]" size={12} />
                               After password, you must verify with Google Authenticator before CRM access.
@@ -550,7 +718,7 @@ export default function LoginPage({ onLogin, loading }) {
                         {step === STEPS.forgotStart && (
                           <div className="space-y-2">
                             <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
-                              Username or Email
+                              Username or email
                             </label>
                             <div className="relative">
                               <FiUser className="absolute left-3 top-1/2 -translate-y-1/2 text-[#1E7EB8]/70" />
@@ -561,34 +729,27 @@ export default function LoginPage({ onLogin, loading }) {
                                 className="w-full h-11 rounded-xl bg-white/90 border border-[#1E7EB8]/25 text-[#0C2F4A] placeholder:text-[#4A6B82]/45 pl-10 pr-3 text-sm outline-none focus:border-[#1E7EB8]/70"
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
-                                autoFocus
                               />
                             </div>
-                            <p className="text-[11px] text-[#4A6B82]">
-                              You will need Google Authenticator to verify your identity.
-                            </p>
                           </div>
                         )}
 
-                        {(step === STEPS.changePassword || step === STEPS.forgotReset) && (
+                        {step === STEPS.forgotReset && (
                           <>
-                            {step === STEPS.forgotReset && (
-                              <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
-                                  Authenticator Code
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  maxLength={6}
-                                  placeholder="123456"
-                                  className="w-full h-11 rounded-xl bg-white/90 border border-[#1E7EB8]/25 text-[#0C2F4A] placeholder:text-[#4A6B82]/45 px-3 text-sm outline-none focus:border-[#1E7EB8]/70"
-                                  value={otp}
-                                  onChange={(e) => setOtp(e.target.value.replace(/\D+/g, "").slice(0, 6))}
-                                  autoFocus
-                                />
-                              </div>
-                            )}
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
+                                Authenticator Code
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                maxLength={6}
+                                placeholder="123456"
+                                className="w-full h-11 rounded-xl bg-white/90 border border-[#1E7EB8]/25 text-[#0C2F4A] placeholder:text-[#4A6B82]/45 px-3 text-sm outline-none focus:border-[#1E7EB8]/70"
+                                value={otp}
+                                onChange={(e) => setOtp(e.target.value.replace(/\D+/g, "").slice(0, 6))}
+                              />
+                            </div>
                             <div className="space-y-2">
                               <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
                                 New Password
@@ -626,63 +787,6 @@ export default function LoginPage({ onLogin, loading }) {
                           </>
                         )}
 
-                        {step === STEPS.setup2fa && (
-                          <>
-                            {!twoFaSetup ? (
-                              <div className="rounded-lg border border-[#1E7EB8]/20 bg-white/70 p-4 text-xs text-[#3A5A72]">
-                                <FiShield className="inline mr-1 text-[#1E7EB8]" />
-                                Two-factor authentication is required. Click below to generate your QR code and setup key.
-                              </div>
-                            ) : (
-                              <div className="rounded-lg border border-[#1E7EB8]/20 bg-white/70 p-3 space-y-3">
-                                <TwoFaSetupDisplay
-                                  key={twoFaSetup.setupToken}
-                                  secret={twoFaSetup.secret}
-                                  otpauthUrl={twoFaSetup.otpauthUrl}
-                                  secretHint={twoFaSetup.secretHint}
-                                  manualEntryKey={twoFaSetup.manualEntryKey}
-                                  accountLabel={twoFaSetup.accountLabel}
-                                >
-                                  <div className="flex gap-2">
-                                    <input
-                                      value={otp}
-                                      onChange={(e) => {
-                                        setOtp(e.target.value.replace(/\D+/g, "").slice(0, 6));
-                                        setOtpCheckOk(false);
-                                      }}
-                                      className="w-full h-11 rounded-xl bg-white/90 border border-[#1E7EB8]/25 text-[#0C2F4A] placeholder:text-[#4A6B82]/45 px-3 text-sm outline-none focus:border-[#1E7EB8]/70 flex-1"
-                                      placeholder="6-digit code"
-                                      maxLength={6}
-                                      required
-                                    />
-                                    <button
-                                      type="button"
-                                      className="h-11 px-3 text-xs shrink-0 rounded-xl border border-[#1E7EB8]/25 text-[#0C2F4A]/80 hover:bg-white"
-                                      disabled={busy || otp.length !== 6}
-                                      onClick={test2faCode}
-                                    >
-                                      Test code
-                                    </button>
-                                  </div>
-                                  {otpCheckOk ? (
-                                    <p className="text-[11px] text-emerald-700 font-medium">
-                                      Code matches — you can enable 2FA now.
-                                    </p>
-                                  ) : null}
-                                </TwoFaSetupDisplay>
-                                <button
-                                  type="button"
-                                  className="w-full h-9 text-xs rounded-xl border border-[#1E7EB8]/25 text-[#4A6B82] hover:bg-white"
-                                  disabled={busy}
-                                  onClick={refresh2faSetup}
-                                >
-                                  Regenerate setup key (after deleting old Google Authenticator entries)
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        )}
-
                         {step === STEPS.verify2fa && (
                           <div className="space-y-2">
                             <label className="text-[10px] font-bold text-[#4A6B82] uppercase tracking-wider">
@@ -715,13 +819,7 @@ export default function LoginPage({ onLogin, loading }) {
                                 ? "Continue"
                                 : step === STEPS.forgotReset
                                   ? "Reset Password"
-                                  : step === STEPS.changePassword
-                                    ? "Update Password"
-                                    : step === STEPS.setup2fa && !twoFaSetup
-                                      ? "Generate 2FA Key"
-                                      : step === STEPS.setup2fa
-                                        ? "Enable 2FA & Sign In"
-                                        : "Verify & Sign In"}
+                                  : "Verify & Sign In"}
                         </button>
 
                         {(step === STEPS.forgotStart || step === STEPS.forgotReset) && (

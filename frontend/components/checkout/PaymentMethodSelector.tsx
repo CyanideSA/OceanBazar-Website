@@ -78,8 +78,8 @@ export default function PaymentMethodSelector({ orderTotal, selected, onSelect }
                 <span className="mt-2 block rounded-md bg-white p-1">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src="/sslcommerz-payments.png"
-                    alt="bKash, Nagad, Upay, VISA, Mastercard and more via SSLCommerz"
+                    src="/sslcommerz-pay-now.jpg?v=1"
+                    alt="Pay with SSLCommerz — cards, bKash, Nagad, Upay, bank payments and more"
                     className="h-auto w-full object-contain"
                     loading="lazy"
                   />

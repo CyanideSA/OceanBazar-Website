@@ -1,0 +1,24 @@
+<%
+  var label = helpers.pickName(cat, locale);
+  var initial = (label || '?').charAt(0);
+  var cid = cat.id || cat.slug;
+  var catImgRaw = cat.imageUrl || cat.image || '';
+  var catImg = (catImgRaw && /^https?:\/\//i.test(String(catImgRaw)))
+    ? helpers.optimizeImageUrl(catImgRaw, { width: 96, crop: 'fill' })
+    : '';
+  var catEmoji = cat.icon && !/^https?:\/\//i.test(String(cat.icon)) ? String(cat.icon) : '';
+  var active = (typeof categoryId !== 'undefined' && categoryId && String(categoryId) === String(cid));
+  var href = (typeof chipHref !== 'undefined' && chipHref)
+    ? chipHref
+    : (basePath + '/' + locale + '/category/' + encodeURIComponent(cid));
+%>
+<a class="chip<%= active ? ' active' : '' %>" href="<%= href %>">
+  <% if (catImg) { %>
+  <img src="<%= catImg %>" alt="" width="40" height="40" loading="lazy" decoding="async" />
+  <% } else if (catEmoji) { %>
+  <span class="chip-icon chip-emoji" aria-hidden="true"><%= catEmoji %></span>
+  <% } else { %>
+  <span class="chip-icon"><%= initial %></span>
+  <% } %>
+  <span><%= label %></span>
+</a>

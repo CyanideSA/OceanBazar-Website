@@ -31,6 +31,7 @@ import wishlistRouter from './routes/wishlist';
 import deliveryRouter from './routes/delivery';
 import wholesaleRouter from './routes/wholesale';
 import storefrontRouter from './routes/storefront';
+import trustBadgesRouter from './routes/trust-badges';
 import uploadRouter from './routes/upload';
 import webhookRouter from './routes/webhooks';
 import metaWebhookRouter from './routes/webhooks/meta';
@@ -41,6 +42,7 @@ import referralRouter from './routes/referral';
 import abRouter from './routes/ab';
 import flashSalesRouter from './routes/flash-sales';
 import newsletterRouter from './routes/newsletter';
+import businessInquiriesRouter from './routes/businessInquiries';
 import qaRouter from './routes/qa';
 import pwaAnalyticsRouter from './routes/pwa-analytics';
 import clientErrorsRouter from './routes/client-errors';
@@ -107,12 +109,27 @@ const allowedCorsOrigins = buildAllowedOrigins();
 // without needing to enumerate every possible port.
 const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|\d{1,3}(?:\.\d{1,3}){3})(:\d+)?$/;
 
+// SSLCommerz (and sibling BD gateways) form-POST the browser back to our success/fail
+// URLs with their own Origin. Those are payment redirects, not SPA API calls — must
+// be allowed or the order stays unpaid (CORS blocks before the handler runs).
+const PAYMENT_GATEWAY_ORIGIN_RE =
+  /^https:\/\/([a-z0-9-]+\.)*(sslcommerz\.com|portwallet\.com)(?::\d+)?$/i;
+
 function corsOriginCheck(origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) {
   // 'null' (literal string) is sent by browsers on cross-origin redirects from HTTPS
   // payment gateways (SSLCommerz/bKash) back to this local HTTP server.
   if (!origin || origin === 'null') return cb(null, true);
   if (allowedCorsOrigins.includes(origin)) return cb(null, true);
   if (LOCAL_ORIGIN_RE.test(origin)) return cb(null, true);
+  if (PAYMENT_GATEWAY_ORIGIN_RE.test(origin)) {
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'ssl-cors',hypothesisId:'S1',location:'backend/src/app.ts:corsOriginCheck',message:'Allowed payment gateway CORS origin',data:{origin},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    return cb(null, true);
+  }
+  // #region agent log
+  fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7c9155'},body:JSON.stringify({sessionId:'7c9155',runId:'ssl-cors',hypothesisId:'S1',location:'backend/src/app.ts:corsOriginCheck',message:'Blocked CORS origin',data:{origin},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return cb(new Error(`CORS blocked for origin: ${origin}`));
 }
 
@@ -260,9 +277,11 @@ app.use('/api/reviews', reviewsRouter);
 // ─── Storefront public settings (no auth required) ─────────────────────────
 
 app.use('/api/storefront', storefrontRouter);
+app.use('/api/trust-badges', trustBadgesRouter);
 app.use('/api/seo', seoPublicRouter);
 app.use('/api/flash-sales', flashSalesRouter);
 app.use('/api/newsletter', newsletterRouter);
+app.use('/api/business-inquiries', businessInquiriesRouter);
 app.use('/api/qa', qaRouter);
 app.use('/api/analytics', pwaAnalyticsRouter);
 app.use('/api/client-errors', clientErrorsRouter);

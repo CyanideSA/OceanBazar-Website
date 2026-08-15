@@ -1,0 +1,112 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section account-page">
+  <%
+    var accErr = String(typeof errorMsg !== 'undefined' ? errorMsg : (typeof formError !== 'undefined' ? formError : ''));
+    // Use flashMsg / queryFlash only — `flash` is the flash-sale object from middleware
+    var accFlash = String(
+      (typeof flashMsg !== 'undefined' && flashMsg) ? flashMsg
+        : (typeof queryFlash !== 'undefined' && queryFlash) ? queryFlash
+        : ''
+    );
+    var photo = user && (user.profileImage || user.avatarUrl || user.photoUrl);
+  %>
+  <% if (accErr || (typeof queryError !== 'undefined' && queryError)) { %>
+  <div class="banner err" role="alert"><%= accErr || queryError %></div>
+  <% } %>
+  <% if (accFlash) { %>
+  <div class="banner ok" role="status" data-ob-account-flash="1"><%= accFlash %></div>
+  <% } %>
+
+  <div class="account-hero" data-ob-account-hero="1">
+    <% if (photo) { %>
+    <img class="account-avatar account-avatar-img" src="<%= photo %>" alt="" width="54" height="54" />
+    <% } else { %>
+    <div class="account-avatar" aria-hidden="true"><%= ((user && (user.name || user.email || user.phone)) || 'G').charAt(0).toUpperCase() %></div>
+    <% } %>
+    <div class="account-hero-info">
+      <span class="account-hello"><%= t('welcomeBack') %></span>
+      <strong class="account-name"><%= (user && (user.name || user.email || user.phone)) || t('guest') %></strong>
+      <% if (user && user.email) { %><span class="account-sub"><%= user.email %></span><% } %>
+      <% if (user && user.phone) { %><span class="account-sub"><%= user.phone %></span><% } %>
+    </div>
+    <a class="btn btn-outline btn-sm account-logout" href="<%= basePath %>/<%= locale %>/auth/logout"><%= t('logout') %></a>
+  </div>
+
+  <form method="post" action="<%= basePath %>/<%= locale %>/account/photo" enctype="multipart/form-data" class="account-photo-form stack">
+    <label class="field">
+      <span><%= t('profilePhoto') %></span>
+      <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required />
+    </label>
+    <button type="submit" class="btn btn-sm"><%= t('uploadPhoto') %></button>
+  </form>
+
+  <div class="account-stats">
+    <div class="stat-card">
+      <span class="stat-value"><%= typeof totalOrders !== 'undefined' ? totalOrders : 0 %></span>
+      <span class="stat-label"><%= t('totalOrders') %></span>
+    </div>
+    <a class="stat-card link" href="<%= basePath %>/<%= locale %>/account/addresses">
+      <span class="stat-value">→</span>
+      <span class="stat-label"><%= t('addresses') %></span>
+    </a>
+    <a class="stat-card link" href="<%= basePath %>/<%= locale %>/track">
+      <span class="stat-value">→</span>
+      <span class="stat-label"><%= t('trackOrder') %></span>
+    </a>
+  </div>
+
+  <div class="account-grid">
+    <a class="account-tile" href="<%= basePath %>/<%= locale %>/account/orders">
+      <span class="tile-title"><%= t('orders') %></span>
+      <span class="tile-desc"><%= t('recentOrders') %></span>
+    </a>
+    <a class="account-tile" href="<%= basePath %>/<%= locale %>/account/addresses">
+      <span class="tile-title"><%= t('addresses') %></span>
+      <span class="tile-desc"><%= t('manageAddresses') %></span>
+    </a>
+    <a class="account-tile" href="<%= basePath %>/<%= locale %>/track">
+      <span class="tile-title"><%= t('trackOrder') %></span>
+      <span class="tile-desc"><%= t('orderTracking') %></span>
+    </a>
+    <a class="account-tile" href="<%= basePath %>/<%= locale %>/account/points">
+      <span class="tile-title"><%= t('obPoints') %></span>
+      <span class="tile-desc"><%= t('openOnFullSite') %></span>
+    </a>
+    <a class="account-tile" href="<%= basePath %>/<%= locale %>/support">
+      <span class="tile-title"><%= t('supportCenter') %></span>
+      <span class="tile-desc"><%= t('helpSupport') %></span>
+    </a>
+    <a class="account-tile" href="<%= basePath %>/<%= locale %>/products">
+      <span class="tile-title"><%= t('products') %></span>
+      <span class="tile-desc"><%= t('continueShopping') %></span>
+    </a>
+  </div>
+
+  <% var recent = (typeof recentOrders !== 'undefined' && recentOrders) ? recentOrders : []; %>
+  <% if (recent.length) { %>
+  <div class="section-head">
+    <h2><%= t('recentOrders') %></h2>
+    <a href="<%= basePath %>/<%= locale %>/account/orders"><%= t('seeAll') %></a>
+  </div>
+  <div class="order-list">
+    <% recent.forEach(function(o) {
+      var paid = String(o.paymentStatus || '').toLowerCase() === 'paid';
+    %>
+    <a class="order-row" href="<%= basePath %>/<%= locale %>/account/orders/<%= encodeURIComponent(o.id) %>">
+      <div class="order-row-main">
+        <strong>#<%= o.orderNumber || o.id %></strong>
+        <span class="order-status"><%= o.status || '' %></span>
+      </div>
+      <div class="order-row-meta">
+        <span class="pill <%= paid ? 'pill-ok' : 'pill-warn' %>"><%= paid ? t('paid') : t('pendingPayment') %></span>
+        <span class="order-total"><%= helpers.money(o.total || o.grandTotal || 0) %></span>
+      </div>
+    </a>
+    <% }) %>
+  </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

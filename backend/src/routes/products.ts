@@ -18,12 +18,14 @@ type CollectionKey =
   | 'featured'
   | 'top-trending'
   | 'latest'
+  | 'new-arrivals'
+  | 'best-deals'
   | 'best-rated'
   | 'best-seller'
   | 'most-sold'
   | 'beauty';
 
-const COLLECTION_TAGS: Record<Exclude<CollectionKey, 'latest'>, string> = {
+const COLLECTION_TAGS: Record<Exclude<CollectionKey, 'latest' | 'new-arrivals' | 'best-deals'>, string> = {
   'featured': 'ob_featured',
   'top-trending': 'ob_top_trending',
   'best-rated': 'ob_best_rated',
@@ -41,12 +43,44 @@ function normalizeCollection(raw: string | undefined): CollectionKey | null {
     'featured',
     'top-trending',
     'latest',
+    'new-arrivals',
+    'best-deals',
     'best-rated',
     'best-seller',
     'most-sold',
     'beauty',
   ];
   return allowed.includes(c as CollectionKey) ? (c as CollectionKey) : null;
+}
+
+async function getCuratedProductIds(
+  column: 'featured_product_ids' | 'best_deals_product_ids' | 'new_arrivals_product_ids',
+): Promise<string[]> {
+  try {
+    const row = await prismaAny.site_settings.findFirst({
+      where: { id: 'default' },
+      select: {
+        featured_product_ids: true,
+        best_deals_product_ids: true,
+        new_arrivals_product_ids: true,
+      },
+    });
+    const raw = row?.[column];
+    if (!Array.isArray(raw)) return [];
+    return raw.map((x: unknown) => String(x ?? '').trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function filterActiveIdsPreserveOrder(ids: string[]): Promise<string[]> {
+  if (!ids.length) return [];
+  const rows = await prisma.product.findMany({
+    where: { id: { in: ids }, status: 'active' },
+    select: { id: true },
+  });
+  const ok = new Set(rows.map((r) => r.id));
+  return ids.filter((id) => ok.has(id));
 }
 
 /** Return categoryId plus all descendant IDs (breadth-first, max depth 3) */
@@ -124,10 +158,39 @@ async function getViewRanks(days: number): Promise<Array<{ productId: string; vi
 }
 
 async function resolveCollectionIds(collection: CollectionKey): Promise<string[] | null> {
-  if (collection === 'latest') return null;
+  // ── New arrivals / latest: CRM curated IDs first, else DB createdAt order ───
+  if (collection === 'latest' || collection === 'new-arrivals') {
+    const curated = await filterActiveIdsPreserveOrder(
+      await getCuratedProductIds('new_arrivals_product_ids'),
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'078c95'},body:JSON.stringify({sessionId:'078c95',runId:'settings-e2e',hypothesisId:'B',location:'products.ts:resolveCollectionIds',message:'latest/new-arrivals resolve',data:{collection,curatedCount:curated.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    return curated.length ? curated : null;
+  }
 
-  // ── Featured: flag-first, tag fallback ──────────────────────────────────────
+  // ── Best deals: CRM curated, else fall through to best-rated ranking ────────
+  if (collection === 'best-deals') {
+    const curated = await filterActiveIdsPreserveOrder(
+      await getCuratedProductIds('best_deals_product_ids'),
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'078c95'},body:JSON.stringify({sessionId:'078c95',runId:'settings-e2e',hypothesisId:'C',location:'products.ts:resolveCollectionIds',message:'best-deals resolve',data:{curatedCount:curated.length,fallback:!curated.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    if (curated.length) return curated;
+    // reuse best-rated path below by falling through via recursive call
+    return resolveCollectionIds('best-rated');
+  }
+
+  // ── Featured: CRM curated first, then flag/tag fallback ─────────────────────
   if (collection === 'featured') {
+    const curated = await filterActiveIdsPreserveOrder(
+      await getCuratedProductIds('featured_product_ids'),
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'078c95'},body:JSON.stringify({sessionId:'078c95',runId:'settings-e2e',hypothesisId:'B',location:'products.ts:resolveCollectionIds',message:'featured resolve',data:{curatedCount:curated.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    if (curated.length) return curated;
     const rows = await prisma.product.findMany({
       where: {
         status: 'active',
@@ -232,7 +295,7 @@ async function resolveCollectionIds(collection: CollectionKey): Promise<string[]
   }
 
   // ── Beauty: tag-based + keyword title search ──────────────────────────────────
-  const tag = COLLECTION_TAGS[collection as Exclude<CollectionKey, 'latest'>];
+  const tag = COLLECTION_TAGS[collection as Exclude<CollectionKey, 'latest' | 'new-arrivals' | 'best-deals'>];
   const keywords = ['beauty', 'cosmetic', 'hair', 'skin', 'makeup', 'clothing', 'accessories', 'fashion'];
   const [manual, auto] = await Promise.all([
     prisma.product.findMany({
@@ -272,6 +335,8 @@ router.get('/', productCache, async (req: Request, res: Response) => {
     minPrice,
     maxPrice,
     rating,
+    trustBadge,
+    badge,
   } = req.query as Record<string, string>;
 
   // Accept both ?search= and ?q= (header search historically used either).
@@ -320,6 +385,24 @@ router.get('/', productCache, async (req: Request, res: Response) => {
   if (priceProductIds !== null) extraAnd.push({ id: { in: priceProductIds } });
   if (ratingMin) extraAnd.push({ ratingAvg: { gte: ratingMin } });
 
+  const trustBadgeKey = String(trustBadge || badge || '').trim();
+  if (trustBadgeKey) {
+    const asId = Number(trustBadgeKey);
+    extraAnd.push({
+      productTrustBadges: {
+        some: {
+          badge: {
+            active: true,
+            OR: [
+              { slug: trustBadgeKey },
+              ...(Number.isFinite(asId) && asId > 0 ? [{ id: asId }] : []),
+            ],
+          },
+        },
+      },
+    });
+  }
+
   const searchWhere = search
     ? {
         OR: [
@@ -347,31 +430,35 @@ router.get('/', productCache, async (req: Request, res: Response) => {
       ...(extraAnd.length ? { AND: extraAnd } : {}),
     };
 
-    // latest uses DB ordering
-    if (collectionKey === 'latest') {
-      const [products, total] = await Promise.all([
-        prismaAny.product.findMany({
-          where: baseWhere,
-          include: {
-            productAssets: { orderBy: { sortOrder: 'asc' }, take: 8 },
-            pricing: true,
-            productCategories: { include: { category: true } },
-            brandRelation: true,
-            productTags: { include: { tags: true } },
-            metrics: true,
-          },
-          skip,
-          take,
-          orderBy: { createdAt: 'desc' },
-        }),
-        prismaAny.product.count({ where: baseWhere }),
-      ]);
+    // latest / new-arrivals: curated ID order when set, else createdAt desc
+    if (collectionKey === 'latest' || collectionKey === 'new-arrivals') {
+      if (!ids || ids.length === 0) {
+        const [products, total] = await Promise.all([
+          prismaAny.product.findMany({
+            where: baseWhere,
+            include: {
+              productAssets: { orderBy: { sortOrder: 'asc' }, take: 8 },
+              pricing: true,
+              productCategories: { include: { category: true } },
+              brandRelation: true,
+              productTags: { include: { tags: true } },
+            productTrustBadges: { include: { badge: true } },
+              metrics: true,
+            },
+            skip,
+            take,
+            orderBy: { createdAt: 'desc' },
+          }),
+          prismaAny.product.count({ where: baseWhere }),
+        ]);
 
-      res.json({
-        products: (products as ProductPayload[]).map((p: ProductPayload) => formatProduct(p, lang)),
-        pagination: { page: parseInt(page), limit: take, total, pages: Math.ceil(total / take) },
-      });
-      return;
+        res.json({
+          products: (products as ProductPayload[]).map((p: ProductPayload) => formatProduct(p, lang)),
+          pagination: { page: parseInt(page), limit: take, total, pages: Math.ceil(total / take) },
+        });
+        return;
+      }
+      // curated IDs present — fall through to ranked pagination below
     }
 
     // For ranked/tag collections, fetch all matching IDs then paginate in JS (preserve rank).
@@ -389,6 +476,7 @@ router.get('/', productCache, async (req: Request, res: Response) => {
         productCategories: { include: { category: true } },
         brandRelation: true,
         productTags: { include: { tags: true } },
+            productTrustBadges: { include: { badge: true } },
         metrics: true,
       },
       take: 500,
@@ -426,6 +514,7 @@ router.get('/', productCache, async (req: Request, res: Response) => {
         productCategories: { include: { category: true } },
         brandRelation: true,
         productTags: { include: { tags: true } },
+            productTrustBadges: { include: { badge: true } },
         metrics: true,
       },
       skip,
@@ -620,7 +709,8 @@ router.get('/compare', cacheResponse({ ttlSeconds: 300, keyPrefix: 'bff:product-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const products = await (prisma as any).product.findMany({
     where: { id: { in: ids } },
-    include: { productAssets: true, pricing: true, variants: true, productCategories: { include: { category: true } }, brandRelation: true, productTags: { include: { tags: true } }, metrics: true },
+    include: { productAssets: true, pricing: true, variants: true, productCategories: { include: { category: true } }, brandRelation: true, productTags: { include: { tags: true } },
+            productTrustBadges: { include: { badge: true } }, metrics: true },
   });
   res.json({ products: (products as ProductPayload[]).map((p) => formatProduct(p, lang)) });
 });
@@ -657,7 +747,8 @@ router.get('/:id', cacheResponse({ ttlSeconds: 120, keyPrefix: 'bff:product-deta
   }
   const productById = await prisma.product.findFirst({
     where: { id: resolvedId, status: 'active' },
-    include: { productAssets: true, pricing: true, variants: true, productCategories: { include: { category: true } }, brandRelation: true, productTags: { include: { tags: true } }, metrics: true },
+    include: { productAssets: true, pricing: true, variants: true, productCategories: { include: { category: true } }, brandRelation: true, productTags: { include: { tags: true } },
+            productTrustBadges: { include: { badge: true } }, metrics: true },
   });
   let product = productById;
   if (!product) {
@@ -668,7 +759,8 @@ router.get('/:id', cacheResponse({ ttlSeconds: 120, keyPrefix: 'bff:product-deta
       if (slugRow[0]?.id) {
         product = await prisma.product.findFirst({
           where: { id: slugRow[0].id, status: 'active' },
-          include: { productAssets: true, pricing: true, variants: true, productCategories: { include: { category: true } }, brandRelation: true, productTags: { include: { tags: true } }, metrics: true },
+          include: { productAssets: true, pricing: true, variants: true, productCategories: { include: { category: true } }, brandRelation: true, productTags: { include: { tags: true } },
+            productTrustBadges: { include: { badge: true } }, metrics: true },
         });
       }
     } catch {
@@ -691,32 +783,39 @@ router.get('/:id', cacheResponse({ ttlSeconds: 120, keyPrefix: 'bff:product-deta
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-function parseJsonRecord(val: unknown): Record<string, string> | null {
-  // Parse string JSON first
+/** Preserve ordered [{key,value}] rows; never collapse duplicate keys into one object entry. */
+function parseJsonEntries(val: unknown): Array<{ key: string; value: string }> | null {
   let parsed: unknown = val;
   if (typeof val === 'string') {
     try { parsed = JSON.parse(val); } catch { return null; }
   }
   if (!parsed) return null;
-  // Handle array of {key, value} pairs (our admin wizard format)
   if (Array.isArray(parsed)) {
-    const out: Record<string, string> = {};
+    const out: Array<{ key: string; value: string }> = [];
     for (const item of parsed) {
       if (item && typeof item === 'object') {
         const o = item as Record<string, unknown>;
         const k = o.key != null ? String(o.key).trim() : '';
         const v = o.value != null ? String(o.value).trim() : '';
-        if (k) out[k] = v;
+        if (k) out.push({ key: k, value: v });
       }
     }
-    return Object.keys(out).length ? out : null;
+    return out.length ? out : null;
   }
-  // Handle plain object
   if (typeof parsed !== 'object') return null;
-  const out: Record<string, string> = {};
+  const out: Array<{ key: string; value: string }> = [];
   for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-    if (v !== undefined && v !== null) out[k] = String(v);
+    if (v !== undefined && v !== null) out.push({ key: k, value: String(v) });
   }
+  return out.length ? out : null;
+}
+
+/** @deprecated Prefer parseJsonEntries — object form drops duplicate keys. */
+function parseJsonRecord(val: unknown): Record<string, string> | null {
+  const entries = parseJsonEntries(val);
+  if (!entries) return null;
+  const out: Record<string, string> = {};
+  for (const { key, value } of entries) out[key] = value;
   return Object.keys(out).length ? out : null;
 }
 
@@ -810,12 +909,56 @@ export function formatProduct(p: ProductPayload, lang: string, opts?: { orderCou
     ? { id: br.id, nameEn: br.nameEn, nameBn: br.nameBn, slug: br.slug, logoUrl: br.logoUrl }
     : null;
 
-  const specifications = parseJsonRecord((p as { specifications?: unknown }).specifications);
-  const attributesExtra = parseJsonRecord((p as { attributesExtra?: unknown }).attributesExtra);
+  const specificationsEntries = parseJsonEntries((p as { specifications?: unknown }).specifications);
+  const attributesExtraEntries = parseJsonEntries((p as { attributesExtra?: unknown }).attributesExtra);
+  // Keep object form for older clients, plus ordered entries so duplicate keys still display.
+  const specifications = specificationsEntries
+    ? Object.fromEntries(specificationsEntries.map((e) => [e.key, e.value]))
+    : null;
+  const attributesExtra = attributesExtraEntries
+    ? Object.fromEntries(attributesExtraEntries.map((e) => [e.key, e.value]))
+    : null;
+  // #region agent log
+  fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e24651' },
+    body: JSON.stringify({
+      sessionId: 'e24651',
+      runId: 'attrs-specs',
+      hypothesisId: 'A',
+      location: 'products.ts:formatProduct',
+      message: 'parsed specifications/attributesExtra',
+      data: {
+        productId: p.id,
+        rawSpecType: typeof (p as { specifications?: unknown }).specifications,
+        rawAttrType: typeof (p as { attributesExtra?: unknown }).attributesExtra,
+        rawSpecIsArray: Array.isArray((p as { specifications?: unknown }).specifications),
+        rawAttrIsArray: Array.isArray((p as { attributesExtra?: unknown }).attributesExtra),
+        specEntryCount: specificationsEntries?.length ?? 0,
+        attrEntryCount: attributesExtraEntries?.length ?? 0,
+        specKeys: specificationsEntries?.map((e) => e.key) ?? [],
+        attrKeys: attributesExtraEntries?.map((e) => e.key) ?? [],
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   const reviews = parseReviewsSnapshot((p as { reviewsSnapshot?: unknown }).reviewsSnapshot);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tags = (p.productTags ?? []).map((pt: any) => pt.tags?.slug ?? '') as string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const trustBadges = ((p as any).productTrustBadges ?? [])
+    .map((pt: any) => pt?.badge)
+    .filter((b: any) => b && b.active !== false)
+    .map((b: any) => ({
+      id: b.id,
+      slug: b.slug,
+      nameEn: b.nameEn,
+      nameBn: b.nameBn,
+      icon: b.icon || 'shield',
+      description: b.description || '',
+    }));
 
   return {
     id: p.id,
@@ -831,6 +974,7 @@ export function formatProduct(p: ProductPayload, lang: string, opts?: { orderCou
     moq: p.moq,
     stock: p.stock,
     tags,
+    trustBadges,
     primaryImage: primaryImage?.url ?? null,
     images: sortedImages.map((img) => ({
       id: img.id,
@@ -858,8 +1002,11 @@ export function formatProduct(p: ProductPayload, lang: string, opts?: { orderCou
     variants,
     orderCount: opts?.orderCount ?? 0,
     specifications,
+    specificationsEntries,
     attributes: attributesExtra,
     attributesExtra,
+    attributesEntries: attributesExtraEntries,
+    attributesExtraEntries,
     ratingAvg:
       (p as { ratingAvg?: unknown }).ratingAvg != null ? Number((p as { ratingAvg: unknown }).ratingAvg) : null,
     reviewCount: (p as { reviewCount?: number }).reviewCount ?? 0,

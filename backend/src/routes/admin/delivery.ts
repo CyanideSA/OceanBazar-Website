@@ -43,6 +43,12 @@ router.get('/', async (req: Request, res: Response) => {
 // POST /api/admin/delivery/assign — assign courier to order
 router.post('/assign', requireIdempotencyKey(), async (req: Request, res: Response) => {
   try {
+    // #region agent log
+    const body = req.body as AssignCourierInput;
+    const _dbgAssign = { sessionId: '7c9155', runId: 'pathao-book', hypothesisId: 'A', location: 'delivery.ts:assign', message: 'assign courier request', data: { courier: body?.courier, orderId: body?.orderId, pathaoStoreId: (body as any)?.pathaoStoreId || null, pathaoCityId: (body as any)?.pathaoCityId || null, pathaoZoneId: (body as any)?.pathaoZoneId || null, pathaoAreaId: (body as any)?.pathaoAreaId || null }, timestamp: Date.now() };
+    console.log('DBG7c9155', JSON.stringify(_dbgAssign));
+    fetch('http://127.0.0.1:7860/ingest/edcc0735-42b6-4958-a62f-412af4249672', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7c9155' }, body: JSON.stringify(_dbgAssign) }).catch(() => {});
+    // #endregion
     const result = await assignCourierWithAudit(req, req.body as AssignCourierInput);
     if (!result.success) { res.status(400).json({ error: result.message }); return; }
     try {

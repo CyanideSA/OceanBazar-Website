@@ -1,0 +1,131 @@
+<%- include('partials/head') %>
+
+<section class="section auth-shell">
+  <div class="auth-card">
+    <h1><%= t('continueWithGoogle') %></h1>
+    <p class="muted" id="googleStatus"><%= t('googleRedirecting') %></p>
+    <form id="firebaseForm" method="post" action="<%= basePath %>/<%= locale %>/auth/firebase" class="stack" style="display:none">
+      <input type="hidden" name="next" value="<%= next %>" />
+      <input type="hidden" name="idToken" id="idToken" value="" />
+    </form>
+    <p class="muted"><a href="<%= basePath %>/<%= locale %>/auth/login?next=<%= encodeURIComponent(next) %>"><%= t('back') %></a></p>
+  </div>
+</section>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script>
+(function () {
+  var cfg = <%- JSON.stringify(firebaseConfig) %>;
+  var statusEl = document.getElementById('googleStatus');
+  var form = document.getElementById('firebaseForm');
+  var tokenInput = document.getElementById('idToken');
+  var REDIRECT_KEY = 'ob_lite_google_redirect';
+  var FINISH_KEY = 'ob_lite_google_finishing';
+
+  function dbg(hypothesisId, message, data) {
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'google-fix',hypothesisId:hypothesisId,location:'auth-google.ejs',message:message,data:data||{},timestamp:Date.now()})}).catch(function(){});
+    // #endregion
+  }
+
+  if (!cfg || !cfg.apiKey) {
+    statusEl.textContent = 'Google sign-in is not configured.';
+    dbg('H-G1', 'missing firebase config', {});
+    return;
+  }
+  try {
+    firebase.initializeApp(cfg);
+  } catch (e) {}
+  var auth = firebase.auth();
+  var provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  var finishing = false;
+  function finishWithUser(user, source) {
+    if (!user || finishing) return;
+    finishing = true;
+    try { sessionStorage.setItem(FINISH_KEY, '1'); } catch (e) {}
+    statusEl.textContent = '<%= t("signingIn") %>';
+    dbg('H-G2', 'finishWithUser', { source: source, uid: !!(user && user.uid) });
+    user.getIdToken().then(function (token) {
+      try {
+        sessionStorage.removeItem(REDIRECT_KEY);
+        sessionStorage.removeItem(FINISH_KEY);
+      } catch (e) {}
+      dbg('H-G2', 'lite google token ready', { hasToken: !!token, source: source });
+      tokenInput.value = token;
+      form.submit();
+    }).catch(function (err) {
+      finishing = false;
+      try { sessionStorage.removeItem(FINISH_KEY); } catch (e) {}
+      statusEl.textContent = (err && err.message) || 'Google sign-in failed';
+      dbg('H-G3', 'getIdToken failed', { msg: String((err && err.message) || err).slice(0, 160) });
+    });
+  }
+
+  function startRedirect() {
+    var already = false;
+    try { already = sessionStorage.getItem(REDIRECT_KEY) === '1'; } catch (e) {}
+    if (already) {
+      // Came back without a usable result — stop the loop and offer retry.
+      dbg('H-G1', 'redirect loop blocked', { already: true });
+      try { sessionStorage.removeItem(REDIRECT_KEY); } catch (e) {}
+      statusEl.innerHTML = 'Google sign-in did not complete. <a href="<%= basePath %>/<%= locale %>/auth/google?next=<%= encodeURIComponent(next) %>">Try again</a> or use password/OTP.';
+      return;
+    }
+    try { sessionStorage.setItem(REDIRECT_KEY, '1'); } catch (e) {}
+    statusEl.textContent = '<%= t("googleRedirecting") %>';
+    dbg('H-G1', 'starting signInWithRedirect', {});
+    return auth.signInWithRedirect(provider);
+  }
+
+  auth.getRedirectResult().then(function (result) {
+    if (result && result.user) {
+      try { sessionStorage.removeItem(REDIRECT_KEY); } catch (e) {}
+      finishWithUser(result.user, 'redirectResult');
+      return;
+    }
+    // Result empty — use currentUser if Firebase already restored the session.
+    if (auth.currentUser) {
+      try { sessionStorage.removeItem(REDIRECT_KEY); } catch (e) {}
+      dbg('H-G1', 'using currentUser after empty redirectResult', {});
+      finishWithUser(auth.currentUser, 'currentUser');
+      return;
+    }
+    // Wait briefly for auth state restore (mobile Safari / popup return).
+    var settled = false;
+    var unsub = auth.onAuthStateChanged(function (user) {
+      if (settled) return;
+      settled = true;
+      try { unsub(); } catch (e) {}
+      if (user) {
+        try { sessionStorage.removeItem(REDIRECT_KEY); } catch (e) {}
+        finishWithUser(user, 'onAuthStateChanged');
+        return;
+      }
+      startRedirect();
+    });
+    setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      try { unsub(); } catch (e) {}
+      if (auth.currentUser) {
+        finishWithUser(auth.currentUser, 'timeout-currentUser');
+      } else {
+        startRedirect();
+      }
+    }, 2500);
+  }).catch(function (err) {
+    dbg('H-G3', 'lite google redirect error', { code: (err && err.code) || null, msg: String((err && err.message) || err).slice(0, 160) });
+    if (auth.currentUser) {
+      finishWithUser(auth.currentUser, 'catch-currentUser');
+      return;
+    }
+    statusEl.textContent = (err && err.message) || 'Google sign-in failed';
+    try { sessionStorage.removeItem(REDIRECT_KEY); } catch (e) {}
+  });
+})();
+</script>
+
+<%- include('partials/footer') %>

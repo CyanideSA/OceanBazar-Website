@@ -1,0 +1,70 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section svc-page">
+  <div class="svc-hero svc-hero-returns">
+    <p class="info-eyebrow">OceanBazar</p>
+    <h1><%= t('returnsRefunds') %></h1>
+    <p class="info-intro"><%= t('returnsIntro') %></p>
+    <p class="svc-alt-links"><a href="<%= basePath %>/<%= locale %>/policies/returns"><%= t('returnPolicy') %></a></p>
+  </div>
+
+  <div class="svc-grid-2">
+    <form method="post" action="<%= basePath %>/<%= locale %>/returns" class="svc-card stack auth-form">
+      <h2><%= t('returnStart') %></h2>
+      <label class="field">
+        <span><%= t('returnOrder') %></span>
+        <select name="orderId" required>
+          <option value=""><%= t('returnPickOrder') %></option>
+          <% (orders || []).forEach(function (o) {
+            var oid = o.id || o.orderId;
+            var label = o.orderNumber || o.order_number || oid;
+          %>
+          <option value="<%= oid %>"><%= label %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label class="field">
+        <span><%= t('returnReason') %></span>
+        <select name="reason" required>
+          <option value="Wrong item"><%= t('reasonWrong') %></option>
+          <option value="Damaged"><%= t('reasonDamaged') %></option>
+          <option value="Not as described"><%= t('reasonNotAsDescribed') %></option>
+          <option value="Changed mind"><%= t('reasonChangedMind') %></option>
+          <option value="Duplicate"><%= t('reasonDuplicate') %></option>
+          <option value="Other"><%= t('reasonOther') %></option>
+        </select>
+      </label>
+      <label class="field">
+        <span><%= t('returnDetails') %></span>
+        <textarea name="description" rows="3"></textarea>
+      </label>
+      <button type="submit" class="btn btn-primary btn-block"><%= t('returnSubmit') %></button>
+    </form>
+
+    <div class="svc-card">
+      <h2><%= t('returnYourList') %></h2>
+      <% if (!returns || !returns.length) { %>
+      <p class="muted"><%= t('returnEmpty') %></p>
+      <% } else { %>
+      <ul class="svc-list">
+        <% returns.forEach(function (r) {
+          var rid = r.id;
+          var status = r.status || '';
+          var orderRef = r.order_id || r.orderId || '';
+        %>
+        <li>
+          <a href="<%= basePath %>/<%= locale %>/returns/<%= encodeURIComponent(rid) %>">
+            <strong>#<%= String(rid).slice(0, 8) %></strong>
+            <span class="pill pill-warn"><%= status %></span>
+            <span class="muted"><%= t('orders') %>: <%= orderRef %></span>
+          </a>
+        </li>
+        <% }) %>
+      </ul>
+      <% } %>
+    </div>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

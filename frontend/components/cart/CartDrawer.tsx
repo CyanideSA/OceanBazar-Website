@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import { X, ShoppingBag, Minus, Plus, Trash2, Tag, ArrowRight } from 'lucide-react';
@@ -9,6 +9,7 @@ import { useCartStore } from '@/stores/cartStore';
 import { useAuthStore } from '@/stores/authStore';
 import { cartApi } from '@/lib/api';
 import { formatCartMoney } from '@/lib/cart';
+import { formatApiErrorMessage } from '@/lib/formatApiError';
 import { RETAIL_MAX_UNITS } from '@/lib/pricing';
 import type { CartItem } from '@/types';
 import { useNormalizedCart } from '@/hooks/useNormalizedCart';
@@ -16,18 +17,57 @@ import { getMediaUrl } from '@/lib/mediaUrl';
 import { previewOrderTotals } from '@/lib/checkoutTotals';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
+import { isIosWebKit } from '@/lib/iosSafari';
 
 export default function CartDrawer() {
   const t = useTranslations('cart');
   const tc = useTranslations('common');
   const locale = useLocale();
-  const { isOpen, setOpen, setCart, appliedCoupon, setAppliedCoupon, appliedObPoints } = useCartStore();
+  const { isOpen, setOpen, setCart, appliedCoupon, setAppliedCoupon, appliedObPoints, updateLocalQty, removeLocalItem } = useCartStore();
   const [couponInput, setCouponInput] = useState('');
+  const [mounted, setMounted] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const { success, error: toastError } = useToast();
 
   const safeCart = useNormalizedCart();
-  const { user } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const isWholesaleUser = user?.userType === 'wholesale';
+
+  // Keep mounted through close so the panel can slide back toward the cart button (right edge).
+  useEffect(() => {
+    if (isOpen) {
+      setMounted(true);
+      setPanelOpen(false);
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setPanelOpen(true));
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'cart-anim',hypothesisId:'H1',location:'CartDrawer.tsx:open',message:'cart drawer open sequence',data:{isOpen:true,ios:isIosWebKit()},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+    setPanelOpen(false);
+    // #region agent log
+    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'cart-anim',hypothesisId:'H1',location:'CartDrawer.tsx:close',message:'cart drawer close sequence',data:{isOpen:false},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    const id = window.setTimeout(() => setMounted(false), 320);
+    return () => window.clearTimeout(id);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!mounted || !panelOpen) return;
+    // body { overflow:hidden } blanks the compositor on old iOS WebKit — skip there.
+    if (isIosWebKit()) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mounted, panelOpen]);
 
   // Same per-product cap as the product page: retail tier-3 threshold from the
   // admin CRM (falling back to the global retail cap), bounded by stock.
@@ -39,29 +79,50 @@ export default function CartDrawer() {
   };
 
   const updateMutation = useMutation({
-    mutationFn: ({ productId, quantity }: { productId: string; quantity: number }) =>
-      cartApi.update(productId, quantity),
-    onSuccess: setCart,
+    mutationFn: async ({ productId, quantity, variantId }: { productId: string; quantity: number; variantId?: string | null }) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'pre-fix',hypothesisId:'H2',location:'CartDrawer.tsx:updateMutationFn',message:'cart qty update start',data:{productId,quantity,variantId:variantId??null,auth:isAuthenticated},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      if (!isAuthenticated) return updateLocalQty(productId, quantity, variantId);
+      return cartApi.update(productId, quantity, variantId);
+    },
+    onSuccess: (data) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'post-fix',hypothesisId:'H2',location:'CartDrawer.tsx:updateOnSuccess',message:'cart qty update success',data:{itemCount:data?.itemCount??null,items:(data?.items||[]).slice(0,3).map((i)=>({productId:i.productId,variantId:i.variantId??null,qty:i.quantity,variantLabel:i.variantLabel??null}))},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      setCart(data);
+    },
     onError: (e: unknown) => {
-      const ax = e as { response?: { data?: { error?: string; message?: string } } };
-      toastError(ax.response?.data?.error || ax.response?.data?.message || tc('error'));
+      const ax = e as { response?: { status?: number; data?: { error?: unknown; message?: unknown; detail?: unknown } }; message?: string };
+      const errVal = ax.response?.data?.error ?? ax.response?.data?.message ?? ax.response?.data?.detail ?? tc('error');
+      const toastMsg = formatApiErrorMessage(errVal, tc('error'));
+      // #region agent log
+      fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e24651'},body:JSON.stringify({sessionId:'e24651',runId:'post-fix',hypothesisId:'H1',location:'CartDrawer.tsx:updateOnError',message:'cart qty update error → toast',data:{status:ax.response?.status??null,errType:typeof errVal,errKeys:errVal&&typeof errVal==='object'?Object.keys(errVal as object).slice(0,8):[],toastMsg:toastMsg.slice(0,160)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      toastError(toastMsg);
     },
   });
 
   const removeMutation = useMutation({
-    mutationFn: (productId: string) => cartApi.remove(productId),
+    mutationFn: async ({ productId, variantId }: { productId: string; variantId?: string | null }) => {
+      if (!isAuthenticated) return removeLocalItem(productId, variantId);
+      return cartApi.remove(productId, variantId);
+    },
     onSuccess: setCart,
-    onError: () => toastError(tc('error')),
+    onError: (e: unknown) => {
+      const ax = e as { response?: { data?: { error?: unknown; message?: unknown; detail?: unknown } } };
+      toastError(formatApiErrorMessage(ax.response?.data?.error ?? ax.response?.data?.message ?? ax.response?.data?.detail ?? tc('error'), tc('error')));
+    },
   });
 
   const changeQuantity = (item: CartItem, nextQty: number) => {
     if (nextQty <= 0) {
-      removeMutation.mutate(item.productId);
+      removeMutation.mutate({ productId: item.productId, variantId: item.variantId });
       return;
     }
     const clamped = Math.min(nextQty, maxQtyFor(item));
     if (clamped === item.quantity) return;
-    updateMutation.mutate({ productId: item.productId, quantity: clamped });
+    updateMutation.mutate({ productId: item.productId, quantity: clamped, variantId: item.variantId });
   };
 
   const couponMutation = useMutation({
@@ -83,28 +144,33 @@ export default function CartDrawer() {
     });
   }, [safeCart, appliedCoupon, appliedObPoints]);
 
-  if (!isOpen) return null;
+  if (!mounted) return null;
 
   return (
     <>
-      {/* Backdrop — blurs the rest of the screen */}
+      {/* Backdrop — color transition only (no opacity:0) */}
       <div
-        className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-[6px] transition-opacity duration-300"
+        className={cn('ob-cart-backdrop fixed inset-0 z-[60]', panelOpen && 'is-open')}
         onClick={() => setOpen(false)}
         aria-hidden
+        data-ob-cart-backdrop="1"
+        data-ob-cart-open={panelOpen ? '1' : '0'}
       />
 
-      {/* Drawer — slides from right, half-screen on desktop, 85% on mobile */}
+      {/*
+        Drawer slides in/out from the right edge (cart button side).
+        Transform-only motion; literal colors so paint never depends on CSS vars.
+      */}
       <div
         className={cn(
-          'fixed inset-y-0 right-0 z-[70] flex flex-col bg-background text-foreground shadow-2xl',
-          'w-[85vw] max-w-[50vw] border-l border-border/60',
-          'animate-slide-in-right',
-          'max-[640px]:max-w-[85vw]',
+          'ob-cart-panel fixed inset-y-0 right-0 z-[70] flex w-[85%] max-w-[400px] flex-col border-l border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50',
+          panelOpen && 'is-open',
         )}
         role="dialog"
         aria-modal
         aria-labelledby="cart-drawer-title"
+        data-ob-cart-drawer="1"
+        data-ob-cart-open={panelOpen ? '1' : '0'}
       >
 
         {/* Header */}
@@ -150,7 +216,7 @@ export default function CartDrawer() {
             <ul className="space-y-3 sm:space-y-4">
               {safeCart.items.map((item) => (
                 <li
-                  key={item.productId || String(item.id)}
+                  key={`${item.productId}:${item.variantId ?? 'base'}`}
                   className="flex gap-3 rounded-xl border border-border/40 bg-card p-3 transition-colors hover:border-border sm:gap-4 sm:p-4"
                 >
                   {/* Image */}
@@ -168,6 +234,9 @@ export default function CartDrawer() {
                   {/* Details */}
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground sm:text-base">{item.title}</p>
+                    {item.variantLabel ? (
+                      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{item.variantLabel}</p>
+                    ) : null}
                     <p className="mt-1 text-sm font-bold text-primary sm:mt-1.5">
                       {tc('taka')}{formatCartMoney(item.unitPrice)}
                     </p>
@@ -205,7 +274,7 @@ export default function CartDrawer() {
                   <div className="flex flex-col items-end justify-between">
                     <button
                       type="button"
-                      onClick={() => removeMutation.mutate(item.productId)}
+                      onClick={() => removeMutation.mutate({ productId: item.productId, variantId: item.variantId })}
                       className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive sm:h-9 sm:w-9"
                       aria-label={t('remove')}
                     >
@@ -223,7 +292,10 @@ export default function CartDrawer() {
 
         {/* Footer */}
         {safeCart && safeCart.items.length > 0 && (
-          <div className="space-y-3 border-t border-border/60 bg-background/95 px-4 py-4 backdrop-blur-sm sm:space-y-4 sm:px-5 sm:py-5" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+          <div
+            className="space-y-3 border-t border-border/60 bg-white px-4 py-4 dark:bg-slate-950 sm:space-y-4 sm:px-5 sm:py-5"
+            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
+          >
             {/* Coupon */}
             <div className="rounded-xl border border-border/40 bg-muted/30 p-3 sm:p-3.5">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -242,8 +314,14 @@ export default function CartDrawer() {
                 />
                 <button
                   type="button"
-                  disabled={!couponInput.trim() || couponMutation.isPending}
-                  onClick={() => couponMutation.mutate(couponInput.trim())}
+                  disabled={!couponInput.trim() || couponMutation.isPending || !isAuthenticated}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      toastError(t('couponLoginRequired'));
+                      return;
+                    }
+                    couponMutation.mutate(couponInput.trim());
+                  }}
                   className="shrink-0 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50 sm:px-5"
                 >
                   {t('applyCoupon')}
@@ -260,56 +338,13 @@ export default function CartDrawer() {
               )}
             </div>
 
-            {/* Totals */}
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('subtotal')}</span>
-                <span className="font-medium text-foreground">{tc('taka')}{formatCartMoney(safeCart.subtotal)}</span>
-              </div>
-              {preview && preview.discount > 0 && (
-                <div className="flex justify-between text-success">
-                  <span>{t('discount')}</span>
-                  <span className="font-medium">-{tc('taka')}{formatCartMoney(preview.discount)}</span>
-                </div>
-              )}
-              {appliedObPoints && (
-                <div className="flex justify-between text-primary">
-                  <span>{t('pointsApplied')}</span>
-                  <span>-{tc('taka')}{formatCartMoney(appliedObPoints.bdtDiscount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('gst')}</span>
-                <span className="font-medium text-foreground">{tc('taka')}{formatCartMoney(preview?.gst ?? safeCart.gst)}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('shipping')}</span>
-                <span className="font-medium text-foreground">
-                  {(preview?.shippingFee ?? safeCart.shippingFee) === 0 ? (
-                    <span className="inline-flex items-center gap-1 text-success">
-                      <span>👑</span>
-                      <span>{t('freeShipping')}</span>
-                    </span>
-                  ) : (
-                    `${tc('taka')}${formatCartMoney(preview?.shippingFee ?? safeCart.shippingFee)}`
-                  )}
-                </span>
-              </div>
-              {(preview?.shippingFee ?? safeCart.shippingFee) === 0 && (
-                <div className="rounded-lg bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 text-[11px] text-amber-700 dark:bg-amber-950/30 dark:border-amber-800/30 dark:text-amber-300">
-                  🎖️ Gold Member benefit — free shipping on all orders over ৳500
-                </div>
-              )}
-            </div>
-
+            {/* Cart shows product value only — shipping/VAT calculated at checkout */}
             <div className="flex items-center justify-between border-t border-border/40 pt-3">
               <span className="text-base font-bold text-foreground">{t('total')}</span>
               <span className="text-xl font-extrabold text-primary">
-                {tc('taka')}{formatCartMoney(preview?.total ?? safeCart.total)}
+                {tc('taka')}{formatCartMoney(safeCart.subtotal)}
               </span>
             </div>
-
-            <p className="text-2xs text-muted-foreground">{t('cartEstimateNote')}</p>
 
             <Link
               href={`/${locale}/checkout`}
@@ -324,7 +359,7 @@ export default function CartDrawer() {
                 <ArrowRight className="h-4 w-4" />
               </span>
               <span className="mx-2 h-4 w-px bg-white/30" />
-              <span>{tc('taka')}{formatCartMoney(preview?.total ?? safeCart.total)}</span>
+              <span>{tc('taka')}{formatCartMoney(safeCart.subtotal)}</span>
             </Link>
           </div>
         )}

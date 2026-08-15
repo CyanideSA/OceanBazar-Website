@@ -29,7 +29,7 @@ public class CartController {
             @Valid @RequestBody AddToCartRequest request
     ) {
         String userId = authTokenService.getUserIdFromAuthorization(authorization);
-        return cartService.addToCart(userId, request.getProductId(), request.getQuantity());
+        return cartService.addToCart(userId, request.getProductId(), request.getQuantity(), request.getVariantId());
     }
 
     @PutMapping("/update")
@@ -38,16 +38,17 @@ public class CartController {
             @Valid @RequestBody UpdateCartRequest request
     ) {
         String userId = authTokenService.getUserIdFromAuthorization(authorization);
-        return cartService.updateCart(userId, request.getProductId(), request.getQuantity());
+        return cartService.updateCart(userId, request.getProductId(), request.getQuantity(), request.getVariantId());
     }
 
     @DeleteMapping("/remove/{productId}")
     public CartDtos.CartResponseDto removeFromCart(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @PathVariable String productId
+            @PathVariable String productId,
+            @RequestParam(value = "variantId", required = false) String variantId
     ) {
         String userId = authTokenService.getUserIdFromAuthorization(authorization);
-        return cartService.removeFromCart(userId, productId);
+        return cartService.removeFromCart(userId, productId, variantId);
     }
 
     @PostMapping("/reorder-from-order/{orderId}")
@@ -65,6 +66,7 @@ public class CartController {
         private String productId;
         @Min(1)
         private Integer quantity = 1;
+        private String variantId;
     }
 
     @Data
@@ -73,5 +75,6 @@ public class CartController {
         private String productId;
         @Min(0)
         private Integer quantity;
+        private String variantId;
     }
 }

@@ -61,7 +61,7 @@ function NavigationLoadingProviderInner({ children }: { children: ReactNode }) {
       programmaticRef.current = null;
       setLoading(false);
       timeoutRef.current = null;
-    }, 12000);
+    }, 4000);
   }, [clearLoadingTimeout]);
 
   useEffect(() => {

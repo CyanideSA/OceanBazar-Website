@@ -1,0 +1,41 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<section class="section">
+  <div class="section-head">
+    <h1><%= title %></h1>
+  </div>
+
+  <% if (typeof categories !== 'undefined' && categories && categories.length) { %>
+  <div class="chips" style="margin-bottom:14px">
+    <% categories.slice(0, 12).forEach(function(cat) { %>
+      <%- include('partials/category-chip', { cat: cat, categoryId: typeof categoryId !== 'undefined' ? categoryId : '' }) %>
+    <% }) %>
+  </div>
+  <% } %>
+
+  <form class="filters" method="get" action="">
+    <label>
+      <%= t('sort') %>
+      <select name="sort" onchange="this.form.submit()">
+        <option value="newest" <%= sort === 'newest' ? 'selected' : '' %>><%= t('sortNewest') %></option>
+        <option value="price_asc" <%= sort === 'price_asc' ? 'selected' : '' %>><%= t('sortPriceAsc') %></option>
+        <option value="price_desc" <%= sort === 'price_desc' ? 'selected' : '' %>><%= t('sortPriceDesc') %></option>
+      </select>
+    </label>
+    <% if (categoryId) { %><input type="hidden" name="category" value="<%= categoryId %>" /><% } %>
+  </form>
+
+  <% if (!products.length) { %>
+  <p class="empty"><%= t('noProducts') %></p>
+  <% } else { %>
+  <div class="grid">
+    <% products.forEach(function(product) { %>
+      <%- include('partials/product-card', { product: product }) %>
+    <% }) %>
+  </div>
+  <%- include('partials/pagination') %>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

@@ -1,0 +1,135 @@
+</main>
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <%
+        var footerCms = !!(settings && (settings.logoDarkUrl || settings.logoLightUrl));
+        var footerLogo = footerCms
+          ? (settings.logoDarkUrl || settings.logoLightUrl)
+          : (basePath + '/ob-footer-logo.png?v=8');
+      %>
+      <% if (!footerCms) { %>
+      <picture>
+        <source srcset="<%= basePath %>/ob-footer-logo.webp?v=8" type="image/webp" />
+        <img src="<%= footerLogo %>" alt="OceanBazar" width="200" height="56" data-ob-logo-cms="0" />
+      </picture>
+      <% } else { %>
+      <img src="<%= footerLogo %>" alt="OceanBazar" width="200" height="56" data-ob-logo-cms="1" />
+      <% } %>
+      <p><%= t('tagline') %></p>
+      <p style="margin-top:10px"><%= t('footerNote') %></p>
+      <% if (settings && (settings.supportPhone || settings.supportEmail)) { %>
+      <p style="margin-top:10px">
+        <% if (settings.supportPhone) { %><a href="tel:<%= settings.supportPhone %>"><%= settings.supportPhone %></a><% } %>
+        <% if (settings.supportEmail) { %><br /><a href="mailto:<%= settings.supportEmail %>"><%= settings.supportEmail %></a><% } %>
+      </p>
+      <% } %>
+      <%
+        var social = [];
+        if (settings) {
+          if (settings.facebookUrl) social.push({ href: settings.facebookUrl, label: 'Facebook', icon: 'facebook' });
+          if (settings.instagramUrl) social.push({ href: settings.instagramUrl, label: 'Instagram', icon: 'instagram' });
+          if (settings.youtubeUrl) social.push({ href: settings.youtubeUrl, label: 'YouTube', icon: 'youtube' });
+          if (settings.threadsUrl) social.push({ href: settings.threadsUrl, label: 'Threads', icon: 'threads' });
+          if (settings.twitterUrl) social.push({ href: settings.twitterUrl, label: 'Twitter', icon: 'twitter' });
+        }
+      %>
+      <% if (social.length) { %>
+      <div class="footer-social" aria-label="<%= t('followUs') %>">
+        <% social.forEach(function(s) { %>
+        <a class="social-btn" href="<%= s.href %>" target="_blank" rel="noopener noreferrer" aria-label="<%= s.label %>" title="<%= s.label %>">
+          <% if (s.icon === 'facebook') { %>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M13.5 21v-7h2.4l.4-2.9h-2.8V9.2c0-.8.2-1.4 1.4-1.4H16V5.2c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8v2.2H7.6V14h2.5v7h3.4z"/></svg>
+          <% } else if (s.icon === 'instagram') { %>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.8.3 2.2.4.6.2 1 .5 1.4.9.4.4.7.8.9 1.4.2.5.4 1.1.4 2.2.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.3 1.8-.4 2.2-.2.6-.5 1-.9 1.4-.4.4-.8.7-1.4.9-.5.2-1.1.4-2.2.4-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.8-.3-2.2-.4-.6-.2-1-.5-1.4-.9-.4-.4-.7-.8-.9-1.4-.2-.5-.4-1.1-.4-2.2C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.3-1.8.4-2.2.2-.6.5-1 .9-1.4.4-.4.8-.7 1.4-.9.5-.2 1.1-.4 2.2-.4C8.4 2.2 8.8 2.2 12 2.2zm0 3.2A6.6 6.6 0 1 0 18.6 12 6.6 6.6 0 0 0 12 5.4zm0 10.9A4.3 4.3 0 1 1 16.3 12 4.3 4.3 0 0 1 12 16.3zm6.9-11.2a1.5 1.5 0 1 1-1.5-1.5 1.5 1.5 0 0 1 1.5 1.5z"/></svg>
+          <% } else if (s.icon === 'youtube') { %>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M23 8.2s-.2-1.6-.9-2.3c-.9-.9-1.8-.9-2.3-1C16.6 4.7 12 4.7 12 4.7h-.1s-4.6 0-7.8.2c-.4.1-1.4.1-2.3 1C1.2 6.6 1 8.2 1 8.2S.8 10 .8 11.9v1.7C.8 15.5 1 17.3 1 17.3s.2 1.6.9 2.3c.9.9 2 .9 2.5 1 1.8.2 7.6.2 7.6.2s4.6 0 7.8-.2c.5-.1 1.4-.1 2.3-1 .7-.7.9-2.3.9-2.3s.2-1.8.2-3.7v-1.7c0-1.9-.2-3.7-.2-3.7zM9.7 15.3V9.1l6 3.1-6 3.1z"/></svg>
+          <% } else if (s.icon === 'threads') { %>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M17.3 11.2c-.1 0-.2-.1-.2-.1-.2-2.7-1.6-4.2-4.1-4.2-1.5 0-2.7.6-3.5 1.8l1.4.9c.6-.9 1.4-1 2.1-1 .8 0 1.5.3 1.8.8.3.3.4.8.5 1.4-.7-.1-1.4-.2-2.2-.1-2.2.1-3.7 1.4-3.6 3.2.1 1.7 1.6 2.6 3.2 2.5 1.2-.1 2.1-.6 2.7-1.5.4-.6.7-1.4.8-2.3.6.4 1 .9 1.3 1.5.4 1 .5 2.7-.9 4-1.2 1.2-2.7 1.7-4.7 1.7-2.3 0-4-.7-5.1-2.1C5.9 16.4 5.4 14.6 5.4 12s.5-4.4 1.6-5.8C8.1 4.8 9.8 4.1 12 4.1c2.3 0 4 .7 5.2 2.2.6.7 1 1.7 1.3 2.8l1.7-.4c-.3-1.4-.9-2.6-1.7-3.6C18.2 3.3 15.9 2.4 13 2.4h-.1C9.9 2.4 7.6 3.4 6 5.2 4.6 6.9 3.9 9.1 3.9 12s.7 5.1 2.1 6.8c1.6 1.8 3.9 2.8 6.9 2.8h.1c2.6 0 4.5-.7 6-2.2 2-2 1.9-4.5 1.3-6-.5-1.1-1.4-2-2.9-2.6zm-4.3 4.1c-.9.1-1.8-.3-1.8-1.1 0-.6.4-1.3 1.9-1.4h.5c.5 0 1 0 1.4.1-.2 1.6-.9 2.3-2 2.4z"/></svg>
+          <% } else { %>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M18.2 2H21l-6.6 7.5L22 22h-6.1l-4.8-6.3L5.6 22H2.8l7-8L2 2h6.3l4.3 5.7L18.2 2zm-1 18h1.7L7.9 3.8H6.1L17.2 20z"/></svg>
+          <% } %>
+        </a>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+    <div class="footer-col">
+      <h4><%= t('shopSection') %></h4>
+      <a href="<%= basePath %>/<%= locale %>/products"><%= t('allProducts') %></a>
+      <a href="<%= basePath %>/<%= locale %>/products/featured"><%= t('featuredProducts') %></a>
+      <a href="<%= basePath %>/<%= locale %>/products/top-trending"><%= t('topTrendingProducts') %></a>
+      <a href="<%= basePath %>/<%= locale %>/products/most-sold"><%= t('mostSold') %></a>
+      <a href="<%= basePath %>/<%= locale %>/products/best-rated"><%= t('bestRated') %></a>
+    </div>
+    <div class="footer-col">
+      <h4><%= t('account') %></h4>
+      <a href="<%= basePath %>/<%= locale %>/account"><%= t('myAccount') %></a>
+      <a href="<%= basePath %>/<%= locale %>/account/orders"><%= t('myOrders') %></a>
+      <a href="<%= basePath %>/<%= locale %>/track"><%= t('trackOrderLabel') %></a>
+      <a href="<%= basePath %>/<%= locale %>/account/points"><%= t('obPoints') %></a>
+      <a href="<%= basePath %>/<%= locale %>/support"><%= t('supportCenter') %></a>
+      <a href="<%= basePath %>/<%= locale %>/chat"><%= t('liveChat') %></a>
+      <a href="<%= basePath %>/<%= locale %>/returns"><%= t('returnsRefunds') %></a>
+      <a href="<%= basePath %>/<%= locale %>/tickets"><%= t('supportTickets') %></a>
+    </div>
+    <div class="footer-col">
+      <h4><%= t('legalSection') %></h4>
+      <a href="<%= basePath %>/<%= locale %>/marketing"><%= t('whyOceanBazar') %></a>
+      <a href="<%= basePath %>/<%= locale %>/contact"><%= t('contactUs') %></a>
+      <a href="<%= basePath %>/<%= locale %>/business-inquiries"><%= t('businessInquiries') %></a>
+      <a href="<%= basePath %>/<%= locale %>/wholesale"><%= t('wholesaleHub') %></a>
+      <a href="<%= basePath %>/<%= locale %>/policies/privacy"><%= t('privacyPolicy') %></a>
+      <a href="<%= basePath %>/<%= locale %>/policies/returns"><%= t('returnPolicy') %></a>
+      <a href="<%= basePath %>/<%= locale %>/policies/refunds"><%= t('refundPolicy') || 'Refund Policy' %></a>
+      <a href="<%= basePath %>/<%= locale %>/policies/terms"><%= t('termsConditions') %></a>
+      <a href="<%= basePath %>/<%= locale %>/policies/shipping"><%= t('shippingPolicy') || 'Shipping Policy' %></a>
+      <a href="<%= basePath %>/prefer?view=full&amp;next=<%= encodeURIComponent('/' + locale) %>"><%= t('fullSite') %></a>
+    </div>
+  </div>
+
+  <div class="footer-payments" data-ob-pay-with="1">
+    <p class="footer-payments-label"><%= t('payWith') || 'We accept' %></p>
+    <img src="<%= basePath %>/sslcommerz-pay-with.png?v=5" alt="Pay with SSLCommerz — cards, bKash, Nagad, Upay, bank payments and more" class="footer-payments-img" loading="lazy" />
+  </div>
+
+  <% if (settings && (settings.registeredAddress || settings.tradeLicenseNo || settings.tinNumber)) { %>
+  <div class="footer-legal" style="padding:8px 16px 0;font-size:12px;color:#94a3b8;text-align:center;">
+    <% if (settings.legalName) { %><strong style="color:#cbd5e1;"><%= settings.legalName %></strong><br /><% } %>
+    <% if (settings.registeredAddress) { %><%= settings.registeredAddress %><br /><% } %>
+    <% if (settings.tradeLicenseNo) { %>Trade License: <%= settings.tradeLicenseNo %><% } %>
+    <% if (settings.tradeLicenseNo && settings.tinNumber) { %> · <% } %>
+    <% if (settings.tinNumber) { %>TIN: <%= settings.tinNumber %><% } %>
+  </div>
+  <% } %>
+
+  <div class="footer-newsletter">
+    <div class="footer-newsletter-copy">
+      <p class="footer-newsletter-title"><%= t('newsletterTitle') %></p>
+      <p class="footer-newsletter-sub"><%= t('newsletterSub') %></p>
+    </div>
+    <form class="footer-newsletter-form" method="post" action="<%= basePath %>/<%= locale %>/newsletter/subscribe">
+      <input type="hidden" name="returnTo" value="<%= basePath %><%= (typeof path !== 'undefined' && path) ? path : ('/' + locale) %>" />
+      <div class="footer-newsletter-field">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+        <input type="email" name="email" required placeholder="<%= t('newsletterPlaceholder') %>" autocomplete="email" />
+      </div>
+      <button type="submit" class="footer-newsletter-btn"><%= t('newsletterSubscribe') %></button>
+    </form>
+    <% if (typeof query !== 'undefined' && query && query.newsletter === 'ok') { %>
+    <p class="footer-newsletter-msg ok"><%= t('newsletterSuccess') %></p>
+    <% } else if (typeof query !== 'undefined' && query && query.newsletter === 'error') { %>
+    <p class="footer-newsletter-msg err"><%= t('newsletterError') %></p>
+    <% } %>
+  </div>
+
+  <div class="footer-bottom">
+    <span>&copy; <%= year %> OceanBazar · <%= t('madeInBd') %></span>
+    <a href="<%= basePath %>/prefer?view=full&amp;next=<%= encodeURIComponent('/' + locale) %>"><%= t('fullSite') %></a>
+  </div>
+</footer>
+<%- include('bottom-nav') %>
+<%- include('popups') %>
+<script src="<%= basePath %>/app.js?v=14" defer></script>
+</body>
+</html>

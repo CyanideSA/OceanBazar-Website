@@ -196,4 +196,33 @@ router.put('/greeting', requireAdmin, async (req: Request, res: Response) => {
   res.json({ greeting: admin.chatGreeting });
 });
 
+function normalizeQuickReplies(raw: unknown): { id: string; label: string; text: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item: any, i: number) => ({
+      id: String(item?.id || `qr-${i}-${Date.now()}`),
+      label: String(item?.label || '').trim().slice(0, 80),
+      text: String(item?.text || '').trim().slice(0, 2000),
+    }))
+    .filter((r) => r.label && r.text)
+    .slice(0, 200);
+}
+
+// GET /api/admin/chat/quick-replies
+router.get('/quick-replies', requireAdmin, async (req: Request, res: Response) => {
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.admin!.adminId } });
+  const replies = normalizeQuickReplies((admin as any)?.chatQuickReplies);
+  res.json({ replies });
+});
+
+// PUT /api/admin/chat/quick-replies — replace full list (unlimited within 200 cap)
+router.put('/quick-replies', requireAdmin, async (req: Request, res: Response) => {
+  const replies = normalizeQuickReplies(req.body?.replies);
+  const admin = await prisma.adminUser.update({
+    where: { id: req.admin!.adminId },
+    data: { chatQuickReplies: replies } as any,
+  });
+  res.json({ replies: normalizeQuickReplies((admin as any).chatQuickReplies) });
+});
+
 export default router;

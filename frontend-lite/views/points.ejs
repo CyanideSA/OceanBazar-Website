@@ -1,0 +1,70 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<%
+  var bal = balance || {};
+  var pts = bal.balance != null ? bal.balance : 0;
+  var tier = bal.tier || 'Bronze';
+%>
+
+<section class="section svc-page">
+  <div class="svc-hero svc-hero-points">
+    <p class="info-eyebrow">OceanBazar</p>
+    <h1><%= t('obPoints') %></h1>
+    <p class="info-intro"><%= t('pointsIntro') %></p>
+  </div>
+
+  <div class="points-balance svc-card">
+    <div class="points-stat">
+      <span class="points-value"><%= pts %></span>
+      <span class="muted"><%= t('pointsBalance') %></span>
+    </div>
+    <div class="points-tier">
+      <span class="pill pill-accent"><%= tier %></span>
+      <% if (bal.nextTier) { %>
+      <p class="muted"><%= t('pointsNextTier') %>: <%= bal.nextTier %>
+        <% if (bal.spendToNextTier != null) { %> (<%= bal.spendToNextTier %> <%= t('pointsSpendMore') %>)<% } %>
+      </p>
+      <% } %>
+      <% if (bal.lifetimeSpend != null) { %>
+      <p class="muted"><%= t('pointsLifetime') %>: <%= bal.lifetimeSpend %></p>
+      <% } %>
+    </div>
+  </div>
+
+  <% if (bal.perks && bal.perks.length) { %>
+  <div class="svc-card">
+    <h2><%= t('pointsPerks') %></h2>
+    <ul class="info-steps">
+      <% bal.perks.forEach(function (p) { %><li><%= p %></li><% }) %>
+    </ul>
+  </div>
+  <% } %>
+
+  <div class="svc-card">
+    <h2><%= t('pointsHowEarn') %></h2>
+    <p class="muted"><%= t('pointsHowEarnBody') %></p>
+    <p class="muted"><%= t('pointsRedeemHint') %></p>
+    <p style="margin-top:10px;">
+      <a class="btn btn-primary btn-sm" href="<%= basePath %>/<%= locale %>/checkout"><%= t('checkout') %></a>
+    </p>
+  </div>
+
+  <div class="svc-card">
+    <h2><%= t('pointsLedger') %></h2>
+    <% if (!ledger || !ledger.length) { %>
+    <p class="muted"><%= t('pointsLedgerEmpty') %></p>
+    <% } else { %>
+    <ul class="svc-list">
+      <% ledger.forEach(function (e) { %>
+      <li>
+        <strong class="<%= e.type === 'earn' ? 'text-success' : '' %>"><%= e.type %>: <%= e.points %></strong>
+        <span class="muted"><%= e.note || e.orderId || '' %></span>
+        <span class="muted"><%= e.createdAt || e.created_at || '' %></span>
+      </li>
+      <% }) %>
+    </ul>
+    <% } %>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

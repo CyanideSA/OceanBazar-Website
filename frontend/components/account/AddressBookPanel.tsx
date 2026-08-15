@@ -7,16 +7,10 @@ import { MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
 import { profileApi } from '@/lib/api';
 import type { SavedAddress } from '@/types';
 import { cn } from '@/lib/utils';
-
-const emptyForm = {
-  label: '',
-  line1: '',
-  line2: '',
-  city: '',
-  district: '',
-  postalCode: '',
-  isDefault: false,
-};
+import PathaoAddressFields, {
+  emptyPathaoAddressForm,
+  type PathaoAddressForm,
+} from '@/components/address/PathaoAddressFields';
 
 export default function AddressBookPanel() {
   const t = useTranslations('checkout');
@@ -25,7 +19,7 @@ export default function AddressBookPanel() {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
   const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<PathaoAddressForm>(emptyPathaoAddressForm());
 
   const { data, isLoading } = useQuery({
     queryKey: ['addresses'],
@@ -40,7 +34,7 @@ export default function AddressBookPanel() {
     onSuccess: () => {
       invalidate();
       setMode('list');
-      setForm(emptyForm);
+      setForm(emptyPathaoAddressForm());
     },
   });
 
@@ -50,7 +44,7 @@ export default function AddressBookPanel() {
       invalidate();
       setMode('list');
       setEditId(null);
-      setForm(emptyForm);
+      setForm(emptyPathaoAddressForm());
     },
   });
 
@@ -60,7 +54,7 @@ export default function AddressBookPanel() {
   });
 
   function startAdd() {
-    setForm(emptyForm);
+    setForm(emptyPathaoAddressForm());
     setEditId(null);
     setMode('add');
   }
@@ -75,9 +69,19 @@ export default function AddressBookPanel() {
       district: addr.district,
       postalCode: addr.postalCode ?? '',
       isDefault: addr.isDefault,
+      pathaoCityId: addr.pathaoCityId ?? null,
+      pathaoZoneId: addr.pathaoZoneId ?? null,
+      pathaoAreaId: addr.pathaoAreaId ?? null,
+      pathaoCityName: addr.pathaoCityName ?? addr.city,
+      pathaoZoneName: addr.pathaoZoneName ?? addr.district,
+      pathaoAreaName: addr.pathaoAreaName ?? '',
     });
     setMode('edit');
   }
+
+  const canSave = Boolean(
+    form.label && form.line1 && form.pathaoCityId && form.pathaoZoneId && form.city && form.district,
+  );
 
   if (mode === 'add' || mode === 'edit') {
     return (
@@ -85,6 +89,9 @@ export default function AddressBookPanel() {
         <h3 className="mb-4 text-lg font-semibold text-foreground">
           {mode === 'add' ? t('addAddress') : t('editAddress')}
         </h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          City and zone must match Pathao courier so delivery charges are accurate.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="sm:col-span-2">
             <span className="text-xs font-medium text-muted-foreground">{t('addrLabel')}</span>
@@ -110,22 +117,7 @@ export default function AddressBookPanel() {
               onChange={(e) => setForm((f) => ({ ...f, line2: e.target.value }))}
             />
           </label>
-          <label>
-            <span className="text-xs font-medium text-muted-foreground">{t('addrCity')}</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              value={form.city}
-              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-            />
-          </label>
-          <label>
-            <span className="text-xs font-medium text-muted-foreground">{t('addrDistrict')}</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              value={form.district}
-              onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
-            />
-          </label>
+          <PathaoAddressFields form={form} onChange={setForm} />
           <label>
             <span className="text-xs font-medium text-muted-foreground">{t('addrPostal')}</span>
             <input
@@ -156,14 +148,7 @@ export default function AddressBookPanel() {
           </button>
           <button
             type="button"
-            disabled={
-              !form.label ||
-              !form.line1 ||
-              !form.city ||
-              !form.district ||
-              createMut.isPending ||
-              updateMut.isPending
-            }
+            disabled={!canSave || createMut.isPending || updateMut.isPending}
             onClick={() => (mode === 'add' ? createMut.mutate() : updateMut.mutate())}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
@@ -204,7 +189,8 @@ export default function AddressBookPanel() {
               <div
                 className={cn(
                   'flex gap-3 rounded-xl border-2 p-4 transition-colors',
-                  addr.isDefault ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'
+                  addr.isDefault ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30',
+                  !addr.pathaoCityId || !addr.pathaoZoneId ? 'border-amber-400/60' : '',
                 )}
               >
                 <div className="min-w-0 flex-1">
@@ -217,8 +203,12 @@ export default function AddressBookPanel() {
                   <p className="text-sm text-muted-foreground">
                     {addr.line1}
                     {addr.line2 ? `, ${addr.line2}` : ''}, {addr.city}, {addr.district}
+                    {addr.pathaoAreaName ? `, ${addr.pathaoAreaName}` : ''}
                     {addr.postalCode ? ` — ${addr.postalCode}` : ''}
                   </p>
+                  {!addr.pathaoCityId || !addr.pathaoZoneId ? (
+                    <p className="mt-1 text-xs text-amber-600">Update this address to sync with Pathao courier.</p>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 gap-1">
                   <button

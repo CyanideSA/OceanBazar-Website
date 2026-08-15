@@ -12,6 +12,7 @@ import { sendSms } from './smsService';
 export type NotifyEvent =
   | 'payment_verification'
   | 'payment_received'
+  | 'payment_retry_requested'
   | 'order_processing'
   | 'delivery_update'
   | 'return_initiated'
@@ -33,6 +34,12 @@ const DEFAULT_COPY: Record<NotifyEvent, { title: string; sms: (vars: Record<stri
     sms: (v) => `OceanBazar: Payment confirmed for order #${v.orderNumber}. Your order is now processing.`,
     emailSubject: (v) => `Payment confirmed — #${v.orderNumber}`,
     emailBody: (v) => `<h2>Payment confirmed</h2><p>Payment for order <strong>#${v.orderNumber}</strong> has been received. Your order is now being processed.</p>`,
+  },
+  payment_retry_requested: {
+    title: 'Please pay again',
+    sms: (v) => `OceanBazar: Please complete ${v.purpose || 'payment'} again for order #${v.orderNumber} from your Orders page.`,
+    emailSubject: (v) => `Please pay again — #${v.orderNumber}`,
+    emailBody: (v) => `<h2>Please complete payment again</h2><p>We need you to pay again for order <strong>#${v.orderNumber}</strong> (${v.purpose || 'order payment'}). Open your Orders page and tap <strong>Pay now</strong>.</p>`,
   },
   order_processing: {
     title: 'Order processing',

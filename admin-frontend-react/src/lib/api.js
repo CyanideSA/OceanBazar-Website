@@ -214,7 +214,7 @@ export const adminApi = {
   me: () => api.get("/api/admin/auth/me").then((r) => r.data),
   realtimeToken: () => api.get("/api/admin/auth/realtime-token").then((r) => r.data),
   twoFaStatus: () => api.get("/api/admin/auth/2fa/status").then((r) => r.data),
-  twoFaSetup: () => api.post("/api/admin/auth/2fa/setup").then((r) => r.data),
+  twoFaSetup: (payload) => api.post("/api/admin/auth/2fa/setup", payload || {}).then((r) => r.data),
   twoFaEnable: (payload) => api.post("/api/admin/auth/2fa/enable", payload).then((r) => r.data),
   twoFaDisable: (payload) => api.post("/api/admin/auth/2fa/disable", payload).then((r) => r.data),
   ssoStatus: () => api.get("/api/admin/auth/sso/status").then((r) => r.data),
@@ -241,8 +241,9 @@ export const adminApi = {
     formData.append("file", file);
     if (folder) formData.append("folder", folder);
     return api
-      .post("/api/admin/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" }
+      .post("/api/admin/media/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000,
       })
       .then((r) => r.data);
   },
@@ -330,6 +331,15 @@ export const adminApi = {
   setProductTags: (productId, tagIds) =>
     api.put(`/api/admin/products/${productId}/tags`, { tagIds }).then((r) => r.data),
 
+  trustBadges: () => api.get("/api/admin/trust-badges").then((r) => r.data),
+  createTrustBadge: (payload) => api.post("/api/admin/trust-badges", payload).then((r) => r.data),
+  updateTrustBadge: (id, payload) => api.put(`/api/admin/trust-badges/${id}`, payload).then((r) => r.data),
+  deleteTrustBadge: (id) => api.delete(`/api/admin/trust-badges/${id}`).then((r) => r.data),
+  productTrustBadges: (productId) =>
+    api.get(`/api/admin/products/${productId}/trust-badges`).then((r) => r.data),
+  setProductTrustBadges: (productId, badgeIds) =>
+    api.put(`/api/admin/products/${productId}/trust-badges`, { badgeIds }).then((r) => r.data),
+
   catalogSearch: (q) => api.get("/api/admin/search", { params: { q } }).then((r) => r.data),
 
   brands: () => api.get("/api/admin/brands").then((r) => r.data),
@@ -396,6 +406,8 @@ export const adminApi = {
   updateMember: (id, payload) => api.put(`/api/admin/team/members/${id}`, payload).then((r) => r.data),
   resetMemberPassword: (id, payload, reauthToken) =>
     api.put(`/api/admin/team/members/${id}/password`, payload, withReauthHeader(reauthToken)).then((r) => r.data),
+  requestMember2faReset: (id, reauthToken) =>
+    api.post(`/api/admin/team/members/${id}/request-2fa-reset`, {}, withReauthHeader(reauthToken)).then((r) => r.data),
   deleteMember: (id, reauthToken) =>
     api.delete(`/api/admin/team/members/${id}`, withReauthHeader(reauthToken)).then((r) => r.data),
 
@@ -429,6 +441,8 @@ export const adminApi = {
   chatMarkRead: (id) => api.post(`/api/admin/chat/sessions/${id}/read`).then((r) => r.data),
   chatGetGreeting: () => api.get("/api/admin/chat/greeting").then((r) => r.data),
   chatSetGreeting: (greeting) => api.put("/api/admin/chat/greeting", { greeting }).then((r) => r.data),
+  chatGetQuickReplies: () => api.get("/api/admin/chat/quick-replies").then((r) => r.data),
+  chatSetQuickReplies: (replies) => api.put("/api/admin/chat/quick-replies", { replies }).then((r) => r.data),
 
   wholesaleApplications: () => api.get("/api/admin/applications/wholesale").then((r) => r.data),
   businessInquiries: () => api.get("/api/admin/applications/business-inquiries").then((r) => r.data),
@@ -439,9 +453,11 @@ export const adminApi = {
 
   globalSettings: () => api.get("/api/admin/global-settings").then((r) => r.data),
   updateGlobalSettings: (payload) => api.put("/api/admin/global-settings", payload).then((r) => r.data),
+  testSslcommerz: () => api.post("/api/admin/global-settings/sslcommerz/test").then((r) => r.data),
 
   // ─── Microsoft 365 email ───────────────────────────────────────────────
   emailStatus: () => api.get("/api/admin/email/status").then((r) => r.data),
+  emailSyncThemePhotos: () => api.post("/api/admin/email/sync-theme-photos").then((r) => r.data),
   emailLogs: (params) => api.get("/api/admin/email/logs", { params: params || {} }).then((r) => r.data),
   emailInbox: (params) => api.get("/api/admin/email/inbox", { params: params || {} }).then((r) => r.data),
   emailMessage: (id, params) => api.get(`/api/admin/email/message/${id}`, { params: params || {} }).then((r) => r.data),
@@ -583,6 +599,8 @@ export const adminApi = {
 
   // Payments extras
   markPaymentPaid: (id) => api.post(`/api/admin/payments/${id}/mark-paid`).then((r) => r.data),
+  requestPaymentAgain: (id, payload) =>
+    api.post(`/api/admin/payments/${id}/request-repay`, payload || {}).then((r) => r.data),
   refundPayment: (id, payload, reauthToken) =>
     api.post(`/api/admin/payments/${id}/refund`, payload, {
       ...withReauthHeader(reauthToken),
@@ -595,6 +613,7 @@ export const adminApi = {
   escalateDispute: (id) => api.post(`/api/admin/disputes/${id}/escalate`).then((r) => r.data),
 
   // Engagement / subscriptions / Q&A moderation
+  qaList: (status) => api.get("/api/admin/qa", { params: { status } }).then((r) => r.data),
   qaPending: () => api.get("/api/admin/qa/pending").then((r) => r.data),
   moderateQa: (id, payload) => api.patch(`/api/admin/qa/${id}`, payload).then((r) => r.data),
   newsletterSubscribers: () => api.get("/api/admin/newsletter/subscribers").then((r) => r.data),
@@ -625,8 +644,10 @@ export const adminApi = {
   mediaRename: (fromPublicId, toPublicId) => api.post("/api/admin/media/rename", { fromPublicId, toPublicId }).then((r) => r.data),
 
   productVariants: (productId) => api.get(`/api/admin/products/${productId}/variants`).then((r) => r.data),
-  createProductVariant: (productId, payload) => api.post(`/api/admin/products/${productId}/variants`, payload).then((r) => r.data),
-  updateProductVariant: (productId, variantId, payload) => api.put(`/api/admin/products/${productId}/variants/${variantId}`, payload).then((r) => r.data),
+  createProductVariant: (productId, payload) =>
+    api.post(`/api/admin/products/${productId}/variants`, payload).then((r) => r.data?.variant ?? r.data),
+  updateProductVariant: (productId, variantId, payload) =>
+    api.put(`/api/admin/products/${productId}/variants/${variantId}`, payload).then((r) => r.data?.variant ?? r.data),
   deleteProductVariant: (productId, variantId) => api.delete(`/api/admin/products/${productId}/variants/${variantId}`).then((r) => r.data),
 
   productCategoryMap: (productId) => api.get(`/api/admin/products/${productId}/categories`).then((r) => r.data),

@@ -9,7 +9,7 @@ import { categoriesApi } from '@/lib/api';
 import type { Category } from '@/types';
 import { cn } from '@/lib/utils';
 
-export default function CategoryGrid() {
+export default function CategoryGrid({ initialCategories }: { initialCategories?: Category[] }) {
   const t = useTranslations('home');
   const locale = useLocale();
   const [mobileExpanded, setMobileExpanded] = useState(false);
@@ -18,14 +18,19 @@ export default function CategoryGrid() {
     queryKey: ['categories'],
     queryFn: () => categoriesApi.list().then((r) => r.data),
     staleTime: 5 * 60 * 1000,
+    initialData: initialCategories?.length
+      ? { categories: initialCategories }
+      : undefined,
   });
 
-  const categories: Category[] = Array.isArray(data) ? data : (data?.categories ?? []);
+  const categories: Category[] = Array.isArray(data)
+    ? data
+    : (data?.categories ?? initialCategories ?? []);
   /* On mobile show first 8 collapsed, all when expanded */
   const mobileVisible = mobileExpanded ? categories : categories.slice(0, 8);
 
   return (
-    <section className="section-padding content-visibility-auto">
+    <section className="section-padding">
       <div className="container-tight">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between gap-2 sm:mb-6">

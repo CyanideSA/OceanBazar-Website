@@ -1,0 +1,93 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var isGuestCart = typeof isGuest !== 'undefined' && isGuest;
+  var checkoutHref = isGuestCart
+    ? (basePath + '/' + locale + '/auth/login?next=' + encodeURIComponent(basePath + '/' + locale + '/checkout'))
+    : (basePath + '/' + locale + '/checkout');
+%>
+
+<section class="section">
+  <h1><%= t('cart') %></h1>
+
+  <% if (!cart.items || !cart.items.length) { %>
+  <p class="empty"><%= t('emptyCart') %></p>
+  <p><a class="btn" href="<%= basePath %>/<%= locale %>/products"><%= t('continueShopping') %></a></p>
+  <% } else { %>
+
+  <% if (isGuestCart) { %>
+  <p class="banner ok" role="status"><%= t('guestCartHint') || 'You can keep shopping as a guest. Sign in when you are ready to checkout.' %></p>
+  <% } %>
+
+  <ul class="cart-list">
+    <% cart.items.forEach(function(item) { %>
+    <%
+      var pid = item.productId || (item.product && item.product.id) || item.id;
+      var pname = helpers.pickName(item.product || item, locale) || item.name || pid;
+      var pimg = helpers.productImage(item.product || item) || item.image || '';
+      var unit = Number(item.unitPrice || item.price || (item.product && item.product.price) || 0);
+      var qty = Number(item.quantity || 1);
+      var vid = item.variantId || '';
+      var userType = helpers.resolveUserType(typeof user !== 'undefined' ? user : null);
+      var cartMax = item.product
+        ? helpers.resolveProductMaxQty(item.product, { userType: userType })
+        : (item.retailMaxQty != null && Number(item.retailMaxQty) > 0
+            ? Number(item.retailMaxQty)
+            : helpers.RETAIL_MAX_UNITS);
+    %>
+    <li class="cart-item">
+      <% if (pimg) { %><img src="<%= pimg %>" alt="" width="72" height="72" /><% } %>
+      <div class="cart-meta">
+        <a href="<%= basePath %>/<%= locale %>/product/<%= encodeURIComponent(pid) %>"><%= pname %></a>
+        <% if (item.variantLabel) { %>
+        <div class="muted" style="font-size:12px;margin-top:2px;"><%= item.variantLabel %></div>
+        <% } else if (vid) { %>
+        <div class="muted" style="font-size:12px;margin-top:2px;">Option: <%= vid %></div>
+        <% } %>
+        <div class="price"><%= helpers.money(unit) %></div>
+        <form method="post" action="<%= basePath %>/<%= locale %>/cart/update" class="qty-form" data-qty>
+          <input type="hidden" name="productId" value="<%= pid %>" />
+          <% if (vid) { %><input type="hidden" name="variantId" value="<%= vid %>" /><% } %>
+          <button type="button" class="qty-btn" data-qty-dec>−</button>
+          <input type="number" name="quantity" value="<%= qty %>" min="1" max="<%= cartMax %>" />
+          <button type="button" class="qty-btn" data-qty-inc>+</button>
+          <button type="submit" class="btn btn-sm"><%= t('update') %></button>
+        </form>
+        <% if (qty >= cartMax) { %><span class="warn-text"><%= t('maxQtyReached') %></span><% } %>
+        <form method="post" action="<%= basePath %>/<%= locale %>/cart/remove">
+          <input type="hidden" name="productId" value="<%= pid %>" />
+          <% if (vid) { %><input type="hidden" name="variantId" value="<%= vid %>" /><% } %>
+          <button type="submit" class="link-danger"><%= t('remove') %></button>
+        </form>
+      </div>
+      <div class="cart-line"><%= helpers.money(unit * qty) %></div>
+    </li>
+    <% }) %>
+  </ul>
+
+  <div class="cart-side">
+    <% if (!isGuestCart) { %>
+    <form method="post" action="<%= basePath %>/<%= locale %>/cart/coupon" class="inline">
+      <input type="text" name="code" placeholder="<%= t('coupon') %>" value="<%= cart.couponCode || '' %>" />
+      <button type="submit" class="btn btn-sm"><%= t('apply') %></button>
+    </form>
+    <p class="muted" style="margin:8px 0 0;font-size:12px;"><%= t('pointsRedeemHint') %></p>
+    <% } %>
+
+    <dl class="totals">
+      <div class="grand"><dt><%= t('total') %></dt><dd><%= helpers.money(cart.subtotal) %></dd></div>
+    </dl>
+
+    <a class="btn btn-primary btn-block" href="<%= checkoutHref %>">
+      <%= isGuestCart ? (t('signInToCheckout') || 'Sign in to checkout') : t('checkout') %>
+      · <%= helpers.money(cart.subtotal) %>
+    </a>
+    <% if (isGuestCart) { %>
+    <p class="muted" style="margin-top:8px;font-size:12px;"><%= t('guestCheckoutNote') || 'Your cart is saved on this device until you sign in.' %></p>
+    <% } %>
+  </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>
