@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTranslations, useLocale } from 'next-intl';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useShopRouter } from '@/lib/shopNavigation';
 import { ChevronDown, Loader2, MapPin, Package, CreditCard, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
 import { useCartStore } from '@/stores/cartStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import { useUIStore } from '@/stores/uiStore';
 import { cartApi, deliveryApi, ordersApi, profileApi } from '@/lib/api';
 import { normalizeCartSummary } from '@/lib/cart';
@@ -17,14 +19,49 @@ import AddressCheckoutSection from '@/components/checkout/AddressCheckoutSection
 import CheckoutObPointsPanel from '@/components/checkout/CheckoutObPointsPanel';
 import CheckoutCouponSlider from '@/components/checkout/CheckoutCouponSlider';
 import CheckoutRecommendations from '@/components/checkout/CheckoutRecommendations';
-import { previewOrderTotals, checkoutMeta } from '@/lib/checkoutTotals';
+import GuestCheckoutPanel from '@/components/checkout/GuestCheckoutPanel';
+import SslCommerzPopup from '@/components/checkout/SslCommerzPopup';
+import { previewOrderTotals, checkoutMeta, formatVatPercent } from '@/lib/checkoutTotals';
 import { isCodAllowed } from '@/lib/pricing';
 import type { SavedAddress, CartSummary } from '@/types';
 import { getMediaUrl } from '@/lib/mediaUrl';
 import { cn } from '@/lib/utils';
 import { AB_TESTS, trackAbOutcome, useAbVariant } from '@/lib/abTest';
+import { cartItemsToGa4, trackGa4BeginCheckout, trackGa4Purchase } from '@/lib/ga4';
+import { cartItemsToMeta, getMetaBrowserCookies, trackMetaInitiateCheckout, trackMetaPurchase } from '@/lib/metaPixel';
 
-function CheckoutLoginRequired({ locale }: { locale: string }) {
+const PAY_RETRY_KEY = 'ob_pay_retry';
+
+function persistPayRetry(value: { orderId: string; method: string; purpose?: 'order_total' | 'delivery_fee' } | null) {
+  try {
+    if (!value) sessionStorage.removeItem(PAY_RETRY_KEY);
+    else sessionStorage.setItem(PAY_RETRY_KEY, JSON.stringify(value));
+  } catch {
+    /* ignore */
+  }
+}
+
+function readStoredPayRetry(): { orderId: string; method: string; purpose?: 'order_total' | 'delivery_fee' } | null {
+  try {
+    const raw = sessionStorage.getItem(PAY_RETRY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { orderId?: string; method?: string; purpose?: string };
+    if (!parsed?.orderId || !parsed?.method) return null;
+    const purpose =
+      parsed.purpose === 'delivery_fee' || parsed.purpose === 'order_total' ? parsed.purpose : undefined;
+    return { orderId: parsed.orderId, method: parsed.method, purpose };
+  } catch {
+    return null;
+  }
+}
+
+function CheckoutLoginRequired({
+  locale,
+  onGuestCheckout,
+}: {
+  locale: string;
+  onGuestCheckout: () => void;
+}) {
   const t = useTranslations('checkout');
   const loginVariant = useAbVariant(AB_TESTS.CHECKOUT_LOGIN);
   const setLoginDialogOpen = useUIStore((s) => s.setLoginDialogOpen);
@@ -55,6 +92,13 @@ function CheckoutLoginRequired({ locale }: { locale: string }) {
           {t('createAccountToCheckout')}
         </Link>
       </div>
+      <button
+        type="button"
+        onClick={onGuestCheckout}
+        className="mt-4 text-sm font-semibold text-primary hover:underline"
+      >
+        Checkout as guest
+      </button>
     </div>
   );
 }
@@ -70,6 +114,7 @@ export default function CheckoutPage() {
   const couponVariant = useAbVariant(AB_TESTS.COUPON_DISCOVERY);
   const { cart, appliedCoupon, appliedObPoints, setCart, clearCart, setAppliedCoupon } = useCartStore();
   const { isAuthenticated } = useAuthStore();
+  const authHydrated = useAuthHydrated();
 
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState('');
@@ -82,38 +127,69 @@ export default function CheckoutPage() {
   const [courierShippingFee, setCourierShippingFee] = useState<number | null>(null);
   const [courierQuoteLoading, setCourierQuoteLoading] = useState(false);
   const [courierQuoteError, setCourierQuoteError] = useState('');
+  const [sslGatewayUrl, setSslGatewayUrl] = useState<string | null>(null);
+  const [sslSessionKey, setSslSessionKey] = useState<string | null>(null);
+  const [sslOrderId, setSslOrderId] = useState<string | null>(null);
+  const [guestMode, setGuestMode] = useState(false);
   /* Mobile step expansion state */
   const [openSteps, setOpenSteps] = useState<Set<string>>(new Set(['address', 'payment', 'summary']));
+  const placedRef = useRef(false);
+  const abandonSentRef = useRef(false);
+  const pendingGa4PurchaseRef = useRef<{
+    transactionId: string;
+    value: number;
+    items: ReturnType<typeof cartItemsToGa4>;
+    shipping?: number;
+    tax?: number;
+    coupon?: string;
+    paymentType: string;
+  } | null>(null);
+  const checkoutIntentRef = useRef({
+    selectedAddressId: null as number | null,
+    paymentMethod: '',
+    policiesAgreed: false,
+    notes: '',
+    couponId: undefined as number | undefined,
+    obPoints: 0,
+    itemCount: 0,
+  });
 
   const { setOpen: setCartOpen } = useCartStore();
+  const beginCheckoutSent = useRef(false);
 
-  // Close cart drawer on checkout mount, allow reopening on unmount
+  // Close cart drawer on checkout mount
   useEffect(() => {
     setCartOpen(false);
-    void trackAbOutcome('begin_checkout', { metadata: { locale } });
-    return () => {
-      // Cart can be reopened after leaving checkout
-    };
-  }, [setCartOpen, locale]);
+  }, [setCartOpen]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get('guest') === '1') setGuestMode(true);
     const payment = params.get('payment');
     const orderId = params.get('orderId');
     const method = params.get('method') || 'sslcommerz';
-    const purposeRaw = params.get('purpose');
-    const purpose =
-      purposeRaw === 'delivery_fee' || purposeRaw === 'order_total'
-        ? purposeRaw
-        : undefined;
-    if (payment && payment !== 'success') {
+    if (payment === 'success') {
+      persistPayRetry(null);
+      return;
+    }
+    const failedReturn = payment === 'failed' || payment === 'cancelled' || payment === 'error' || payment === 'invalid';
+    if (failedReturn) {
       setError(t('paymentReturnedFailed'));
     }
     const retryMethod = method === 'cod' ? 'sslcommerz' : method;
-    if (orderId && (canRetryOnlinePayment(retryMethod) || retryMethod === 'sslcommerz')) {
-      setPayRetry({ orderId, method: retryMethod, purpose });
-      setPaymentMethod(purpose === 'delivery_fee' ? 'cod' : retryMethod);
+    if (failedReturn && orderId && (canRetryOnlinePayment(retryMethod) || retryMethod === 'sslcommerz')) {
+      const next: { orderId: string; method: string; purpose?: 'order_total' | 'delivery_fee' } = {
+        orderId,
+        method: String(retryMethod),
+        purpose: 'order_total',
+      };
+      setPayRetry(next);
+      persistPayRetry(next);
+      setPaymentMethod(retryMethod);
+      return;
     }
+    persistPayRetry(null);
+    setPayRetry(null);
   }, [t]);
 
   async function retryExistingPayment() {
@@ -121,11 +197,14 @@ export default function CheckoutPage() {
     setRetryingPayment(true);
     setError('');
     try {
+      persistPayRetry({ ...payRetry, purpose: 'order_total' });
       const pay = await startOrderPayment(payRetry.orderId, payRetry.method, {
-        purpose: payRetry.purpose,
+        purpose: 'order_total',
       });
       if (!pay.redirectUrl) throw new Error(t('paymentInitFailed'));
-      window.location.href = pay.redirectUrl;
+      setSslGatewayUrl(pay.redirectUrl);
+      setSslSessionKey(pay.sessionkey || null);
+      setSslOrderId(payRetry.orderId);
     } catch (retryError) {
       setError(retryError instanceof Error ? retryError.message : t('paymentInitFailed'));
       setRetryingPayment(false);
@@ -147,7 +226,10 @@ export default function CheckoutPage() {
   });
 
   useEffect(() => {
-    if (cartData) setCart(cartData);
+    if (!cartData) return;
+    const localIds = (cart?.items || []).map((i) => i.productId);
+    const queryIds = (cartData.items || []).map((i) => i.productId);
+    setCart(cartData);
   }, [cartData, setCart]);
 
   const { data: addressData, isLoading: addrLoading } = useQuery({
@@ -198,10 +280,11 @@ export default function CheckoutPage() {
         const price = Number(r.data?.quote?.price);
         setCourierShippingFee(Number.isFinite(price) ? price : null);
       })
-      .catch((e: any) => {
+      .catch(() => {
         if (cancelled) return;
+        // Keep cart preview shipping (৳25) when Pathao is down; never show axios 404 text.
         setCourierShippingFee(null);
-        setCourierQuoteError(e?.response?.data?.error || 'Could not load courier delivery charge');
+        setCourierQuoteError('');
       })
       .finally(() => {
         if (!cancelled) setCourierQuoteLoading(false);
@@ -229,6 +312,71 @@ export default function CheckoutPage() {
   const orderTotal = totalsPreview?.total ?? 0;
   const displayShippingFee = totalsPreview?.shippingFee ?? 0;
   const codOk = isCodAllowed(orderTotal);
+  /** Required for Pay Now (SSLCommerz) and Pay Later (COD). */
+  const needsPolicyAgreement = Boolean(paymentMethod);
+
+  checkoutIntentRef.current = {
+    selectedAddressId,
+    paymentMethod,
+    policiesAgreed,
+    notes,
+    couponId: appliedCoupon?.id,
+    obPoints: appliedObPoints?.points ?? 0,
+    itemCount: activeCart?.items?.length ?? 0,
+  };
+
+  useEffect(() => {
+    if (beginCheckoutSent.current) return;
+    if (!activeCart?.items?.length) return;
+    beginCheckoutSent.current = true;
+    void trackAbOutcome('begin_checkout', { metadata: { locale } });
+    const checkoutValue = Number(activeCart.total ?? orderTotal ?? 0);
+    const ga4Items = cartItemsToGa4(activeCart.items);
+    trackGa4BeginCheckout({
+      value: checkoutValue,
+      items: ga4Items,
+      ...(appliedCoupon?.code ? { coupon: appliedCoupon.code } : {}),
+    });
+    trackMetaInitiateCheckout({
+      value: checkoutValue,
+      items: cartItemsToMeta(
+        (activeCart.items || []).map((i: { productId: string; unitPrice?: number; quantity?: number }) => ({
+          productId: i.productId,
+          unitPrice: i.unitPrice,
+          quantity: i.quantity,
+        })),
+      ),
+    });
+  }, [activeCart, appliedCoupon?.code, locale, orderTotal]);
+
+  useEffect(() => {
+    const saveAbandoned = () => {
+      const intent = checkoutIntentRef.current;
+      if (placedRef.current || abandonSentRef.current) return;
+      if (!intent.selectedAddressId || !intent.paymentMethod || !intent.itemCount) return;
+      if (!intent.policiesAgreed) return;
+      abandonSentRef.current = true;
+      void ordersApi
+        .place({
+          shippingAddressId: intent.selectedAddressId,
+          paymentMethod: intent.paymentMethod,
+          couponId: intent.couponId,
+          obPointsToRedeem: intent.obPoints,
+          notes: intent.notes,
+          policiesAgreed: true,
+          abandonedCheckout: true,
+        })
+        .then(() => {
+          useCartStore.getState().clearCart();
+        })
+        .catch(() => {
+          abandonSentRef.current = false;
+        });
+    };
+    const onPageHide = () => saveAbandoned();
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
 
   const couponMutation = useMutation({
     mutationFn: (code: string) => cartApi.applyCoupon(code).then((r) => r.data as { coupon: { id: number; code: string; type: string; value: number } }),
@@ -244,6 +392,9 @@ export default function CheckoutPage() {
 
   const placeMutation = useMutation({
     mutationFn: () => {
+      if (!policiesAgreed) {
+        throw new Error(tExtra('agreePoliciesRequired'));
+      }
       return ordersApi
         .place({
           shippingAddressId: selectedAddressId,
@@ -251,6 +402,8 @@ export default function CheckoutPage() {
           couponId: appliedCoupon?.id,
           obPointsToRedeem: appliedObPoints?.points ?? 0,
           notes,
+          policiesAgreed: true,
+          ...getMetaBrowserCookies(),
         })
         .then((r) => r.data as {
           order: { id: string };
@@ -260,7 +413,7 @@ export default function CheckoutPage() {
         });
     },
     onSuccess: async (data) => {
-      const { order, requiresPayment, paymentPurpose } = data;
+      const { order, requiresPayment } = data;
       void trackAbOutcome('order_placed', {
         value: orderTotal,
         idempotencyKey: order.id,
@@ -268,9 +421,18 @@ export default function CheckoutPage() {
           paymentMethod,
           usedCoupon: Boolean(appliedCoupon),
           usedObPoints: Boolean(appliedObPoints),
-          paymentPurpose: paymentPurpose || 'order_total',
+          paymentPurpose: 'order_total',
         },
       });
+      pendingGa4PurchaseRef.current = {
+        transactionId: order.id,
+        value: orderTotal,
+        items: cartItemsToGa4(activeCart?.items || []),
+        shipping: displayShippingFee,
+        tax: Number(totalsPreview?.gst ?? 0),
+        ...(appliedCoupon?.code ? { coupon: appliedCoupon.code } : {}),
+        paymentType: paymentMethod || 'unknown',
+      };
       const orderHref = `/${locale}/account/orders/${order.id}`;
       const settleAfterOrder = async () => {
         try {
@@ -280,34 +442,55 @@ export default function CheckoutPage() {
         }
       };
 
-      // Pay later: SSLCommerz for delivery fee only. Pay now: full order total.
-      // Do NOT clear cart until payment succeeds — failure must return to checkout with items.
-      if (requiresPayment && paymentMethod && paymentMethod !== 'installment') {
+      const needsGateway = Boolean(requiresPayment) && paymentMethod !== 'cod';
+
+      if (needsGateway && paymentMethod && paymentMethod !== 'installment') {
         try {
-          const purpose = paymentPurpose === 'delivery_fee' || paymentMethod === 'cod'
-            ? 'delivery_fee'
-            : 'order_total';
-          const payMethod = paymentMethod === 'cod' ? 'sslcommerz' : paymentMethod;
+          placedRef.current = true;
+          persistPayRetry(null);
+          const purpose = 'order_total' as const;
+          const payMethod = paymentMethod;
           const pay = await startOrderPayment(order.id, payMethod, { purpose });
           if (pay.redirectUrl) {
-            setPayRetry({ orderId: order.id, method: payMethod, purpose });
-            window.location.href = pay.redirectUrl;
+            setSslGatewayUrl(pay.redirectUrl);
+            setSslSessionKey(pay.sessionkey || null);
+            setSslOrderId(order.id);
             return;
           }
-          setPayRetry({ orderId: order.id, method: payMethod, purpose });
           setError(t('paymentInitFailed'));
           return;
         } catch (err: any) {
-          setPayRetry({
+          const retry = {
             orderId: order.id,
-            method: paymentMethod === 'cod' ? 'sslcommerz' : paymentMethod,
-            purpose: paymentMethod === 'cod' ? 'delivery_fee' : 'order_total',
-          });
+            method: paymentMethod,
+            purpose: 'order_total' as const,
+          };
+          setPayRetry(retry);
+          persistPayRetry(retry);
           setError(err?.message || t('paymentInitFailed'));
           return;
         }
       }
 
+      // COD / no gateway — count as purchase now
+      if (pendingGa4PurchaseRef.current) {
+        const purchase = pendingGa4PurchaseRef.current;
+        trackGa4Purchase(purchase);
+        trackMetaPurchase({
+          orderId: purchase.transactionId,
+          value: purchase.value,
+          items: cartItemsToMeta(
+            (purchase.items || []).map((it) => ({
+              productId: it.item_id,
+              unitPrice: it.price,
+              quantity: it.quantity,
+            })),
+          ),
+        });
+        pendingGa4PurchaseRef.current = null;
+      }
+      placedRef.current = true;
+      persistPayRetry(null);
       clearCart();
       router.push(orderHref, { settle: settleAfterOrder });
     },
@@ -320,8 +503,119 @@ export default function CheckoutPage() {
 
   const cartStatus = (cartQueryError as { response?: { status?: number } } | undefined)?.response?.status;
 
+  const handleSslComplete = useCallback(
+    (result: 'success' | 'failed' | 'cancelled' | 'unknown', redirectUrl?: string) => {
+      setSslGatewayUrl(null);
+      setSslSessionKey(null);
+      if (result === 'success') {
+        placedRef.current = true;
+        persistPayRetry(null);
+        if (pendingGa4PurchaseRef.current) {
+          const purchase = pendingGa4PurchaseRef.current;
+          trackGa4Purchase(purchase);
+          trackMetaPurchase({
+            orderId: purchase.transactionId,
+            value: purchase.value,
+            items: cartItemsToMeta(
+              (purchase.items || []).map((it) => ({
+                productId: it.item_id,
+                unitPrice: it.price,
+                quantity: it.quantity,
+              })),
+            ),
+          });
+          pendingGa4PurchaseRef.current = null;
+        } else if (sslOrderId) {
+          trackGa4Purchase({
+            transactionId: sslOrderId,
+            value: orderTotal,
+            paymentType: paymentMethod || 'sslcommerz',
+          });
+          trackMetaPurchase({ orderId: sslOrderId, value: orderTotal });
+        }
+        clearCart();
+        const orderHref = sslOrderId
+          ? `/${locale}/account/orders/${sslOrderId}`
+          : `/${locale}/payment/complete?status=success`;
+        router.push(redirectUrl || orderHref);
+      } else {
+        setError(t('paymentReturnedFailed'));
+        if (sslOrderId) {
+          const retry = { orderId: sslOrderId, method: 'sslcommerz', purpose: 'order_total' as const };
+          setPayRetry(retry);
+          persistPayRetry(retry);
+          setPaymentMethod('sslcommerz');
+        }
+      }
+      setSslOrderId(null);
+    },
+    [clearCart, locale, orderTotal, paymentMethod, router, sslOrderId, t],
+  );
+
+  const handleSslClose = useCallback(() => {
+    setSslGatewayUrl(null);
+    setSslSessionKey(null);
+    setError(t('paymentReturnedFailed'));
+    if (sslOrderId) {
+      const retry = { orderId: sslOrderId, method: 'sslcommerz', purpose: 'order_total' as const };
+      setPayRetry(retry);
+      persistPayRetry(retry);
+    }
+    setSslOrderId(null);
+  }, [sslOrderId, t]);
+
+  if (!authHydrated) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center gap-2 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        {tc('loading')}
+      </div>
+    );
+  }
+
+  if (!isAuthenticated && guestMode) {
+    const guestCart = cart;
+    if (!guestCart || guestCart.items.length === 0) {
+      return (
+        <div className="mx-auto max-w-lg px-4 py-20 text-center">
+          <Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/40" />
+          <h1 className="text-xl font-semibold text-foreground">{t('emptyCartTitle')}</h1>
+          <p className="mt-2 text-muted-foreground">{t('emptyCartHint')}</p>
+          <Link href={`/${locale}/products`} className="mt-6 inline-block rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground">
+            {t('browseProducts')}
+          </Link>
+        </div>
+      );
+    }
+    return (
+      <GuestCheckoutPanel
+        cart={guestCart}
+        onBackToLogin={() => {
+          setGuestMode(false);
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('guest');
+            window.history.replaceState({}, '', url.pathname + url.search);
+          } catch { /* ignore */ }
+        }}
+      />
+    );
+  }
+
   if (!isAuthenticated) {
-    return <CheckoutLoginRequired locale={locale} />;
+    return (
+      <CheckoutLoginRequired
+        locale={locale}
+        onGuestCheckout={() => {
+          setGuestMode(true);
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('guest', '1');
+            window.history.replaceState({}, '', url.pathname + url.search);
+          } catch { /* ignore */ }
+        }}
+      />
+    );
   }
 
   if (cartLoading) {
@@ -334,7 +628,12 @@ export default function CheckoutPage() {
   }
 
   if (cartError && cartStatus === 401) {
-    return <CheckoutLoginRequired locale={locale} />;
+    return (
+      <CheckoutLoginRequired
+        locale={locale}
+        onGuestCheckout={() => setGuestMode(true)}
+      />
+    );
   }
 
   if (cartError || !activeCart) {
@@ -390,6 +689,54 @@ export default function CheckoutPage() {
   const savingsLine =
     (appliedCoupon ? totalsPreview?.discount ?? 0 : 0) + (appliedObPoints?.bdtDiscount ?? 0);
 
+  const policyLinkClass = 'font-medium text-foreground hover:text-primary hover:underline';
+  const renderPolicyAgreement = (compact = false) => {
+    if (!needsPolicyAgreement) return null;
+    return (
+      <div
+        className={
+          compact
+            ? 'mb-2 text-[11px] leading-snug text-muted-foreground'
+            : 'rounded-xl border border-border/60 bg-background p-2.5 text-xs text-muted-foreground sm:p-3'
+        }
+      >
+        <label className="flex cursor-pointer items-start gap-2.5">
+          <input
+            type="checkbox"
+            required
+            aria-required="true"
+            checked={policiesAgreed}
+            onChange={(e) => setPoliciesAgreed(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-primary"
+          />
+          <span>
+            I have read and agree to the{' '}
+            <Link href={`/${locale}/policies/terms`} className={policyLinkClass}>
+              {tPolicy('termsConditions')}
+            </Link>
+            {', '}
+            <Link href={`/${locale}/policies/privacy`} className={policyLinkClass}>
+              {tPolicy('privacyPolicy')}
+            </Link>
+            {', '}
+            <Link href={`/${locale}/policies/returns`} className={policyLinkClass}>
+              {tPolicy('returnPolicy')}
+            </Link>
+            {', '}
+            <Link href={`/${locale}/policies/refunds`} className={policyLinkClass}>
+              {tPolicy('refundPolicy')}
+            </Link>
+            {' & '}
+            <Link href={`/${locale}/policies/shipping`} className={policyLinkClass}>
+              {tPolicy('shippingPolicy')}
+            </Link>
+            .
+          </span>
+        </label>
+      </div>
+    );
+  };
+
   /* Order summary content - shared between mobile accordion and desktop sidebar */
   function renderSummaryContent() {
     return (
@@ -399,10 +746,15 @@ export default function CheckoutPage() {
         <ul className="max-h-48 space-y-2 overflow-y-auto sm:max-h-64 sm:space-y-3">
           {activeCart?.items?.map((item) => (
             <li key={item.id} className="flex gap-3 text-sm">
-              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-muted sm:h-14 sm:w-14">
+              <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-muted sm:h-14 sm:w-14">
                 {item.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={getMediaUrl(item.image)} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  <Image
+                    src={getMediaUrl(item.image)}
+                    alt=""
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                  />
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">
@@ -424,22 +776,31 @@ export default function CheckoutPage() {
         </ul>
 
         <div className="space-y-1.5 border-t border-border pt-3 text-xs sm:space-y-2 sm:pt-4 sm:text-sm">
+          {totalsPreview && totalsPreview.discount > 0 && (
+            <>
+              <div className="flex justify-between text-muted-foreground">
+                <span>{t('lineItemsGross')}</span>
+                <span className="font-medium text-foreground">
+                  {tc('taka')}
+                  {(activeCart?.subtotal ?? 0).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                <span>{t('lineCoupon')}</span>
+                <span>
+                  −{tc('taka')}
+                  {totalsPreview.discount.toLocaleString()}
+                </span>
+              </div>
+            </>
+          )}
           <div className="flex justify-between text-muted-foreground">
             <span>{t('lineMerchandise')}</span>
             <span className="font-medium text-foreground">
               {tc('taka')}
-              {activeCart?.subtotal?.toLocaleString() ?? 0}
+              {(totalsPreview?.taxableAmount ?? activeCart?.subtotal ?? 0).toLocaleString()}
             </span>
           </div>
-          {totalsPreview && totalsPreview.discount > 0 && (
-            <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-              <span>{t('lineCoupon')}</span>
-              <span>
-                −{tc('taka')}
-                {totalsPreview.discount.toLocaleString()}
-              </span>
-            </div>
-          )}
           {appliedObPoints && (
             <div className="flex justify-between text-primary">
               <span>{t('lineObPoints')}</span>
@@ -452,8 +813,8 @@ export default function CheckoutPage() {
           <div className="flex justify-between text-muted-foreground">
             <span>{t('lineShipping')}</span>
             <span className="font-medium text-foreground">
-              {courierQuoteLoading ? (
-                <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Pathao…</span>
+              {courierQuoteLoading && displayShippingFee > 0 ? (
+                <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Verifying delivery…</span>
               ) : displayShippingFee === 0 ? (
                 <span className="text-emerald-600 dark:text-emerald-400">{t('freeShipping')}</span>
               ) : (
@@ -461,31 +822,47 @@ export default function CheckoutPage() {
               )}
             </span>
           </div>
+          {(() => {
+            const subtotal = Number(activeCart?.subtotal ?? 0);
+            const threshold = checkoutMeta.freeFeesThreshold;
+            const retailOk = activeCart?.retailQuantityOrder !== false;
+            if (!retailOk || displayShippingFee === 0 || subtotal >= threshold) return null;
+            const remaining = Math.max(0, threshold - subtotal);
+            return (
+              <p className="rounded-lg bg-primary/5 px-2 py-1.5 text-xs text-foreground">
+                {t('freeShipThresholdHint', {
+                  amount: remaining.toLocaleString(),
+                  threshold: threshold.toLocaleString(),
+                })}
+              </p>
+            );
+          })()}
           {courierQuoteError ? (
             <p className="text-xs text-amber-600">{courierQuoteError}</p>
           ) : null}
-          {paymentMethod === 'cod' && displayShippingFee > 0 ? (
-            <p className="rounded-lg bg-primary/5 px-2 py-1.5 text-xs text-foreground">
-              Pay later requires prepaid delivery of {tc('taka')}{displayShippingFee.toLocaleString()} via Secure Checkout. Product amount is collected on delivery.
+          {paymentMethod === 'cod' ? (
+            <p className="rounded-lg bg-emerald-500/10 px-2 py-1.5 text-xs text-foreground">
+              {t('payLaterSub')}
             </p>
           ) : null}
           <div className="flex justify-between text-muted-foreground">
             <span>{t('lineVat')}</span>
             <span className="font-medium text-foreground">
-              {tc('taka')}
-              {(totalsPreview?.gst ?? activeCart?.gst ?? 0).toLocaleString()}
+              {(totalsPreview?.gst ?? 0) === 0 ? (
+                <span className="text-emerald-600 dark:text-emerald-400">{t('vatWaived')}</span>
+              ) : (
+                <>
+                  {tc('taka')}
+                  {(totalsPreview?.gst ?? activeCart?.gst ?? 0).toLocaleString()}
+                </>
+              )}
             </span>
           </div>
+          {(totalsPreview?.gst ?? 0) > 0 && (
           <div className="flex justify-between text-xs text-muted-foreground/80">
-            <span>{t('lineVatHint', { pct: Math.round(checkoutMeta.gstRate * 100) })}</span>
+            <span>{t('lineVatHint', { pct: formatVatPercent(checkoutMeta.gstRate) })}</span>
           </div>
-          <div className="flex justify-between text-muted-foreground">
-            <span>{t('lineService')}</span>
-            <span className="font-medium text-foreground">
-              {tc('taka')}
-              {(totalsPreview?.serviceFee ?? activeCart?.serviceFee ?? 0).toLocaleString()}
-            </span>
-          </div>
+          )}
           {savingsLine > 0 && (
             <div className="flex justify-between rounded-lg bg-emerald-500/10 px-2 py-1.5 text-emerald-800 dark:text-emerald-200">
               <span className="font-medium">{t('lineSavings')}</span>
@@ -568,49 +945,25 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        <div className="rounded-xl border border-border/60 bg-background p-2.5 text-xs text-muted-foreground sm:p-3">
-          <label className="flex items-start gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-primary"
-              checked={policiesAgreed}
-              onChange={(e) => setPoliciesAgreed(e.target.checked)}
-            />
-            <span>
-              {tExtra('agreePoliciesCheckbox')}{' '}
-              <Link href={`/${locale}/policies/terms`} className="font-medium text-foreground hover:text-primary hover:underline">
-                {tPolicy('termsConditions')}
-              </Link>
-              {', '}
-              <Link href={`/${locale}/policies/privacy`} className="font-medium text-foreground hover:text-primary hover:underline">
-                {tPolicy('privacyPolicy')}
-              </Link>
-              {', '}
-              <Link href={`/${locale}/policies/returns`} className="font-medium text-foreground hover:text-primary hover:underline">
-                {tPolicy('returnPolicy')}
-              </Link>
-              {' & '}
-              <Link href={`/${locale}/policies/refunds`} className="font-medium text-foreground hover:text-primary hover:underline">
-                {tPolicy('refundPolicy')}
-              </Link>
-              .
-            </span>
-          </label>
-        </div>
+        {renderPolicyAgreement()}
 
         {/* Desktop place order button */}
         <button
           type="button"
           disabled={
+            payRetry
+              ? retryingPayment
+              : (
             !paymentMethod ||
             !selectedAddressId ||
             !policiesAgreed ||
             placeMutation.isPending ||
             addrLoading ||
             (paymentMethod === 'cod' && !codOk)
+              )
           }
-          onClick={() => placeMutation.mutate()}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-base font-bold text-primary-foreground transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50 min-h-[52px] sm:mt-4 sm:py-4 sm:text-lg"
+          onClick={() => (payRetry ? void retryExistingPayment() : placeMutation.mutate())}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-base font-bold text-white shadow-soft transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 min-h-[52px] sm:mt-4 sm:py-4 sm:text-lg ob-btn-brand-orange"
         >
           {placeMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
           {placeMutation.isPending ? tExtra('placingOrder') : (
@@ -657,7 +1010,15 @@ export default function CheckoutPage() {
 
   return (
     <>
-    <div className="container-tight pb-32 pt-3 sm:py-6 lg:py-10">
+    {sslGatewayUrl && (
+      <SslCommerzPopup
+        gatewayUrl={sslGatewayUrl}
+        sessionkey={sslSessionKey || undefined}
+        onComplete={handleSslComplete}
+        onClose={handleSslClose}
+      />
+    )}
+    <div className="container-tight pb-44 pt-3 sm:py-6 lg:py-10">
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2 border-b border-border pb-3 sm:mb-5 sm:gap-3 sm:pb-4">
         <div>
@@ -736,7 +1097,8 @@ export default function CheckoutPage() {
     </div>
 
     {/* ── Sticky mobile place order bar ── */}
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 px-4 pb-[env(safe-area-inset-bottom,0px)] pt-3 backdrop-blur-sm sm:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 px-4 pb-[env(safe-area-inset-bottom,0px)] pt-2 backdrop-blur-sm sm:hidden">
+      {renderPolicyAgreement(true)}
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col">
           <span className="text-xs text-muted-foreground">{t('totalDue')}</span>
@@ -747,15 +1109,19 @@ export default function CheckoutPage() {
         <button
           type="button"
           disabled={
+            payRetry
+              ? retryingPayment
+              : (
             !paymentMethod ||
             !selectedAddressId ||
             !policiesAgreed ||
             placeMutation.isPending ||
             addrLoading ||
             (paymentMethod === 'cod' && !codOk)
+              )
           }
-          onClick={() => placeMutation.mutate()}
-          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50 min-h-[52px]"
+          onClick={() => (payRetry ? void retryExistingPayment() : placeMutation.mutate())}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-bold text-white shadow-soft transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50 min-h-[52px] ob-btn-brand-orange"
         >
           {placeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {placeMutation.isPending

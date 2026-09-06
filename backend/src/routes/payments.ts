@@ -15,8 +15,62 @@ import { sendPaymentInvoice } from '../services/emailService';
 
 const router = Router();
 
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
 const API_BASE = process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || 'http://localhost:4000';
+
+function sslForm(req: Request): Record<string, string> {
+  const out: Record<string, string> = {};
+  const src = { ...(req.query || {}), ...(typeof req.body === 'object' && req.body ? req.body : {}) } as Record<string, unknown>;
+  for (const [k, v] of Object.entries(src)) {
+    if (Array.isArray(v)) out[k] = String(v[0] ?? '');
+    else if (v != null) out[k] = String(v);
+  }
+  return out;
+}
+
+/** 303 after gateway POST so the browser follows with GET (302 can replay POST and drop the session). */
+function redirectSeeOther(res: Response, url: string): void {
+  res.status(303);
+  res.setHeader('Location', url);
+  res.end();
+}
+
+/** SSLCommerz posts into an iframe/top window. 303 onto a Next.js page 500s if POST is replayed. */
+function sendSslBrowserReturn(res: Response, dest: string, heading: string, detail: string): void {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${heading}</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f8fafc;color:#0f172a;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}
+a{color:#0369a1;font-weight:600}
+</style>
+</head>
+<body>
+<p style="font-weight:700;font-size:1.2rem;margin:0 0 8px">${heading}</p>
+<p style="margin:0 0 16px">${detail}</p>
+<p><a href="${String(dest).replace(/"/g, '&quot;')}">Continue to OceanBazar</a></p>
+<script>
+(function(){
+  var u = ${JSON.stringify(dest)};
+  try { window.top.location.replace(u); }
+  catch (e) { window.location.replace(u); }
+})();
+</script>
+</body>
+</html>`;
+  res.status(200);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.removeHeader('X-Frame-Options');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors *",
+  );
+  res.send(html);
+}
 
 type PaymentPurpose = 'order_total' | 'delivery_fee';
 
@@ -47,24 +101,34 @@ function resolveChargeAmount(
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
+function storefrontLocale(req?: Request): 'en' | 'bn' {
+  const fromCookie = String(req?.cookies?.NEXT_LOCALE || req?.cookies?.ob_locale || '').toLowerCase();
+  if (fromCookie === 'bn' || fromCookie === 'en') return fromCookie;
+  const fromHeader = String(req?.headers?.['accept-language'] || '').toLowerCase();
+  if (fromHeader.startsWith('bn')) return 'bn';
+  return 'en';
+}
+
 function checkoutRecoveryUrl(
   payment: 'failed' | 'cancelled' | 'error' | 'invalid',
   transaction?: { orderId: string; method: string; purpose?: PaymentPurpose } | null,
+  locale: 'en' | 'bn' = 'en',
 ): string {
   const params = new URLSearchParams({ payment });
   if (transaction?.orderId) params.set('orderId', transaction.orderId);
   if (transaction?.method) params.set('method', transaction.method);
   if (transaction?.purpose) params.set('purpose', transaction.purpose);
-  return `${CLIENT_URL}/en/checkout?${params.toString()}`;
+  return `${CLIENT_URL}/${locale}/checkout?${params.toString()}`;
 }
 
 async function recordPaymentFailure(
   transactionId: string | undefined,
   payment: 'failed' | 'cancelled' | 'error' | 'invalid',
+  locale: 'en' | 'bn' = 'en',
 ): Promise<string> {
-  if (!transactionId) return checkoutRecoveryUrl(payment);
+  if (!transactionId) return checkoutRecoveryUrl(payment, null, locale);
   const tx = await prisma.paymentTransaction.findUnique({ where: { id: transactionId } });
-  if (!tx) return checkoutRecoveryUrl(payment);
+  if (!tx) return checkoutRecoveryUrl(payment, null, locale);
   if (tx.status === 'pending') {
     await prisma.paymentTransaction.update({
       where: { id: tx.id },
@@ -75,7 +139,7 @@ async function recordPaymentFailure(
     orderId: tx.orderId,
     method: tx.method,
     purpose: purposeFromMetadata(tx.metadata),
-  });
+  }, locale);
 }
 
 function sslValidationMatchesTransaction(
@@ -129,7 +193,7 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
       await txn.order.update({
         where: { id: tx.orderId },
         data: {
-          deliveryPaymentStatus: 'under_verification',
+          deliveryPaymentStatus: 'paid',
           deliveryFeePaid: tx.amount,
         },
       });
@@ -137,20 +201,20 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
         data: {
           orderId: tx.orderId,
           status: orderRow?.status || 'pending',
-          note: `Delivery fee ৳${Number(tx.amount).toLocaleString()} received via ${method} — under verification`,
+          note: `Delivery fee ৳${Number(tx.amount).toLocaleString()} paid via ${method}`,
           actorType: 'system',
         },
       });
     } else {
       await txn.order.update({
         where: { id: tx.orderId },
-        data: { paymentStatus: 'under_verification' },
+        data: { paymentStatus: 'paid' },
       });
       await txn.orderTimeline.create({
         data: {
           orderId: tx.orderId,
           status: orderRow?.status || 'pending',
-          note: `Payment received via ${method} — under verification`,
+          note: `Payment received via ${method}`,
           actorType: 'system',
         },
       });
@@ -182,6 +246,15 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
 
   const tx = outcome.tx;
   try {
+    const { persistGatewayFeeOnPayment } = await import('../services/taxVatSystem');
+    await persistGatewayFeeOnPayment({
+      orderId: tx.orderId,
+      paymentTransactionId: tx.id,
+      customerPayment: Number(tx.amount),
+    });
+  } catch { /* non-fatal gateway fee ledger */ }
+
+  try {
     await clearUserCart(tx.userId);
   } catch (cartErr) {
     appLog('warn', 'payment_success_cart_clear_failed', {
@@ -191,7 +264,20 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
   }
 
   const earnAmount = outcome.purpose === 'delivery_fee' ? outcome.orderTotal : Number(tx.amount);
-  await earnPoints(tx.userId, tx.orderId, earnAmount);
+  try {
+    const payer = await prisma.user.findUnique({
+      where: { id: tx.userId },
+      select: { userType: true },
+    });
+    if (payer?.userType !== 'guest') {
+      await earnPoints(tx.userId, tx.orderId, earnAmount);
+    }
+  } catch (pointsErr) {
+    appLog('warn', 'payment_success_points_failed', {
+      orderId: tx.orderId,
+      detail: pointsErr instanceof Error ? pointsErr.message : String(pointsErr),
+    });
+  }
   try {
     emitAdminEvent('admin:payment', {
       txId: tx.id,
@@ -215,6 +301,27 @@ async function onPaymentSuccess(transactionId: string, providerTxId: string, met
       vars: { orderNumber: paidOrder?.orderNumber || '' },
     });
   } catch { /* non-fatal */ }
+
+  if (outcome.purpose !== 'delivery_fee' && paidOrder) {
+    try {
+      const { sendMetaCapiPurchase } = await import('../services/meta/metaCapiService');
+      const { mergeCapiUserData } = await import('../lib/metaAttribution');
+      const userData = await mergeCapiUserData(paidOrder.id, {
+        email: paidOrder.user?.email,
+        phone: paidOrder.user?.phone,
+      });
+      void sendMetaCapiPurchase({
+        orderId: paidOrder.id,
+        value: Number(paidOrder.total),
+        contents: paidOrder.items.map((i) => ({
+          id: i.productId,
+          quantity: i.quantity,
+          item_price: Number(i.unitPrice),
+        })),
+        userData,
+      });
+    } catch { /* non-fatal */ }
+  }
 
   if (outcome.purpose === 'delivery_fee' && paidOrder) {
     try {
@@ -344,26 +451,26 @@ router.get('/bkash/callback', async (req: Request, res: Response) => {
       where: { metadata: { path: ['paymentID'], equals: paymentID } },
       select: { id: true },
     });
-    return res.redirect(await recordPaymentFailure(tx?.id, status === 'cancel' ? 'cancelled' : 'failed'));
+    return redirectSeeOther(res,await recordPaymentFailure(tx?.id, status === 'cancel' ? 'cancelled' : 'failed'));
   }
 
   try {
     const tx = await prisma.paymentTransaction.findFirst({
       where: { metadata: { path: ['paymentID'], equals: paymentID } },
     });
-    if (!tx) { return res.redirect(`${CLIENT_URL}/en/checkout?payment=error`); }
+    if (!tx) { return redirectSeeOther(res,`${CLIENT_URL}/en/checkout?payment=error`); }
 
     const result = await bkash.executePayment(paymentID);
 
     if (result.transactionStatus === 'Completed') {
       await onPaymentSuccess(tx.id, result.trxID, 'bkash');
-      return res.redirect(`${CLIENT_URL}/en/account/orders/${tx.orderId}?payment=success`);
+      return redirectSeeOther(res,`${CLIENT_URL}/en/account/orders/${tx.orderId}?payment=success`);
     }
 
-    res.redirect(await recordPaymentFailure(tx.id, 'failed'));
+    redirectSeeOther(res,await recordPaymentFailure(tx.id, 'failed'));
   } catch (err: any) {
     console.error('[bKash] callback error:', err.message);
-    res.redirect(checkoutRecoveryUrl('error'));
+    redirectSeeOther(res,checkoutRecoveryUrl('error'));
   }
 });
 
@@ -379,7 +486,7 @@ router.post('/bkash/confirm', requireAuth, async (req: Request, res: Response) =
 
 router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Response) => {
   const { orderId } = req.body as { orderId: string; purpose?: string };
-  const purpose = parsePurpose(req.body?.purpose);
+  const purpose: PaymentPurpose = 'order_total';
   const [order, user] = await Promise.all([
     prisma.order.findFirst({ where: { id: orderId, userId: req.user!.userId } }),
     prisma.user.findUnique({ where: { id: req.user!.userId } }),
@@ -393,6 +500,7 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
     res.status(err?.status || 400).json({ error: err?.message || 'Invalid payment amount' });
     return;
   }
+
 
   const tx = await prisma.paymentTransaction.create({
     data: {
@@ -418,7 +526,7 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
       data: { metadata: { purpose, tran_id: tx.id } },
     });
 
-    const gatewayUrl = await ssl.initiatePayment({
+    const sslResult = await ssl.initiatePayment({
       transactionId: tx.id,
       orderNumber: order.orderNumber,
       amount,
@@ -427,25 +535,159 @@ router.post('/sslcommerz/initiate', requireAuth, async (req: Request, res: Respo
       customerPhone: user.phone || '',
     });
 
-    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl, purpose, amount });
+    res.json({ transactionId: tx.id, redirectUrl: sslResult.gatewayPageURL, sessionkey: sslResult.sessionkey, purpose, amount });
   } catch (err: any) {
-    console.error('[SSLCommerz] initiate error:', err.message);
-    res.status(502).json({ error: 'Failed to initiate payment. Please try again or use COD.' });
+    const reason = String(err?.message || '').slice(0, 240);
+    console.error('[SSLCommerz] initiate error:', reason);
+    const publicReason = /store|url|credential|inactive|invalid|amount|sandbox|domain/i.test(reason)
+      ? reason
+      : 'Failed to initiate payment. Please try again.';
+    res.status(502).json({ error: publicReason });
   }
 });
 
-// SSLCommerz success redirect
-router.post('/sslcommerz/success', async (req: Request, res: Response) => {
-  const { tran_id, val_id, status } = req.body as { tran_id: string; val_id: string; status: string };
+/** Guest SSL initiate — orderId + guestEmail match (no JWT). */
+router.post('/sslcommerz/initiate-guest', async (req: Request, res: Response) => {
+  const { orderId, guestEmail } = req.body as { orderId?: string; guestEmail?: string };
+  const email = String(guestEmail || '').trim().toLowerCase();
+  if (!orderId || !email) {
+    res.status(400).json({ error: 'orderId and guestEmail are required' });
+    return;
+  }
 
-  if (status !== 'VALID' && status !== 'VALIDATED') {
-    return res.redirect(await recordPaymentFailure(tran_id, 'failed'));
+  const order = await prisma.order.findFirst({
+    where: { id: orderId },
+    include: { user: true },
+  });
+  if (!order?.user) {
+    res.status(404).json({ error: 'Order not found' });
+    return;
+  }
+  const orderEmail = String(order.user.email || '').trim().toLowerCase();
+  if (!orderEmail || orderEmail !== email) {
+    res.status(403).json({ error: 'Email does not match this order' });
+    return;
+  }
+  if (order.user.userType !== 'guest' && order.paymentStatus === 'paid') {
+    res.status(400).json({ error: 'Order already paid' });
+    return;
+  }
+
+  const purpose: PaymentPurpose = 'order_total';
+  let amount: number;
+  try {
+    amount = resolveChargeAmount(order, purpose);
+  } catch (err: any) {
+    res.status(err?.status || 400).json({ error: err?.message || 'Invalid payment amount' });
+    return;
+  }
+
+  const tx = await prisma.paymentTransaction.create({
+    data: {
+      id: generateEntityId(),
+      orderId,
+      userId: order.userId,
+      method: 'sslcommerz',
+      amount,
+      metadata: { purpose, tran_id: '', guest: true },
+    },
+  });
+
+  if (!ssl.isSslConfigured()) {
+    return res.status(503).json({
+      error: 'SSLCommerz is not configured. Please set up store credentials or use COD.',
+      transactionId: tx.id,
+    });
+  }
+
+  try {
+    await prisma.paymentTransaction.update({
+      where: { id: tx.id },
+      data: { metadata: { purpose, tran_id: tx.id, guest: true } },
+    });
+
+    const sslResult = await ssl.initiatePayment({
+      transactionId: tx.id,
+      orderNumber: order.orderNumber,
+      amount,
+      customerName: order.user.name,
+      customerEmail: order.user.email || email,
+      customerPhone: order.user.phone || '',
+    });
+
+    res.json({
+      transactionId: tx.id,
+      redirectUrl: sslResult.gatewayPageURL,
+      sessionkey: sslResult.sessionkey,
+      purpose,
+      amount,
+    });
+  } catch (err: any) {
+    const reason = String(err?.message || '').slice(0, 240);
+    console.error('[SSLCommerz] guest initiate error:', reason);
+    res.status(502).json({
+      error: /store|url|credential|inactive|invalid|amount|sandbox|domain/i.test(reason)
+        ? reason
+        : 'Failed to initiate payment. Please try again.',
+    });
+  }
+});
+
+router.get('/sslcommerz/config', (_req: Request, res: Response) => {
+  const info = ssl.sslRuntimeInfo();
+  res.json({
+    configured: ssl.isSslConfigured(),
+    sandbox: info.sandbox,
+    embedScriptUrl: info.sandbox
+      ? 'https://sandbox.sslcommerz.com/embed.min.js'
+      : 'https://seamless-epay.sslcommerz.com/embed.min.js',
+    callbackOrigin: info.callbackBase,
+  });
+});
+
+function paymentCompleteUrl(
+  locale: 'en' | 'bn',
+  status: 'success' | 'failed' | 'cancelled' | 'error' | 'invalid',
+  orderId?: string,
+  extras?: { risk?: boolean },
+): string {
+  const params = new URLSearchParams({ status });
+  if (orderId) params.set('orderId', orderId);
+  if (extras?.risk) params.set('risk', '1');
+  return `${CLIENT_URL}/${locale}/payment/complete?${params.toString()}`;
+}
+
+async function handleSslSuccess(req: Request, res: Response) {
+  const form = sslForm(req);
+  const tran_id = form.tran_id || form.value_b || '';
+  const val_id = form.val_id || '';
+  const status = (form.status || '').toUpperCase();
+  const locale = storefrontLocale(req);
+  const risk = String(form.risk_level || '') === '1';
+  const looksPaid = status === 'VALID' || status === 'VALIDATED' || Boolean(val_id);
+
+
+  if (!looksPaid) {
+    return sendSslBrowserReturn(
+      res,
+      await recordPaymentFailure(tran_id, 'failed', locale),
+      'Payment was not completed',
+      'You can try again from checkout.',
+    );
   }
 
   try {
     const validation = await ssl.validatePayment(val_id);
-    const tx = await prisma.paymentTransaction.findUnique({ where: { id: tran_id } });
-    if (!tx) { return res.redirect(`${CLIENT_URL}/en/checkout?payment=error`); }
+    const validatedRisk = String((validation.raw as { risk_level?: unknown })?.risk_level ?? '') === '1' || risk;
+    const tx = await prisma.paymentTransaction.findUnique({ where: { id: tran_id || validation.tranId } });
+    if (!tx) {
+      return sendSslBrowserReturn(
+        res,
+        paymentCompleteUrl(locale, 'error'),
+        'Payment received',
+        'We are confirming your order. Please check My Orders in a moment.',
+      );
+    }
     if (!sslValidationMatchesTransaction(validation, tx)) {
       appLog('warn', 'sslcommerz_validation_mismatch', {
         transactionId: tran_id,
@@ -453,23 +695,44 @@ router.post('/sslcommerz/success', async (req: Request, res: Response) => {
         validationAmount: validation.amount,
         validationCurrency: validation.currency,
       });
-      return res.redirect(await recordPaymentFailure(tx.id, 'invalid'));
+      return sendSslBrowserReturn(
+        res,
+        await recordPaymentFailure(tx.id, 'invalid', locale),
+        'Payment could not be verified',
+        'Please contact OceanBazar support with your order number.',
+      );
     }
     await onPaymentSuccess(tx.id, val_id, 'sslcommerz');
-    // Land on account order page (same auth shell as the rest of account)
-    res.redirect(`${CLIENT_URL}/en/account/orders/${tx.orderId}?payment=success`);
+    return sendSslBrowserReturn(
+      res,
+      paymentCompleteUrl(locale, 'success', tx.orderId, { risk: validatedRisk }),
+      validatedRisk ? 'Payment received — verification needed' : 'Payment received',
+      'Taking you back to OceanBazar…',
+    );
   } catch (err: any) {
     console.error('[SSLCommerz] success error:', err.message);
-    res.redirect(`${CLIENT_URL}/en/checkout?payment=error`);
+    return sendSslBrowserReturn(
+      res,
+      paymentCompleteUrl(locale, 'error'),
+      'Payment received',
+      'We are confirming your order. Please check My Orders shortly.',
+    );
   }
-});
+}
+
+router.get('/sslcommerz/success', handleSslSuccess);
+router.post('/sslcommerz/success', handleSslSuccess);
 
 // SSLCommerz IPN webhook (no auth — verified by IPN hash + store credentials)
+router.get('/sslcommerz/ipn', (_req: Request, res: Response) => {
+  res.status(200).send('OK');
+});
+
 router.post('/sslcommerz/ipn', async (req: Request, res: Response) => {
-  const body = req.body as Record<string, string>;
+  const body = sslForm(req);
   const { tran_id, val_id, status } = body;
 
-  if (ssl.isSslConfigured() && !ssl.verifyIpnHash(body)) {
+  if (ssl.isSslConfigured() && body.verify_key && body.verify_sign && !ssl.verifyIpnHash(body)) {
     console.warn('[SSLCommerz] IPN hash mismatch — possible tampering');
     res.status(200).send('HASH_MISMATCH');
     return;
@@ -492,15 +755,24 @@ router.post('/sslcommerz/ipn', async (req: Request, res: Response) => {
   res.status(200).send('OK');
 });
 
-router.post('/sslcommerz/fail', async (req, res) => {
-  const transactionId = String(req.body?.tran_id || '');
-  res.redirect(await recordPaymentFailure(transactionId || undefined, 'failed'));
-});
+async function handleSslFail(req: Request, res: Response) {
+  const form = sslForm(req);
+  const locale = storefrontLocale(req);
+  const url = await recordPaymentFailure(form.tran_id || form.value_b || undefined, 'failed', locale);
+  sendSslBrowserReturn(res, url, 'Payment failed', 'You can retry Secure Checkout from your order.');
+}
 
-router.post('/sslcommerz/cancel', async (req, res) => {
-  const transactionId = String(req.body?.tran_id || '');
-  res.redirect(await recordPaymentFailure(transactionId || undefined, 'cancelled'));
-});
+async function handleSslCancel(req: Request, res: Response) {
+  const form = sslForm(req);
+  const locale = storefrontLocale(req);
+  const url = await recordPaymentFailure(form.tran_id || form.value_b || undefined, 'cancelled', locale);
+  sendSslBrowserReturn(res, url, 'Payment cancelled', 'Your order is saved. You can pay from checkout when ready.');
+}
+
+router.get('/sslcommerz/fail', handleSslFail);
+router.post('/sslcommerz/fail', handleSslFail);
+router.get('/sslcommerz/cancel', handleSslCancel);
+router.post('/sslcommerz/cancel', handleSslCancel);
 
 // ─── Nagad ────────────────────────────────────────────────────────────────────
 
@@ -557,7 +829,7 @@ router.post('/nagad/callback', async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
-    return res.redirect(await recordPaymentFailure(failedTx?.id, 'failed'));
+    return redirectSeeOther(res,await recordPaymentFailure(failedTx?.id, 'failed'));
   }
 
   const tx = await prisma.paymentTransaction.findFirst({
@@ -565,7 +837,7 @@ router.post('/nagad/callback', async (req: Request, res: Response) => {
     orderBy: { createdAt: 'desc' },
   });
   if (tx) { await onPaymentSuccess(tx.id, payment_ref_id, 'nagad'); }
-  res.redirect(`${CLIENT_URL}/en/account/orders/${orderId}?payment=success`);
+  redirectSeeOther(res,`${CLIENT_URL}/en/account/orders/${orderId}?payment=success`);
 });
 
 router.post('/nagad/confirm', requireAuth, async (req: Request, res: Response) => {
@@ -606,11 +878,11 @@ router.post('/rocket/initiate', requireAuth, async (req: Request, res: Response)
   }
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
   try {
-    const gatewayUrl = await ssl.initiatePayment({
+    const sslResult = await ssl.initiatePayment({
       transactionId: tx.id, orderNumber: order.orderNumber,
       amount, customerName: user?.name || '', customerEmail: user?.email || '', customerPhone: user?.phone || '',
     });
-    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl, purpose });
+    res.json({ transactionId: tx.id, redirectUrl: sslResult.gatewayPageURL, sessionkey: sslResult.sessionkey, purpose });
   } catch (err: any) {
     res.status(502).json({ error: 'Failed to initiate Rocket payment.' });
   }
@@ -648,11 +920,11 @@ router.post('/upay/initiate', requireAuth, async (req: Request, res: Response) =
   }
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
   try {
-    const gatewayUrl = await ssl.initiatePayment({
+    const sslResult = await ssl.initiatePayment({
       transactionId: tx.id, orderNumber: order.orderNumber,
       amount, customerName: user?.name || '', customerEmail: user?.email || '', customerPhone: user?.phone || '',
     });
-    res.json({ transactionId: tx.id, redirectUrl: gatewayUrl, purpose });
+    res.json({ transactionId: tx.id, redirectUrl: sslResult.gatewayPageURL, sessionkey: sslResult.sessionkey, purpose });
   } catch (err: any) {
     res.status(502).json({ error: 'Failed to initiate Upay payment.' });
   }

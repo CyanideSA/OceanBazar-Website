@@ -1,76 +1,355 @@
 <%- include('partials/head') %>
 <%- include('partials/header') %>
 
-<section class="section">
-  <h1><%= t('checkout') %></h1>
+<%
+  var tp0 = (typeof totalsPreview !== 'undefined' && totalsPreview) ? totalsPreview : null;
+  var meta0 = (typeof checkoutMeta !== 'undefined' && checkoutMeta) ? checkoutMeta : helpers.checkoutMeta;
+  var baseDue = tp0 ? Number(tp0.total) : Number(cart.total || cart.subtotal || 0);
+  if (typeof appliedOb !== 'undefined' && appliedOb && !tp0) {
+    baseDue = Math.max(0, baseDue - (Number(appliedOb.bdtDiscount) || 0));
+  }
+  var orderTotal = baseDue;
+  var codLimit = Number(meta0.codLimit || 5000);
+  var codOk = baseDue <= codLimit;
+  var selectedPay = paymentMethod === 'sslcommerz' ? 'sslcommerz' : 'cod';
+  if (!codOk) selectedPay = 'sslcommerz';
+%>
+
+<section class="section checkout-page">
+  <header class="checkout-head">
+    <h1><%= t('checkout') %></h1>
+    <p class="muted"><%= t('checkoutHint') %></p>
+  </header>
+
+  <% if (typeof paymentRetry !== 'undefined' && paymentRetry) { %>
+  <div class="checkout-panel" style="margin-bottom:16px;border-color:#f59e0b;">
+    <h2 class="checkout-panel-title">Complete payment</h2>
+    <p class="muted">Previous checkout payment did not finish. Retry Secure Checkout for this order.</p>
+    <form method="post" action="<%= basePath %>/<%= locale %>/checkout/retry-pay" class="stack" style="margin-top:12px;">
+      <input type="hidden" name="orderId" value="<%= paymentRetry.orderId %>" />
+      <input type="hidden" name="purpose" value="order_total" />
+      <button type="submit" class="btn btn-primary"><%= t('payNow') %></button>
+    </form>
+  </div>
+  <% } %>
 
   <div class="checkout-grid">
-    <div>
-      <h2><%= t('shippingAddress') %></h2>
-      <% if (!addresses.length) { %>
-      <p class="muted"><%= t('noAddresses') %></p>
-      <% } %>
+    <div class="checkout-main">
+      <form id="checkoutPlaceForm" method="post" action="<%= basePath %>/<%= locale %>/checkout/place" class="checkout-place-form">
+        <section class="checkout-panel">
+          <h2 class="checkout-panel-title"><%= t('shippingAddress') %></h2>
+          <% if (!addresses.length) { %>
+          <p class="muted checkout-empty-hint"><%= t('noAddresses') %></p>
+          <% } else { %>
+          <fieldset class="checkout-addr-list">
+            <legend class="sr-only"><%= t('shippingAddress') %></legend>
+            <% addresses.forEach(function(addr, i) {
+              var synced = addr.pathaoCityId && addr.pathaoZoneId;
+              var checked = synced && (addr.isDefault || (!addresses.some(function(a){ return a.isDefault && a.pathaoCityId; }) && i === 0));
+            %>
+            <label class="radio-card checkout-addr-card<%= !synced ? ' disabled' : '' %>">
+              <input type="radio" name="shippingAddressId" value="<%= addr.id %>" data-synced="<%= synced ? '1' : '0' %>" <%= checked ? 'checked' : '' %> <%= synced ? 'required' : 'disabled' %> />
+              <span class="checkout-addr-body">
+                <span class="checkout-addr-top">
+                  <strong><%= addr.label || addr.name || '' %></strong>
+                  <% if (addr.isDefault) { %><span class="checkout-badge"><%= t('default') %></span><% } %>
+                </span>
+                <span class="checkout-addr-line">
+                  <%= addr.line1 || addr.addressLine1 || addr.address || '' %><% if (addr.city || addr.district) { %>, <%= addr.city || '' %>, <%= addr.district || '' %><% } %>
+                  <% if (addr.pathaoAreaName) { %>, <%= addr.pathaoAreaName %><% } %>
+                </span>
+                <% if (!synced) { %><span class="warn-text">Edit address and select Pathao city/zone first.</span><% } %>
+              </span>
+            </label>
+            <% }) %>
+          </fieldset>
+          <% } %>
+        </section>
 
-      <form method="post" action="<%= basePath %>/<%= locale %>/checkout/place" class="stack">
-        <% if (addresses.length) { %>
-        <fieldset class="stack">
-          <% addresses.forEach(function(addr, i) { %>
-          <label class="radio-card">
-            <input type="radio" name="shippingAddressId" value="<%= addr.id %>" <%= (addr.isDefault || i === 0) ? 'checked' : '' %> required />
-            <span>
-              <strong><%= addr.name || '' %></strong> · <%= addr.phone || '' %><br />
-              <%= addr.addressLine1 || addr.address || '' %>,
-              <%= addr.area || '' %>, <%= addr.city || addr.district || '' %>
-              <% if (addr.isDefault) { %> <em>(<%= t('default') %>)</em><% } %>
-            </span>
+        <section class="checkout-panel">
+          <h2 class="checkout-panel-title"><%= t('paymentMethod') %></h2>
+          <div class="checkout-pay-grid">
+            <label class="radio-card checkout-pay-card">
+              <input type="radio" name="paymentMethod" value="sslcommerz" <%= selectedPay === 'sslcommerz' ? 'checked' : '' %> />
+              <span class="checkout-pay-icon checkout-pay-icon--ssl" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="currentColor" stroke-width="1.75"/><path d="M2 10h20" stroke="currentColor" stroke-width="1.75"/><path d="M6 15h4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+              </span>
+              <span class="checkout-pay-body">
+                <strong><%= t('payNow') %></strong>
+                <span class="muted"><%= t('payNowSub') %></span>
+                <img
+                  src="<%= basePath %>/sslcommerz-pay-now.jpg?v=1"
+                  alt="Pay with SSLCommerz — cards, bKash, Nagad, Upay, bank payments and more"
+                  style="display:block;margin-top:8px;width:100%;max-width:100%;height:auto;border-radius:6px;background:#fff;"
+                  loading="lazy"
+                />
+              </span>
+            </label>
+            <label class="radio-card checkout-pay-card<%= !codOk ? ' disabled' : '' %>">
+              <input type="radio" name="paymentMethod" value="cod" <%= selectedPay === 'cod' ? 'checked' : '' %> <%= !codOk ? 'disabled' : '' %> />
+              <span class="checkout-pay-icon checkout-pay-icon--cod" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 7h13l5 5v5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.75"/><circle cx="7.5" cy="16.5" r="1.5" fill="currentColor"/><circle cx="16.5" cy="16.5" r="1.5" fill="currentColor"/></svg>
+              </span>
+              <span class="checkout-pay-body">
+                <strong><%= t('payLater') %></strong>
+                <span class="muted"><%= t('payLaterSub') %></span>
+                <span class="muted"><%= t('payLaterSub') %></span>
+                <% if (!codOk) { %>
+                <span class="warn-text"><%= t('codDisabledMsg') %> ৳<%= codLimit.toLocaleString('en-BD') %></span>
+                <% } %>
+              </span>
+            </label>
+          </div>
+          <p class="muted" id="courierQuoteLine" style="margin-top:10px;font-size:13px;">Select an address to load Pathao delivery charge.</p>
+        </section>
+
+        <section class="checkout-panel checkout-panel--notes">
+          <label class="field">
+            <span><%= t('notes') %></span>
+            <textarea name="notes" rows="2" placeholder="<%= t('notesPlaceholder') %>"></textarea>
           </label>
-          <% }) %>
-        </fieldset>
+        </section>
+
+        <% if (typeof appliedOb !== 'undefined' && appliedOb) { %>
+        <input type="hidden" name="obPointsToRedeem" value="<%= appliedOb.points %>" />
         <% } %>
 
-        <h2><%= t('paymentMethod') %></h2>
-        <label class="radio-card"><input type="radio" name="paymentMethod" value="cod" checked /> <%= t('cod') %> / Pay later</label>
-        <label class="radio-card"><input type="radio" name="paymentMethod" value="sslcommerz" /> <%= t('sslcommerz') %> / Pay now</label>
-
-        <label class="field">
-          <span><%= t('notes') %></span>
-          <textarea name="notes" rows="2"></textarea>
+        <label class="checkout-policies" id="sslPolicyWrap" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:13px;line-height:1.45;">
+          <input type="checkbox" name="agreePolicies" value="1" required style="margin-top:3px;" />
+          <span>
+            I have read and agree to the
+            <a href="<%= basePath %>/<%= locale %>/policies/terms"><%= t('termsConditions') %></a>,
+            <a href="<%= basePath %>/<%= locale %>/policies/privacy"><%= t('privacyPolicy') %></a>,
+            <a href="<%= basePath %>/<%= locale %>/policies/returns"><%= t('returnPolicy') %></a>,
+            <a href="<%= basePath %>/<%= locale %>/policies/refunds"><%= t('refundPolicy') || 'Refund Policy' %></a>
+            &amp;
+            <a href="<%= basePath %>/<%= locale %>/policies/shipping"><%= t('shippingPolicy') || 'Shipping Policy' %></a>.
+          </span>
         </label>
 
         <% if (addresses.length) { %>
-        <button type="submit" class="btn btn-primary btn-block"><%= t('placeOrder') %></button>
+        <div class="checkout-place-desktop">
+          <button type="submit" class="btn btn-primary btn-block auth-submit"><%= t('placeOrder') %></button>
+        </div>
         <% } %>
       </form>
 
-      <h3><%= t('addAddress') %></h3>
-      <form method="post" action="<%= basePath %>/<%= locale %>/checkout/address" class="stack">
-        <label class="field"><span><%= t('name') %></span><input name="name" required /></label>
-        <label class="field"><span><%= t('phone') %></span><input name="phone" required /></label>
-        <label class="field"><span><%= t('addressLine') %></span><input name="addressLine" required /></label>
-        <label class="field"><span><%= t('area') %></span><input name="area" /></label>
-        <label class="field"><span><%= t('city') %></span><input name="city" required /></label>
-        <label class="field"><span><%= t('district') %></span><input name="district" /></label>
-        <label class="field"><span><%= t('postalCode') %></span><input name="postalCode" /></label>
-        <button type="submit" class="btn"><%= t('save') %></button>
-      </form>
+      <%
+        var bal = (typeof obBalance !== 'undefined' && obBalance) ? obBalance : { balance: 0 };
+        var applied = (typeof appliedOb !== 'undefined' && appliedOb) ? appliedOb : null;
+        var ptsBalance = Number(bal.balance) || 0;
+        var minPts = Number(typeof minRedeemable !== 'undefined' ? minRedeemable : 1000) || 1000;
+      %>
+      <section class="checkout-panel">
+        <h2 class="checkout-panel-title"><%= t('obPoints') %></h2>
+        <p class="muted"><%= t('pointsBalance') %>: <strong><%= ptsBalance.toLocaleString() %></strong></p>
+        <% if (applied) { %>
+        <p class="banner ok"><%= applied.points %> OB → −<%= helpers.money(applied.bdtDiscount) %></p>
+        <form method="post" action="<%= basePath %>/<%= locale %>/checkout/points" class="inline" style="margin-top:8px;">
+          <input type="hidden" name="points" value="0" />
+          <button type="submit" class="btn btn-sm"><%= t('removePoints') %></button>
+        </form>
+        <% } else { %>
+        <p class="muted" style="font-size:12px;"><%= t('pointsRedeemHint') %></p>
+        <form method="post" action="<%= basePath %>/<%= locale %>/checkout/points" class="inline" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="number" name="points" min="0" step="1000" max="<%= ptsBalance %>" placeholder="<%= t('obPoints') %>" style="max-width:140px;" />
+          <button type="submit" class="btn btn-sm" <%= ptsBalance < minPts ? 'disabled' : '' %>><%= t('applyPoints') %></button>
+        </form>
+        <% } %>
+      </section>
+
+      <details class="checkout-add-card"<%= !addresses.length ? ' open' : '' %>>
+        <summary class="checkout-add-summary">
+          <span><%= t('addAddress') %></span>
+          <span class="checkout-add-chevron" aria-hidden="true"></span>
+        </summary>
+        <form
+          method="post"
+          action="<%= basePath %>/<%= locale %>/checkout/address"
+          class="stack checkout-add-form"
+          data-pathao-base="<%= basePath %>/<%= locale %>/pathao"
+        >
+          <label class="field"><span>Label</span><input name="label" required value="Home" /></label>
+          <label class="field"><span><%= t('addressLine') %></span><input name="line1" required autocomplete="street-address" /></label>
+          <label class="field"><span>Address line 2</span><input name="line2" /></label>
+          <label class="field">
+            <span><%= t('city') %> (Pathao)</span>
+            <select name="pathaoCityId" data-pathao="city" required></select>
+          </label>
+          <label class="field">
+            <span><%= t('district') %> / Zone (Pathao)</span>
+            <select name="pathaoZoneId" data-pathao="zone" required></select>
+          </label>
+          <label class="field">
+            <span>Area (optional)</span>
+            <select name="pathaoAreaId" data-pathao="area"></select>
+          </label>
+          <input type="hidden" name="pathaoCityName" value="" />
+          <input type="hidden" name="pathaoZoneName" value="" />
+          <input type="hidden" name="pathaoAreaName" value="" />
+          <label class="field"><span><%= t('postalCode') %></span><input name="postalCode" autocomplete="postal-code" /></label>
+          <button type="submit" class="btn"><%= t('save') %></button>
+        </form>
+      </details>
     </div>
 
-    <aside class="cart-side">
-      <h2><%= t('cart') %></h2>
-      <ul class="mini-list">
+    <aside class="cart-side checkout-summary">
+      <h2 class="checkout-panel-title"><%= t('orderSummary') %></h2>
+      <form method="post" action="<%= basePath %>/<%= locale %>/cart/coupon" class="inline" style="margin-bottom:12px;display:flex;gap:8px">
+        <input type="text" name="code" placeholder="<%= t('coupon') %>" value="<%= (typeof appliedCoupon !== 'undefined' && appliedCoupon && appliedCoupon.code) || cart.couponCode || '' %>" autocomplete="off" style="flex:1;text-transform:uppercase" />
+        <button type="submit" class="btn"><%= t('apply') %></button>
+      </form>
+      <ul class="mini-list checkout-mini-list">
         <% cart.items.forEach(function(item) { %>
-        <li>
-          <%= helpers.pickName(item.product || item, locale) || item.name %>
-          × <%= item.quantity %>
-          <span><%= helpers.money(Number(item.unitPrice || item.price || 0) * Number(item.quantity || 1)) %></span>
+        <%
+          var lineName = helpers.pickName(item.product || item, locale) || item.name;
+          var lineImg = helpers.productImage(item.product || item);
+          var lineQty = Number(item.quantity || 1);
+          var lineTotal = Number(item.unitPrice || item.price || 0) * lineQty;
+        %>
+        <li class="checkout-line">
+          <img class="checkout-thumb" src="<%= lineImg %>" alt="" width="48" height="48" loading="lazy" />
+          <span class="checkout-line-meta">
+            <span class="checkout-line-name"><%= lineName %></span>
+            <span class="muted">× <%= lineQty %></span>
+          </span>
+          <span class="checkout-line-price"><%= helpers.money(lineTotal) %></span>
         </li>
         <% }) %>
       </ul>
       <dl class="totals">
-        <div class="grand"><dt><%= t('total') %></dt><dd><%= helpers.money(cart.total || cart.subtotal) %></dd></div>
+        <%
+          var tp = (typeof totalsPreview !== 'undefined' && totalsPreview) ? totalsPreview : null;
+          var meta = (typeof checkoutMeta !== 'undefined' && checkoutMeta) ? checkoutMeta : helpers.checkoutMeta;
+          var shipFee = tp ? Number(tp.shippingFee) : Number(cart.shipping || 0);
+          var vatAmt = tp ? Number(tp.gst) : Number(cart.gst || cart.vat || 0);
+          var dueTotal = tp ? Number(tp.total) : Math.max(0, Number(cart.total || cart.subtotal || 0) - (typeof appliedOb !== 'undefined' && appliedOb ? Number(appliedOb.bdtDiscount) || 0 : 0));
+          var threshold = Number(meta.freeFeesThreshold || 5000);
+          var savings = Number(cart.discount || 0) + (typeof appliedOb !== 'undefined' && appliedOb ? Number(appliedOb.bdtDiscount) || 0 : 0);
+          if (shipFee === 0) savings += Number(meta.shippingFlat || 25);
+          var vatPct = helpers.formatVatPercent ? helpers.formatVatPercent(meta.gstRate) : '7.5';
+          var subtotalExclVat = tp && tp.taxableAmount != null ? Number(tp.taxableAmount) : Number(cart.subtotal || 0);
+          var displayDue = dueTotal;
+          // t() echoes the key back when a translation is missing — fall back to real copy instead.
+          var tv = function (key, fallback) { var s = t(key); return !s || s === key ? fallback : s; };
+        %>
+        <% if (cart.discount) { %>
+        <div><dt><%= t('lineItemsGross') || 'Items (incl. VAT)' %></dt><dd><%= helpers.money(cart.subtotal) %></dd></div>
+        <div class="totals-savings"><dt><%= t('lineCoupon') || t('discount') %></dt><dd>−<%= helpers.money(cart.discount) %></dd></div>
+        <% } %>
+        <div><dt><%= t('lineMerchandise') || t('subtotal') || 'Merchandise' %></dt><dd><%= helpers.money(subtotalExclVat) %></dd></div>
+        <% if (typeof appliedOb !== 'undefined' && appliedOb) { %>
+        <div class="totals-savings"><dt><%= t('lineObPoints') || t('obPoints') %></dt><dd>−<%= helpers.money(appliedOb.bdtDiscount) %></dd></div>
+        <% } %>
+        <div><dt><%= t('lineShipping') || t('shipping') || 'Shipping' %></dt><dd id="summaryShipping"><% if (shipFee === 0) { %><span class="text-free"><%= t('freeShipping') || 'Free' %></span><% } else { %><%= helpers.money(shipFee) %><% } %></dd></div>
+        <% if (cart.retailQuantityOrder !== false && shipFee > 0 && Number(cart.subtotal || 0) < threshold) { %>
+        <p class="totals-hint"><%= tv('freeShipThresholdHint', 'Add ৳' + Math.max(0, threshold - Number(cart.subtotal || 0)).toLocaleString('en-BD') + ' more for free delivery (৳' + threshold.toLocaleString('en-BD') + '+).') %></p>
+        <% } %>
+        <div><dt><%= t('lineVat') || t('vat') || 'VAT' %> (<%= vatPct %>%)</dt><dd><% if (vatAmt === 0) { %><span class="text-free"><%= t('vatWaived') || 'Not charged' %></span><% } else { %><%= helpers.money(vatAmt) %><% } %></dd></div>
+        <% if (vatAmt > 0) { %><p class="totals-hint muted"><%= tv('lineVatHint', 'Item prices include ' + vatPct + '% VAT') %></p><% } %>
+        <% if (savings > 0) { %>
+        <div class="totals-savings-banner"><dt><%= t('lineSavings') || 'You save' %></dt><dd><%= helpers.money(savings) %></dd></div>
+        <% } %>
+        <div class="grand"><dt><%= t('totalDue') || t('total') %></dt><dd id="summaryTotal"><%= helpers.money(displayDue) %></dd></div>
       </dl>
     </aside>
   </div>
+
+<script src="<%= basePath %>/js/pathao-address.js" defer></script>
+<script>
+(function () {
+  var base = <%= JSON.stringify(basePath + '/' + locale + '/pathao') %>;
+  var couponWaivesShipping = <%= JSON.stringify(Boolean(cart.freeShipping || (typeof totalsPreview !== 'undefined' && totalsPreview && totalsPreview.shippingFee === 0))) %>;
+  var cartBaseTotal = <%= JSON.stringify(typeof totalsPreview !== 'undefined' && totalsPreview ? Number(totalsPreview.total) : Math.max(0, Number(cart.total || cart.subtotal || 0) - (typeof appliedOb !== 'undefined' && appliedOb ? Number(appliedOb.bdtDiscount) || 0 : 0))) %>;
+  var baseShippingInTotal = <%= JSON.stringify(typeof totalsPreview !== 'undefined' && totalsPreview ? Number(totalsPreview.shippingFee) : Number(cart.shipping || 0)) %>;
+  var quoteLine = document.getElementById('courierQuoteLine');
+  var shipEl = document.getElementById('summaryShipping');
+  var totalEl = document.getElementById('summaryTotal');
+  var mobileTotalEl = document.getElementById('checkoutMobileTotal');
+  var money = function (n) { return '৳' + Number(n || 0).toLocaleString('en-BD'); };
+  var currentShip = baseShippingInTotal;
+
+  function merchandiseDue() {
+    return Math.max(0, cartBaseTotal - baseShippingInTotal + currentShip);
+  }
+  function refreshTotal() {
+    var due = merchandiseDue();
+    if (totalEl) totalEl.textContent = money(due);
+    if (mobileTotalEl) mobileTotalEl.textContent = money(due);
+  }
+
+  function selectedAddr() {
+    return document.querySelector('input[name="shippingAddressId"]:checked');
+  }
+
+  async function refreshQuote() {
+    var el = selectedAddr();
+    if (!el || el.getAttribute('data-synced') !== '1') {
+      if (quoteLine) quoteLine.textContent = 'Select a Pathao-synced address to load delivery charge.';
+      return;
+    }
+    if (couponWaivesShipping || baseShippingInTotal === 0) {
+      if (quoteLine) quoteLine.textContent = 'Delivery charge not collected with this order.';
+      if (shipEl) shipEl.innerHTML = '<span class="text-free">Free</span>';
+      currentShip = 0;
+      refreshTotal();
+      return;
+    }
+    try {
+      var res = await fetch(base + '/quote', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ shippingAddressId: Number(el.value), itemCount: <%= Number(cart.items && cart.items.length) || 1 %> }),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Quote failed');
+      var fee = Number(data.quote && data.quote.price) || 0;
+      if (quoteLine) quoteLine.textContent = 'Pathao delivery charge: ' + money(fee);
+      if (shipEl) shipEl.innerHTML = fee === 0 ? '<span class="text-free">Free</span>' : money(fee);
+      currentShip = fee;
+      refreshTotal();
+    } catch (err) {
+      if (quoteLine) quoteLine.textContent = 'Standard delivery charge applied.';
+      if (shipEl) shipEl.textContent = money(baseShippingInTotal);
+      currentShip = baseShippingInTotal;
+      refreshTotal();
+    }
+  }
+
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.name === 'shippingAddressId') refreshQuote();
+    if (e.target && (e.target.name === 'paymentMethod' || e.target.name === 'agreePolicies')) {
+      if (e.target.name === 'paymentMethod') refreshTotal();
+      syncPlaceButtons();
+    }
+  });
+  refreshTotal();
+  function syncPlaceButtons() {
+    var box = document.querySelector('input[name="agreePolicies"]');
+    var agreed = box && box.checked;
+    document.querySelectorAll('button[type="submit"]').forEach(function (btn) {
+      btn.disabled = !agreed;
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    refreshQuote();
+    syncPlaceButtons();
+  });
+})();
+</script>
+
+  <% if (addresses.length) { %>
+  <div class="checkout-place-mobile">
+    <div class="checkout-place-mobile-inner">
+      <div class="checkout-place-mobile-total">
+        <span class="muted"><%= t('total') %></span>
+        <strong id="checkoutMobileTotal"><%= helpers.money(displayDue) %></strong>
+      </div>
+      <button type="submit" form="checkoutPlaceForm" class="btn btn-primary"><%= t('placeOrder') %></button>
+    </div>
+  </div>
+  <% } %>
 </section>
 
 <%- include('partials/footer') %>

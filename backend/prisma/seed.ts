@@ -218,8 +218,10 @@ async function main() {
     await prisma.site_settings.create({
       data: {
         id: 'default',
-        support_email: 'support@oceanbazar.com',
-        support_phone: '+880-1700-000000',
+        support_email: 'contact@oceanbazar.com.bd',
+        support_phone: '+880 1349 358 825',
+        logo_light_url: '/ob-brand-logo.png?v=10',
+        logo_dark_url: '/ob-brand-logo.png?v=10',
         facebook_url: 'https://facebook.com/oceanbazar',
         instagram_url: 'https://instagram.com/oceanbazar',
         youtube_url: 'https://youtube.com/@oceanbazar',

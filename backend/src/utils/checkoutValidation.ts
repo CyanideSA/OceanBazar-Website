@@ -24,7 +24,9 @@ import {
   validateRedemption,
   wouldUpgradeTier,
   calculatePointsEarned,
+  DEFAULT_OB_POINTS_RULES,
   type OBTier,
+  type ObPointsRules,
 } from './obPoints';
 import {
   checkCodEligibility,
@@ -53,6 +55,9 @@ export interface CheckoutInput {
   obTier: OBTier;
   lifetimeSpend: number;
   codContext: CodEligibilityInput;
+  obRules?: ObPointsRules;
+  /** Optional active tax policy from taxVatSystem (defaults preserve GST_RATE exclusive) */
+  taxPolicy?: { vatRate: number; priceInclusive: boolean } | null;
 }
 
 export interface CheckoutLineResult {
@@ -73,6 +78,8 @@ export interface CheckoutResult {
   totals: OrderTotals;
   couponDiscount: number;
   freeShipping: boolean;
+  freeService: boolean;
+  freeVat: boolean;
   obDiscount: number;
   obPointsEarned: number;
   tierUpgrade: { upgrades: boolean; from: OBTier; to: OBTier };
@@ -155,6 +162,8 @@ export function validateCheckout(input: CheckoutInput): CheckoutResult {
   // 5. Coupon
   let couponDiscount = 0;
   let freeShipping = false;
+  let freeService = false;
+  let freeVat = false;
 
   if (input.coupon) {
     const cv = validateCoupon({ coupon: input.coupon, subtotal });
@@ -164,13 +173,16 @@ export function validateCheckout(input: CheckoutInput): CheckoutResult {
       const applied = applyCoupon(input.coupon, subtotal);
       couponDiscount = applied.discountAmount;
       freeShipping = applied.freeShipping;
+      freeService = applied.freeService;
+      freeVat = applied.freeVat;
     }
   }
 
   // 6. OB points
+  const obRules = input.obRules ?? DEFAULT_OB_POINTS_RULES;
   let obDiscount = 0;
   if (input.obPointsToRedeem > 0) {
-    const rv = validateRedemption(input.obTier, input.obBalance, input.obPointsToRedeem);
+    const rv = validateRedemption(input.obTier, input.obBalance, input.obPointsToRedeem, obRules);
     if (!rv.valid) {
       errors.push(rv.error!);
     } else {
@@ -182,8 +194,13 @@ export function validateCheckout(input: CheckoutInput): CheckoutResult {
   const retailQuantityOrder = input.items.every((it) => it.quantity <= getRetailMaxQty(it.pricing.retail));
   const totals = calculateOrderTotals(subtotal, couponDiscount, obDiscount, {
     couponFreeShipping: freeShipping,
+    couponFreeService: freeService,
+    couponFreeVat: freeVat,
     retailQuantityOrder,
+    vatRate: input.taxPolicy?.vatRate,
+    priceInclusive: input.taxPolicy?.priceInclusive,
   });
+
 
   // 8. COD check
   const codResult = checkCodEligibility({
@@ -195,8 +212,8 @@ export function validateCheckout(input: CheckoutInput): CheckoutResult {
   }
 
   // 9. OB points earned + tier upgrade preview
-  const obPointsEarned = calculatePointsEarned(totals.total);
-  const tierUpgrade = wouldUpgradeTier(input.lifetimeSpend, totals.total);
+  const obPointsEarned = calculatePointsEarned(totals.total, obRules);
+  const tierUpgrade = wouldUpgradeTier(input.lifetimeSpend, totals.total, obRules);
 
   return {
     valid: errors.length === 0,
@@ -205,6 +222,8 @@ export function validateCheckout(input: CheckoutInput): CheckoutResult {
     totals,
     couponDiscount,
     freeShipping,
+    freeService,
+    freeVat,
     obDiscount,
     obPointsEarned,
     tierUpgrade,

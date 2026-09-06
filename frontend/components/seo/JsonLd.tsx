@@ -6,6 +6,9 @@
 
 import type { Product } from '@/types';
 
+/** Live storefront origin — structured data must reference the real domain. */
+const SITE_URL = 'https://oceanbazar.com.bd';
+
 // ─── Organization (homepage) ──────────────────────────────────────────────────
 
 export function OrganizationJsonLd() {
@@ -13,15 +16,16 @@ export function OrganizationJsonLd() {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     name: 'Oceanbazar',
-    url: 'https://oceanbazar.com',
-    logo: 'https://oceanbazar.com/images/logo-dark.png',
+    url: SITE_URL,
+    logo: `${SITE_URL}/ob-brand-logo.png?v=10`,
     sameAs: [
       'https://www.facebook.com/oceanbazarbd',
       'https://www.instagram.com/oceanbazarbd',
     ],
     contactPoint: {
       '@type': 'ContactPoint',
-      telephone: '+880-1700-000000',
+      telephone: '+880 1349 358 825',
+      email: 'contact@oceanbazar.com.bd',
       contactType: 'customer service',
       availableLanguage: ['Bengali', 'English'],
     },
@@ -41,12 +45,12 @@ export function WebSiteJsonLd() {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: 'Oceanbazar',
-    url: 'https://oceanbazar.com',
+    url: SITE_URL,
     potentialAction: {
       '@type': 'SearchAction',
       target: {
         '@type': 'EntryPoint',
-        urlTemplate: 'https://oceanbazar.com/en/products?q={search_term_string}',
+        urlTemplate: `${SITE_URL}/en/products?q={search_term_string}`,
       },
       'query-input': 'required name=search_term_string',
     },
@@ -75,10 +79,23 @@ interface ProductJsonLdProps {
 }
 
 export function ProductJsonLd({ product, locale = 'en' }: ProductJsonLdProps) {
-  const baseUrl = 'https://oceanbazar.com';
+  const baseUrl = SITE_URL;
   const productUrl = `${baseUrl}/${locale}/product/${product.id}`;
   const price = product.pricing?.retail?.price ?? 0;
   const compareAt = product.pricing?.retail?.compareAt;
+  const stock = product.stock ?? (product as { stockQuantity?: number }).stockQuantity ?? 1;
+  const sku =
+    product.sku ||
+    (product as { mpn?: string }).mpn ||
+    null;
+  const ratingAvg =
+    product.ratingAvg ??
+    (product as { rating?: number }).rating ??
+    null;
+  const reviewCount =
+    product.reviewCount ??
+    (product as { reviewsCount?: number }).reviewsCount ??
+    0;
 
   const offers: Record<string, unknown> = {
     '@type': 'Offer',
@@ -86,15 +103,20 @@ export function ProductJsonLd({ product, locale = 'en' }: ProductJsonLdProps) {
     priceCurrency: 'BDT',
     price: Number(price).toFixed(2),
     availability:
-      (product.stock ?? 1) > 0
+      Number(stock) > 0
         ? 'https://schema.org/InStock'
         : 'https://schema.org/OutOfStock',
+    itemCondition: 'https://schema.org/NewCondition',
     seller: {
       '@type': 'Organization',
       name: 'Oceanbazar',
     },
     priceValidUntil: new Date(Date.now() + 30 * 86400_000).toISOString().split('T')[0],
   };
+
+  if (sku) {
+    offers.sku = sku;
+  }
 
   if (compareAt && compareAt > price) {
     offers.hasMerchantReturnPolicy = {
@@ -125,20 +147,26 @@ export function ProductJsonLd({ product, locale = 'en' }: ProductJsonLdProps) {
     data.image = product.primaryImage;
   }
 
+  const brandDetailName = (product as { brandDetail?: { nameEn?: string } | null }).brandDetail?.nameEn;
   if (product.brand) {
     data.brand = { '@type': 'Brand', name: product.brand };
+  } else if (brandDetailName) {
+    data.brand = {
+      '@type': 'Brand',
+      name: brandDetailName,
+    };
   }
 
-  if (product.sku) {
-    data.sku = product.sku;
-    data.mpn = product.sku;
+  if (sku) {
+    data.sku = sku;
+    data.mpn = sku;
   }
 
-  if (product.ratingAvg != null && (product.reviewCount ?? 0) > 0) {
+  if (ratingAvg != null && Number(reviewCount) > 0) {
     data.aggregateRating = {
       '@type': 'AggregateRating',
-      ratingValue: Number(product.ratingAvg).toFixed(1),
-      reviewCount: product.reviewCount,
+      ratingValue: Number(ratingAvg).toFixed(1),
+      reviewCount: Number(reviewCount),
       bestRating: '5',
       worstRating: '1',
     };
@@ -220,7 +248,7 @@ export function ItemListJsonLd({
   products: Array<{ id: string; title: string; primaryImage?: string }>;
   locale?: string;
 }) {
-  const baseUrl = 'https://oceanbazar.com';
+  const baseUrl = SITE_URL;
   const data = {
     '@context': 'https://schema.org',
     '@type': 'ItemList',

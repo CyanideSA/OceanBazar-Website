@@ -1,0 +1,267 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<%
+  var tp = (typeof totalsPreview !== 'undefined' && totalsPreview) ? totalsPreview : null;
+  var meta = (typeof checkoutMeta !== 'undefined' && checkoutMeta) ? checkoutMeta : helpers.checkoutMeta;
+  var baseDue = tp ? Number(tp.total) : Number(cart.total || cart.subtotal || 0);
+  var shipFee = tp ? Number(tp.shippingFee) : Number(cart.shipping || 0);
+  var vatAmt = tp ? Number(tp.gst) : Number(cart.gst || 0);
+  var orderTotal = baseDue;
+  var codLimit = Number(meta.codLimit || 5000);
+  var codOk = baseDue <= codLimit;
+  if (!codOk) { selectedPay = 'sslcommerz'; }
+  var threshold = Number(meta.freeFeesThreshold || 5000);
+  var vatPct = helpers.formatVatPercent ? helpers.formatVatPercent(meta.gstRate) : '7.5';
+  var subtotalExclVat = tp && tp.taxableAmount != null ? Number(tp.taxableAmount) : Number(cart.subtotal || 0);
+  // t() echoes the key back when a translation is missing — fall back to real copy instead.
+  var tv = function (key, fallback) { var s = t(key); return !s || s === key ? fallback : s; };
+%>
+
+<section class="section checkout-page">
+  <header class="checkout-head">
+    <h1><%= t('checkout') %> — Guest</h1>
+    <p class="muted">No account needed. <a href="<%= loginUrl %>">Sign in</a> to earn OB Points and save addresses.</p>
+  </header>
+
+  <% if (typeof paymentRetry !== 'undefined' && paymentRetry) { %>
+  <div class="checkout-panel" style="margin-bottom:16px;border-color:#f59e0b;">
+    <h2 class="checkout-panel-title">Complete payment</h2>
+    <p class="muted">Previous guest checkout payment did not finish. Retry Secure Checkout for this order.</p>
+  </div>
+  <% } %>
+
+  <div class="checkout-grid">
+    <div class="checkout-main">
+      <form id="checkoutGuestForm" method="post" action="<%= basePath %>/<%= locale %>/checkout/place-guest" class="checkout-place-form" data-pathao-base="<%= basePath %>/<%= locale %>/pathao">
+        <section class="checkout-panel">
+          <h2 class="checkout-panel-title">Contact</h2>
+          <div class="stack">
+            <label class="field"><span>Full name</span><input name="name" required autocomplete="name" /></label>
+            <label class="field"><span>Email</span><input type="email" name="email" required autocomplete="email" /></label>
+            <label class="field"><span>Phone</span><input type="tel" name="phone" required autocomplete="tel" placeholder="01XXXXXXXXX" /></label>
+          </div>
+        </section>
+
+        <section class="checkout-panel">
+          <h2 class="checkout-panel-title"><%= t('shippingAddress') %></h2>
+          <div class="stack">
+            <label class="field"><span><%= t('addressLine') %></span><input name="line1" required autocomplete="street-address" /></label>
+            <label class="field"><span>Address line 2</span><input name="line2" /></label>
+            <label class="field">
+              <span><%= t('city') %> (Pathao)</span>
+              <select name="pathaoCityId" data-pathao="city" required></select>
+            </label>
+            <label class="field">
+              <span><%= t('district') %> / Zone (Pathao)</span>
+              <select name="pathaoZoneId" data-pathao="zone" required></select>
+            </label>
+            <label class="field">
+              <span>Area (optional)</span>
+              <select name="pathaoAreaId" data-pathao="area"></select>
+            </label>
+            <input type="hidden" name="pathaoCityName" data-pathao-name="city" />
+            <input type="hidden" name="pathaoZoneName" data-pathao-name="zone" />
+            <input type="hidden" name="pathaoAreaName" data-pathao-name="area" />
+            <label class="field"><span>Postal code</span><input name="postalCode" /></label>
+          </div>
+        </section>
+
+        <section class="checkout-panel">
+          <h2 class="checkout-panel-title"><%= t('paymentMethod') %></h2>
+          <div class="checkout-pay-grid">
+            <label class="radio-card checkout-pay-card">
+              <input type="radio" name="paymentMethod" value="sslcommerz" <%= selectedPay === 'sslcommerz' ? 'checked' : '' %> />
+              <span class="checkout-pay-body">
+                <strong><%= t('payNow') %></strong>
+                <span class="muted"><%= t('payNowSub') %></span>
+              </span>
+            </label>
+            <label class="radio-card checkout-pay-card<%= !codOk ? ' disabled' : '' %>">
+              <input type="radio" name="paymentMethod" value="cod" <%= selectedPay === 'cod' ? 'checked' : '' %> <%= !codOk ? 'disabled' : '' %> />
+              <span class="checkout-pay-body">
+                <strong><%= t('payLater') %></strong>
+                <span class="muted"><%= t('payLaterSub') %></span>
+                <% if (!codOk) { %>
+                <span class="warn-text"><%= t('codDisabledMsg') %> ৳<%= codLimit.toLocaleString('en-BD') %></span>
+                <% } %>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <section class="checkout-panel checkout-panel--notes">
+          <label class="field">
+            <span><%= t('notes') %></span>
+            <textarea name="notes" rows="2" placeholder="<%= t('notesPlaceholder') %>"></textarea>
+          </label>
+        </section>
+
+        <label class="checkout-policies" id="sslPolicyWrap" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:13px;line-height:1.45;">
+          <input type="checkbox" name="agreePolicies" value="1" required style="margin-top:3px;" />
+          <span>
+            I have read and agree to the
+            <a href="<%= basePath %>/<%= locale %>/policies/terms"><%= t('termsConditions') %></a>,
+            <a href="<%= basePath %>/<%= locale %>/policies/privacy"><%= t('privacyPolicy') %></a>,
+            <a href="<%= basePath %>/<%= locale %>/policies/returns"><%= t('returnPolicy') %></a>,
+            <a href="<%= basePath %>/<%= locale %>/policies/refunds"><%= t('refundPolicy') || 'Refund Policy' %></a>
+            &amp;
+            <a href="<%= basePath %>/<%= locale %>/policies/shipping"><%= t('shippingPolicy') || 'Shipping Policy' %></a>.
+          </span>
+        </label>
+
+        <div class="checkout-place-desktop">
+          <button type="submit" class="btn btn-primary btn-block auth-submit"><%= t('placeOrder') %></button>
+        </div>
+      </form>
+    </div>
+
+    <aside class="checkout-aside">
+      <section class="checkout-panel">
+        <h2 class="checkout-panel-title"><%= t('orderSummary') %></h2>
+        <ul class="checkout-summary-list">
+          <% (cart.items || []).forEach(function(item) { %>
+          <li>
+            <span><%= item.name || item.title || item.productId %> × <%= item.quantity %></span>
+            <strong><%= helpers.money(Number(item.unitPrice || 0) * Number(item.quantity || 1)) %></strong>
+          </li>
+          <% }) %>
+        </ul>
+        <dl class="totals">
+          <div><dt><%= tv('lineMerchandise', 'Subtotal (excl. VAT)') %></dt><dd><%= helpers.money(subtotalExclVat) %></dd></div>
+          <div><dt><%= tv('lineShipping', 'Shipping') %></dt><dd id="guestSummaryShipping"><% if (shipFee === 0) { %><span class="text-free"><%= tv('freeShipping', 'Free') %></span><% } else { %><%= helpers.money(shipFee) %><% } %></dd></div>
+          <p class="muted" id="guestCourierQuoteLine" style="font-size:13px;margin-top:6px;">Select city and zone for Pathao delivery charge.</p>
+          <% if (shipFee > 0 && Number(cart.subtotal || 0) < threshold) { %>
+          <p class="totals-hint"><%= tv('freeShipThresholdHint', 'Add ৳' + Math.max(0, threshold - Number(cart.subtotal || 0)).toLocaleString('en-BD') + ' more for free delivery.') %></p>
+          <% } %>
+          <div><dt><%= tv('lineVat', 'VAT') %> (<%= vatPct %>%)</dt><dd><% if (vatAmt === 0) { %><span class="text-free"><%= tv('vatWaived', 'Not charged') %></span><% } else { %><%= helpers.money(vatAmt) %><% } %></dd></div>
+          <% if (vatAmt > 0) { %><p class="totals-hint muted"><%= tv('lineVatHint', 'Item prices include ' + vatPct + '% VAT') %></p><% } %>
+          <div class="grand"><dt><%= tv('totalDue', t('total')) %></dt><dd id="guestSummaryTotal"><%= helpers.money(orderTotal) %></dd></div>
+        </dl>
+        <p class="muted" style="font-size:12px;margin-top:8px;">Guest checkout does not earn or redeem OB Points.</p>
+      </section>
+    </aside>
+  </div>
+</section>
+
+<script>
+(function () {
+  var form = document.getElementById('checkoutGuestForm');
+  if (!form) return;
+  var policyWrap = document.getElementById('sslPolicyWrap');
+  if (policyWrap) policyWrap.style.display = 'flex';
+  function syncPlaceButtons() {
+    var box = form.querySelector('input[name="agreePolicies"]');
+    var agreed = box && box.checked;
+    form.querySelectorAll('button[type="submit"]').forEach(function (btn) {
+      btn.disabled = !agreed;
+    });
+  }
+  form.querySelectorAll('input[name="paymentMethod"], input[name="agreePolicies"]').forEach(function (el) {
+    el.addEventListener('change', syncPlaceButtons);
+  });
+  syncPlaceButtons();
+
+  // Reuse Pathao picker script pattern from checkout.ejs if present
+  var base = form.getAttribute('data-pathao-base');
+  if (!base) return;
+  var cartBaseTotal = <%= JSON.stringify(baseDue) %>;
+  var baseShippingInTotal = <%= JSON.stringify(shipFee) %>;
+  var quoteLine = document.getElementById('guestCourierQuoteLine');
+  var shipEl = document.getElementById('guestSummaryShipping');
+  var totalEl = document.getElementById('guestSummaryTotal');
+  var money = function (n) { return '৳' + Number(n || 0).toLocaleString('en-BD'); };
+  var currentShip = baseShippingInTotal;
+  var itemCount = <%= Number(cart.items && cart.items.length) || 1 %>;
+
+  function refreshGuestTotal() {
+    if (!totalEl) return;
+    var total = Math.max(0, cartBaseTotal - baseShippingInTotal + currentShip);
+    totalEl.textContent = money(total);
+  }
+
+  async function refreshGuestQuote() {
+    if (!citySel || !zoneSel || !citySel.value || !zoneSel.value) {
+      if (quoteLine) quoteLine.textContent = 'Select city and zone for Pathao delivery charge.';
+      return;
+    }
+    if (baseShippingInTotal === 0) {
+      if (quoteLine) quoteLine.textContent = 'Delivery charge not collected with this order.';
+      currentShip = 0;
+      refreshGuestTotal();
+      return;
+    }
+    try {
+      var res = await fetch(base + '/quote-geo', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          pathaoCityId: Number(citySel.value),
+          pathaoZoneId: Number(zoneSel.value),
+          itemCount: itemCount,
+        }),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Quote failed');
+      var fee = Number(data.quote && data.quote.price) || 0;
+      if (quoteLine) quoteLine.textContent = 'Pathao delivery charge: ' + money(fee);
+      if (shipEl) shipEl.innerHTML = fee === 0 ? '<span class="text-free">Free</span>' : money(fee);
+      currentShip = fee;
+      refreshGuestTotal();
+    } catch (err) {
+      if (quoteLine) quoteLine.textContent = 'Standard delivery charge applied.';
+      if (shipEl) shipEl.textContent = money(baseShippingInTotal);
+      currentShip = baseShippingInTotal;
+      refreshGuestTotal();
+    }
+  }
+
+  var citySel = form.querySelector('[data-pathao="city"]');
+  var zoneSel = form.querySelector('[data-pathao="zone"]');
+  var areaSel = form.querySelector('[data-pathao="area"]');
+  function fill(sel, rows, idKey, nameKey) {
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Select</option>';
+    (rows || []).forEach(function (r) {
+      var id = r[idKey] || r.id;
+      var name = r[nameKey] || r.name;
+      if (!id || !name) return;
+      var opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+  }
+  function setName(kind, sel) {
+    var hidden = form.querySelector('[data-pathao-name="' + kind + '"]');
+    if (!hidden || !sel) return;
+    var opt = sel.options[sel.selectedIndex];
+    hidden.value = opt && opt.value ? opt.textContent : '';
+  }
+  fetch(base + '/cities').then(function (r) { return r.json(); }).then(function (d) {
+    fill(citySel, d.cities || d.data || d, 'city_id', 'city_name');
+  }).catch(function () {});
+  if (citySel) citySel.addEventListener('change', function () {
+    setName('city', citySel);
+    zoneSel.innerHTML = '';
+    areaSel.innerHTML = '';
+    if (!citySel.value) return;
+    fetch(base + '/zones/' + citySel.value).then(function (r) { return r.json(); }).then(function (d) {
+      fill(zoneSel, d.zones || d.data || d, 'zone_id', 'zone_name');
+    }).catch(function () {});
+  });
+  if (zoneSel) zoneSel.addEventListener('change', function () {
+    setName('zone', zoneSel);
+    areaSel.innerHTML = '';
+    refreshGuestQuote();
+    if (!zoneSel.value) return;
+    fetch(base + '/areas/' + zoneSel.value).then(function (r) { return r.json(); }).then(function (d) {
+      fill(areaSel, d.areas || d.data || d, 'area_id', 'area_name');
+    }).catch(function () {});
+  });
+  if (areaSel) areaSel.addEventListener('change', function () { setName('area', areaSel); });
+})();
+</script>
+
+<%- include('partials/footer') %>

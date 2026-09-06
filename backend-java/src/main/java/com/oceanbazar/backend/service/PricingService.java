@@ -12,11 +12,14 @@ import java.util.List;
 public class PricingService {
     private static final ObjectMapper OM = new ObjectMapper();
 
-    public static final BigDecimal GST_RATE = new BigDecimal("0.05");
-    public static final BigDecimal SERVICE_FEE = new BigDecimal("1.50");
+    public static final BigDecimal GST_RATE = new BigDecimal("0.075");
+    public static final BigDecimal SERVICE_FEE = BigDecimal.ZERO;
     public static final BigDecimal SHIPPING_FEE = new BigDecimal("25.00");
-    public static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("1000");
+    public static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("5000");
     public static final BigDecimal COD_LIMIT = new BigDecimal("5000");
+
+    /** Merchandise prices already include VAT — back it out instead of adding it on top. */
+    public static final boolean PRICE_INCLUSIVE = true;
 
     public static BigDecimal round2(BigDecimal n) {
         return n.setScale(2, RoundingMode.HALF_UP);
@@ -57,6 +60,9 @@ public class PricingService {
         public BigDecimal serviceFee;
         public BigDecimal obDiscount;
         public BigDecimal total;
+        /** Merchandise net of VAT when prices are VAT-inclusive. */
+        public BigDecimal taxableAmount;
+        public boolean vatInclusive;
     }
 
     private static int[] resolveTier(PricingRow row, int qty) {
@@ -134,12 +140,24 @@ public class PricingService {
     public OrderTotals calculateOrderTotals(BigDecimal subtotal, BigDecimal couponDiscount, BigDecimal obDiscount) {
         BigDecimal discount = round2(couponDiscount.max(BigDecimal.ZERO));
         BigDecimal afterDiscount = subtotal.subtract(discount).max(BigDecimal.ZERO);
-        BigDecimal gst = round2(afterDiscount.multiply(GST_RATE));
+
+        BigDecimal taxable;
+        BigDecimal gst;
+        if (PRICE_INCLUSIVE) {
+            taxable = round2(afterDiscount.divide(BigDecimal.ONE.add(GST_RATE), 10, RoundingMode.HALF_UP));
+            gst = round2(afterDiscount.subtract(taxable));
+        } else {
+            taxable = round2(afterDiscount);
+            gst = round2(afterDiscount.multiply(GST_RATE));
+        }
+
         BigDecimal shipping = afterDiscount.compareTo(FREE_SHIPPING_THRESHOLD) >= 0 ? BigDecimal.ZERO : SHIPPING_FEE;
         BigDecimal service = SERVICE_FEE;
-        BigDecimal maxOb = afterDiscount.add(gst).add(shipping).add(service);
+        // Inclusive prices already contain VAT — do not add gst again on top.
+        BigDecimal merchandiseDue = PRICE_INCLUSIVE ? afterDiscount : afterDiscount.add(gst);
+        BigDecimal maxOb = merchandiseDue.add(shipping).add(service);
         BigDecimal clampedOb = round2(obDiscount.min(maxOb));
-        BigDecimal total = round2(afterDiscount.add(gst).add(shipping).add(service).subtract(clampedOb).max(BigDecimal.ZERO));
+        BigDecimal total = round2(merchandiseDue.add(shipping).add(service).subtract(clampedOb).max(BigDecimal.ZERO));
 
         OrderTotals t = new OrderTotals();
         t.subtotal = round2(subtotal);
@@ -149,7 +167,26 @@ public class PricingService {
         t.serviceFee = service;
         t.obDiscount = clampedOb;
         t.total = total;
+        t.taxableAmount = taxable;
+        t.vatInclusive = PRICE_INCLUSIVE;
         return t;
+    }
+
+    public static void applyFeeWaivers(OrderTotals t, boolean freeShipping, boolean freeService, boolean freeVat) {
+        if (t == null) return;
+        if (freeShipping && t.shippingFee.compareTo(BigDecimal.ZERO) > 0) {
+            t.total = round2(t.total.subtract(t.shippingFee));
+            t.shippingFee = BigDecimal.ZERO;
+        }
+        if (freeService && t.serviceFee.compareTo(BigDecimal.ZERO) > 0) {
+            t.total = round2(t.total.subtract(t.serviceFee));
+            t.serviceFee = BigDecimal.ZERO;
+        }
+        if (freeVat && t.gst.compareTo(BigDecimal.ZERO) > 0) {
+            t.total = round2(t.total.subtract(t.gst));
+            t.gst = BigDecimal.ZERO;
+        }
+        t.total = t.total.max(BigDecimal.ZERO);
     }
 
     public boolean isCodAllowed(BigDecimal total) {

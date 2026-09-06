@@ -50,19 +50,29 @@ export interface OrderTotals {
   serviceFee: number;
   obDiscount: number;
   total: number;
+  /** Net taxable merchandise (after discount), before or excluding VAT depending on mode */
+  taxableAmount: number;
+  vatInclusive: boolean;
+  vatRate: number;
 }
 
 export interface OrderTotalsOptions {
-  /** Coupon grants free shipping (and fee waiver) */
   couponFreeShipping?: boolean;
+  couponFreeService?: boolean;
+  couponFreeVat?: boolean;
   /** Every cart line qty is within retail-tier max for that product */
   retailQuantityOrder?: boolean;
+  /** Fraction e.g. 0.05 — defaults to GST_RATE when omitted */
+  vatRate?: number;
+  /** When true, merchandise prices already include VAT (do not add VAT on top) */
+  priceInclusive?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const GST_RATE = 0.05;
-export const BASE_SERVICE_FEE = 1.5;
+export const GST_RATE = 0.075;
+/** Customers pay merchandise (VAT-inclusive) + shipping only — no service fee. */
+export const BASE_SERVICE_FEE = 0;
 export const BASE_SHIPPING_FEE = 25.0;
 export const FREE_FEES_THRESHOLD = 5000;
 export const COD_LIMIT = 5000;
@@ -314,17 +324,45 @@ export function calculateOrderTotals(
   const o = normalizeTotalsOpts(opts);
   const discount = round2(Math.max(0, couponDiscount));
   const afterDiscount = Math.max(0, subtotal - discount);
-  const gst = round2(afterDiscount * GST_RATE);
 
   const thresholdWaiver = subtotal >= FREE_FEES_THRESHOLD && o.retailQuantityOrder === true;
-  const feeWaiver = Boolean(o.couponFreeShipping) || thresholdWaiver;
-  const shippingFee = feeWaiver ? 0 : BASE_SHIPPING_FEE;
-  const serviceFee = feeWaiver ? 0 : BASE_SERVICE_FEE;
+  const shippingFee = Boolean(o.couponFreeShipping) || thresholdWaiver ? 0 : BASE_SHIPPING_FEE;
+  const serviceFee = Boolean(o.couponFreeService) || thresholdWaiver ? 0 : BASE_SERVICE_FEE;
 
-  const clampedOb = round2(Math.min(obDiscount, afterDiscount + gst + shippingFee + serviceFee));
-  const total = round2(Math.max(0, afterDiscount + gst + shippingFee + serviceFee - clampedOb));
+  const vatRate =
+    o.vatRate != null && Number.isFinite(Number(o.vatRate)) ? Math.max(0, Number(o.vatRate)) : GST_RATE;
+  const priceInclusive = Boolean(o.priceInclusive);
+  const waiveVat = Boolean(o.couponFreeVat);
 
-  return { subtotal: round2(subtotal), discount, gst, shippingFee, serviceFee, obDiscount: clampedOb, total };
+  let gst = 0;
+  let taxableAmount = round2(afterDiscount);
+  if (!waiveVat && vatRate > 0) {
+    if (priceInclusive) {
+      taxableAmount = round2(afterDiscount / (1 + vatRate));
+      gst = round2(afterDiscount - taxableAmount);
+    } else {
+      gst = round2(afterDiscount * vatRate);
+      taxableAmount = round2(afterDiscount);
+    }
+  }
+
+  // Inclusive prices already contain VAT — do not add gst again to customer total.
+  const merchandiseDue = priceInclusive ? afterDiscount : afterDiscount + gst;
+  const clampedOb = round2(Math.min(obDiscount, merchandiseDue + shippingFee + serviceFee));
+  const total = round2(Math.max(0, merchandiseDue + shippingFee + serviceFee - clampedOb));
+
+  return {
+    subtotal: round2(subtotal),
+    discount,
+    gst,
+    shippingFee,
+    serviceFee,
+    obDiscount: clampedOb,
+    total,
+    taxableAmount,
+    vatInclusive: priceInclusive,
+    vatRate,
+  };
 }
 
 export function isCodAllowed(total: number): boolean {

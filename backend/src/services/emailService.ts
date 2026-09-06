@@ -111,9 +111,15 @@ export async function sendMail(
 
 // ─── Shared layout helpers ──────────────────────────────────────────────────
 
-const CLIENT = process.env.CLIENT_URL || 'https://oceanbazar.com';
+const CLIENT = process.env.CLIENT_URL || 'https://oceanbazar.com.bd';
 const PRIMARY = '#0D7377';
 const DARK = '#0a5d61';
+
+/** Business contact shown on every outgoing email — keep in sync with invoices/footer. */
+export const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || 'contact@oceanbazar.com.bd';
+export const SUPPORT_PHONE = process.env.SUPPORT_PHONE || '+880 1349 358 825';
+/** Same storefront header logo used on the site and invoices. */
+const EMAIL_LOGO_URL = process.env.EMAIL_LOGO_URL || `${CLIENT}/ob-brand-logo.png?v=10`;
 
 export function emailWrapper(body: string): string {
   return `<!DOCTYPE html>
@@ -124,9 +130,11 @@ export function emailWrapper(body: string): string {
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.07);">
       <!-- Header -->
-      <tr><td style="background:linear-gradient(135deg,${PRIMARY} 0%,${DARK} 100%);padding:28px 32px;text-align:center;">
-        <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:800;letter-spacing:-0.5px;">🌊 OceanBazar</h1>
-        <p style="margin:4px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">Bangladesh's Smart Shopping Platform</p>
+      <tr><td style="background:#ffffff;border-bottom:1px solid #e8ecef;padding:24px 32px;text-align:center;">
+        <a href="${CLIENT}" style="text-decoration:none;">
+          <img src="${EMAIL_LOGO_URL}" alt="OceanBazar" width="180" style="display:block;margin:0 auto;width:180px;max-width:60%;height:auto;border:0;" />
+        </a>
+        <p style="margin:10px 0 0;color:#6b7280;font-size:13px;">Bangladesh's Smart Shopping Platform</p>
       </td></tr>
       <!-- Body -->
       <tr><td style="padding:36px 40px;">${body}</td></tr>
@@ -134,8 +142,9 @@ export function emailWrapper(body: string): string {
       <tr><td style="background:#f8fafb;border-top:1px solid #e8ecef;padding:20px 40px;text-align:center;">
         <p style="margin:0;color:#6b7280;font-size:12px;">© ${new Date().getFullYear()} OceanBazar. All rights reserved.</p>
         <p style="margin:6px 0 0;color:#6b7280;font-size:12px;">
-          <a href="${CLIENT}" style="color:${PRIMARY};text-decoration:none;">oceanbazar.com</a> ·
-          <a href="mailto:support@oceanbazar.com" style="color:${PRIMARY};text-decoration:none;">support@oceanbazar.com</a>
+          <a href="${CLIENT}" style="color:${PRIMARY};text-decoration:none;">oceanbazar.com.bd</a> ·
+          <a href="mailto:${SUPPORT_EMAIL}" style="color:${PRIMARY};text-decoration:none;">${SUPPORT_EMAIL}</a> ·
+          <a href="tel:${SUPPORT_PHONE.replace(/\s+/g, '')}" style="color:${PRIMARY};text-decoration:none;">${SUPPORT_PHONE}</a>
         </p>
       </td></tr>
     </table>
@@ -258,12 +267,12 @@ export async function sendPaymentInvoice(
       <tbody>${itemRows}</tbody>
     </table>
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;font-size:13px;">
-      <tr><td style="padding:4px 0;color:#6b7280;">Subtotal</td><td style="padding:4px 0;text-align:right;color:#374151;">${money(order.subtotal)}</td></tr>
+      ${order.discount > 0 ? adjustment('Items (incl. VAT)', order.subtotal) : ''}
       ${adjustment('Discount', order.discount, true)}
       ${adjustment('OB Points', order.obDiscount, true)}
+      <tr><td style="padding:4px 0;color:#6b7280;">Subtotal (excl. VAT)</td><td style="padding:4px 0;text-align:right;color:#374151;">${money(Math.max(0, order.subtotal - order.discount - order.gst))}</td></tr>
+      ${adjustment('VAT (7.5%)', order.gst)}
       ${adjustment('Shipping', order.shippingFee)}
-      ${adjustment('VAT', order.gst)}
-      ${adjustment('Service fee', order.serviceFee)}
       <tr><td style="padding:10px 0 0;border-top:1px solid #e5e7eb;font-weight:800;color:#111827;">Amount paid</td><td style="padding:10px 0 0;border-top:1px solid #e5e7eb;text-align:right;font-size:18px;font-weight:800;color:${PRIMARY};">${money(order.total)}</td></tr>
     </table>
     <div style="text-align:center;">${btn(`${CLIENT}/en/account/orders/${order.id}/invoice`, 'View or print invoice')}</div>
@@ -399,7 +408,7 @@ export async function sendPasswordChangedEmail(to: string): Promise<boolean> {
     <h2 style="margin:0 0 8px;color:#111827;font-size:22px;">Password Updated 🔒</h2>
     <p style="color:#6b7280;margin:0 0 20px;">Your OceanBazar account password was changed successfully.</p>
     <p style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;color:#991b1b;font-size:13px;margin:0;">
-      If you did not make this change, contact <a href="mailto:support@oceanbazar.com" style="color:${PRIMARY};">support@oceanbazar.com</a> immediately.
+      If you did not make this change, contact <a href="mailto:${SUPPORT_EMAIL}" style="color:${PRIMARY};">${SUPPORT_EMAIL}</a> immediately.
     </p>`;
   return sendMail(to, '🔒 Your OceanBazar password was changed', emailWrapper(body), 'password_changed');
 }

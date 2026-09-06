@@ -14,12 +14,28 @@
   var num = function (v) { return Number(v || 0); };
   var logo = (settings && (settings.logoLightUrl || settings.logoDarkUrl))
     ? (settings.logoLightUrl || settings.logoDarkUrl)
-    : (basePath + '/ob-brand-logo.png?v=8');
+    : (basePath + '/ob-brand-logo.png?v=10');
   function pretty(v) {
     var s = String(v || '').trim().toLowerCase().replace(/_/g, ' ');
     if (!s) return '—';
     return s.replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
+  // t() echoes the key back when a translation is missing — fall back to real copy instead.
+  var tv = function (key, fallback) { var s = t(key); return !s || s === key ? fallback : s; };
+  var supportEmail = (settings && settings.supportEmail) || 'contact@oceanbazar.com.bd';
+  var supportPhone = (settings && settings.supportPhone) || '+880 1349 358 825';
+  var grossItems = num(order.subtotal);
+  var invDiscount = num(order.discount);
+  var invVat = num(order.gst);
+  var invShipping = num(order.shippingFee);
+  var invLegacyService = num(order.serviceFee);
+  var invTotal = num(order.total || order.grandTotal);
+  var invNetOfFees = grossItems - invDiscount + invShipping + invLegacyService;
+  // Orders placed before VAT-inclusive pricing added VAT on top; detect which model applies.
+  var invVatInclusive = Math.abs(invNetOfFees - invTotal) <= Math.abs(invNetOfFees + invVat - invTotal);
+  var invSubtotalExclVat = invVatInclusive ? grossItems - invDiscount - invVat : grossItems - invDiscount;
+  var invVatPct = invSubtotalExclVat > 0 ? (invVat / invSubtotalExclVat) * 100 : 0;
+  var invVatLabel = Number.isInteger(invVatPct) ? String(invVatPct) : invVatPct.toFixed(1);
 %>
 
 <style>
@@ -28,8 +44,18 @@
     html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; }
     body * { visibility: hidden !important; }
     #ob-invoice, #ob-invoice * { visibility: visible !important; }
-    #ob-invoice { position: absolute !important; left: 0; top: 0; width: 100%; margin: 0; padding: 0; font-size: 10.5px; line-height: 1.35; }
-    #ob-invoice table { font-size: 10px; }
+    #ob-invoice {
+      position: absolute !important; left: 0; top: 0; width: 100%; max-width: none !important;
+      margin: 0; padding: 0; font-size: 10.5px; line-height: 1.35;
+      transform: scale(var(--print-scale, 1)); transform-origin: top left;
+    }
+    #ob-invoice table { font-size: 10px; page-break-inside: auto; }
+    #ob-invoice tr, #ob-invoice thead, #ob-invoice tfoot { page-break-inside: avoid; break-inside: avoid; }
+    #ob-invoice .inv-head, #ob-invoice .inv-grid, #ob-invoice .inv-totals, #ob-invoice .inv-foot {
+      page-break-inside: avoid; break-inside: avoid;
+    }
+    #ob-invoice .inv-table { margin-top: 10px; }
+    #ob-invoice .inv-foot { margin-top: 12px; padding-top: 8px; }
     #ob-invoice img { height: 36px; width: auto; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
@@ -59,7 +85,7 @@
 </style>
 
 <div class="invoice-toolbar no-print">
-  <button type="button" class="btn btn-primary btn-sm" onclick="window.print()"><%= t('printInvoice') %></button>
+  <button type="button" id="invoicePrintBtn" class="btn btn-primary btn-sm"><%= t('printInvoice') %></button>
   <a class="btn btn-outline btn-sm" href="<%= basePath %>/<%= locale %>/account/orders/<%= order.id %>">&larr; <%= t('orders') %></a>
 </div>
 
@@ -67,8 +93,17 @@
   <div class="inv-head">
     <div>
       <img class="inv-logo" src="<%= logo %>" alt="OceanBazar" width="168" height="56" />
-      <p class="muted" style="margin:8px 0 0;font-size:12px;">oceanbazar.com.bd</p>
-      <p class="muted" style="margin:0;font-size:12px;">contact@oceanbazar.com.bd</p>
+      <p class="muted" style="margin:8px 0 0;font-size:12px;font-weight:600;"><%= (settings && settings.legalName) || 'Ocean Bazar' %></p>
+      <p class="muted" style="margin:0;font-size:12px;"><%= (settings && settings.registeredAddress) || (settings && settings.contactAddress) || '' %></p>
+      <p class="muted" style="margin:0;font-size:12px;"><%= supportEmail %> · <%= supportPhone %></p>
+      <% if (settings && (settings.tradeLicenseNo || settings.tinNumber)) { %>
+      <p class="muted" style="margin:4px 0 0;font-size:11px;">
+        <% if (settings.tradeLicenseNo) { %>Trade license: <%= settings.tradeLicenseNo %><% } %>
+        <% if (settings.tradeLicenseNo && settings.tinNumber) { %> · <% } %>
+        <% if (settings.tinNumber) { %>TIN: <%= settings.tinNumber %><% } %>
+      </p>
+      <% } %>
+      <p class="muted" style="margin:4px 0 0;font-size:12px;">oceanbazar.com.bd</p>
     </div>
     <div class="inv-meta">
       <h1 style="margin:0;font-size:22px;letter-spacing:.04em;"><%= t('invoice') %></h1>
@@ -136,31 +171,69 @@
   <% } %>
 
   <div class="inv-totals">
-    <div><span><%= t('subtotal') %></span><span><%= helpers.money(order.subtotal || 0) %></span></div>
-    <% if (num(order.discount) > 0) { %><div style="color:#16a34a;"><span><%= t('discount') %></span><span>-<%= helpers.money(order.discount) %></span></div><% } %>
-    <div><span><%= t('shipping') %></span><span><%= num(order.shippingFee) === 0 ? t('trustShip') : helpers.money(order.shippingFee) %></span></div>
-    <% if (num(order.gst) > 0) { %><div><span><%= t('vat') %></span><span><%= helpers.money(order.gst) %></span></div><% } %>
-    <% if (num(order.serviceFee) > 0) { %><div><span><%= t('serviceFee') %></span><span><%= helpers.money(order.serviceFee) %></span></div><% } %>
-    <div class="grand"><span><%= t('total') %></span><span><%= helpers.money(order.total || order.grandTotal || 0) %></span></div>
+    <% if (invDiscount > 0) { %>
+    <div><span><%= tv('lineItemsGross', 'Items (incl. VAT)') %></span><span><%= helpers.money(grossItems) %></span></div>
+    <div style="color:#16a34a;"><span><%= t('discount') %></span><span>-<%= helpers.money(invDiscount) %></span></div>
+    <% } %>
+    <div><span><%= tv('lineMerchandise', 'Subtotal (excl. VAT)') %></span><span><%= helpers.money(invSubtotalExclVat) %></span></div>
+    <% if (invVat > 0) { %><div><span><%= t('vat') %> (<%= invVatLabel %>%)</span><span><%= helpers.money(invVat) %></span></div><% } %>
+    <div><span><%= t('shipping') %></span><span><%= invShipping === 0 ? t('trustShip') : helpers.money(invShipping) %></span></div>
+    <div class="grand"><span><%= tv('totalDue', t('total')) %></span><span><%= helpers.money(invTotal) %></span></div>
+    <% if (invVat > 0) { %>
+    <p class="muted" style="margin:6px 0 0;font-size:10px;line-height:1.3;">
+      Item prices include <%= invVatLabel %>% VAT<% if (settings && settings.tinNumber) { %> · VAT registration TIN: <%= settings.tinNumber %><% } %>
+    </p>
+    <% } %>
   </div>
 
   <div class="inv-foot">
-    <p>Thank you for shopping with OceanBazar.</p>
-    <p>Questions? contact@oceanbazar.com.bd · Computer-generated invoice</p>
+    <p>Thank you for shopping with <%= (settings && settings.legalName) || 'OceanBazar' %>.</p>
+    <p>Questions? <%= supportEmail %> · <%= supportPhone %> · Computer-generated invoice</p>
   </div>
 </div>
 
 <script>
 (function () {
-  // #region agent log
-  try {
+  // A4 printable box at 96dpi with 8mm margins.
+  var PRINT_WIDTH_PX = Math.round(((210 - 16) / 25.4) * 96);
+  var PRINT_HEIGHT_PX = Math.round(((297 - 16) / 25.4) * 96);
+
+  // Measure at the print width (not the phone/tablet width) so one invoice always
+  // fits one page on every device, then shrink to fit if it would overflow.
+  function fitToOnePage() {
     var el = document.getElementById('ob-invoice');
-    var h = el ? el.scrollHeight : 0;
-    fetch('http://127.0.0.1:7896/ingest/89e60d83-694f-49b3-8a65-19c43e3fa97c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1eb282'},body:JSON.stringify({sessionId:'1eb282',runId:'pre-fix',hypothesisId:'H1',location:'invoice.ejs',message:'lite invoice loaded',data:{scrollHeight:h,bodyScroll:document.body.scrollHeight,itemCount:<%= items.length %>},timestamp:Date.now()})}).catch(function(){});
-  } catch (e) {}
-  // #endregion
+    if (!el) return;
+    var prevWidth = el.style.width;
+    el.style.setProperty('--print-scale', '1');
+    el.style.width = PRINT_WIDTH_PX + 'px';
+    var contentHeight = el.scrollHeight;
+    el.style.width = prevWidth;
+    var scale = contentHeight > PRINT_HEIGHT_PX ? PRINT_HEIGHT_PX / contentHeight : 1;
+    el.style.setProperty('--print-scale', String(Math.max(0.45, Math.min(1, scale))));
+  }
+
+  fitToOnePage();
+  window.addEventListener('resize', fitToOnePage);
+  if (window.matchMedia) {
+    try {
+      window.matchMedia('print').addEventListener('change', fitToOnePage);
+    } catch (e) { /* older browsers fall back to beforeprint */ }
+  }
+  window.addEventListener('beforeprint', fitToOnePage);
+
+  var printBtn = document.getElementById('invoicePrintBtn');
+  if (printBtn) {
+    printBtn.addEventListener('click', function () {
+      fitToOnePage();
+      try { window.print(); } catch (e3) {}
+    });
+  }
+
   if (/[?&]autoprint=1/.test(location.search || '')) {
-    setTimeout(function () { try { window.print(); } catch (e2) {} }, 400);
+    setTimeout(function () {
+      fitToOnePage();
+      try { window.print(); } catch (e2) {}
+    }, 400);
   }
 })();
 </script>
